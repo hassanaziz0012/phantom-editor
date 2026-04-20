@@ -1,10 +1,16 @@
 import asyncio
+import os
+import sys
 from playwright.async_api import async_playwright
+
+# Get the absolute path to the data/auth.json file relative to this script
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+AUTH_FILE_PATH = os.path.join(SCRIPT_DIR, "data", "auth.json")
 
 async def post_tweet(content: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(storage_state="data/auth.json")
+        context = await browser.new_context(storage_state=AUTH_FILE_PATH)
         page = await context.new_page()
 
         await page.goto("https://x.com/intent/post")
@@ -18,9 +24,15 @@ async def post_tweet(content: str):
         # 2. Click Post immediately
         await page.locator('button[data-testid="tweetButton"]').first.click()
 
-        print("Tweet posted!")
+        print(f"Tweet posted: {content}")
         await page.wait_for_timeout(3000)
         await browser.close()
 
 if __name__ == "__main__":
-    asyncio.run(post_tweet("am i a hypocrite for complaining about the X algo?"))
+    if len(sys.argv) > 1:
+        tweet_content = sys.argv[1]
+    else:
+        print("Usage: python post_tweet.py <tweet_content>")
+        sys.exit(1)
+        
+    asyncio.run(post_tweet(tweet_content))
