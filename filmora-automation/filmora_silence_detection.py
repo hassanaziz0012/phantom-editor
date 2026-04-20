@@ -98,18 +98,31 @@ def run_automation():
 
     # 6. Finish & Wait for Window Close
     print("Log: Finalizing...")
-    find_and_click('imgs/finish-and-replace-btn.png')
     
-    # Wait until the titlebar of the silence window is GONE
-    timeout = 15
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            if not pyautogui.locateOnScreen('imgs/silence-detection-titlebar.png', confidence=0.8):
+    window_closed = False
+    for attempt in range(3):
+        find_and_click('imgs/finish-and-replace-btn.png')
+        
+        # Wait a bit for the window to potentially close
+        timeout = 5
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                if not pyautogui.locateOnScreen('imgs/silence-detection-titlebar.png', confidence=0.8):
+                    window_closed = True
+                    break
+                time.sleep(1)
+            except pyautogui.ImageNotFoundException:
+                window_closed = True
                 break
-            time.sleep(1)
-        except pyautogui.ImageNotFoundException:
+                
+        if window_closed:
             break
+        else:
+            print(f"Log: Silence window still open (attempt {attempt + 1}/3). Retrying click...")
+
+    if not window_closed:
+        raise RuntimeError("Silence detection window did not close after clicking 'Finish and Replace' 3 times.")
 
     # 7. Save Project
     print(f"Log: Saving project to {SAVE_FULL_PATH}...")
