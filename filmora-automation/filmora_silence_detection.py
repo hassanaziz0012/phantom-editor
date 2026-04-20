@@ -5,9 +5,14 @@ import subprocess
 import pyautogui
 import time
 from pathlib import Path
+import sys
 
 # --- Configuration ---
-FILE_TO_IMPORT = r"C:\Users\hassa\Videos\YT Projects\Common security vulnerabilities that vibe coders face\after-audio-processing.mp4"
+if len(sys.argv) < 2:
+    print("Usage: python filmora_silence_detection.py <path_to_mp4_file>")
+    sys.exit(1)
+
+FILE_TO_IMPORT = sys.argv[1]
 EXE_PATH = r"C:\Users\hassa\AppData\Local\Wondershare\Wondershare Filmora\Wondershare Filmora Launcher.exe"
 
 # 1. Path Extraction
@@ -60,7 +65,24 @@ def run_automation():
 
     # 5. Silence Detection
     print("Log: Running Silence Detection...")
-    pyautogui.click(700, 805) 
+    
+    location = None
+    for attempt in range(5):
+        try:
+            location = pyautogui.locateCenterOnScreen('imgs/video-track-1.png', confidence=0.9)
+            if location:
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+        
+    if not location:
+        raise RuntimeError("Could not find imgs/video-track-1.png on screen")
+        
+    x, y = location
+    print(f"Log: Found video track at ({x}, {y}). Clicking at ({x + 200}, {y}) to select the clip.")
+    pyautogui.click(x + 200, y)
+    
     time.sleep(0.5)
     pyautogui.hotkey('ctrl', 'alt', 'm')
 
@@ -111,7 +133,12 @@ def run_automation():
     if not dialog_found:
         raise RuntimeError("Save As dialog never appeared or was not found.")
 
+    time.sleep(1)  # Extra buffer for the dialog to fully render
+    pyautogui.hotkey('alt', 'n')  # Standard Windows shortcut to focus 'File name:' input
+    time.sleep(0.5)
+
     pyautogui.write(SAVE_FULL_PATH)
+    time.sleep(0.5)
     pyautogui.press('enter')
     
     # Handle "Overwrite?" dialog if it exists
