@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Check if an argument is provided
+if [ $# -eq 0 ]; then
+    echo "Usage: tweet <your_tweet_content>"
+    exit 1
+fi
+
+# Run the python script using uv from the correct project directory
+# "$*" joins all arguments into a single string, which is useful if the tweet isn't quoted
+uv run --project /home/hassan/editing-scripts python /home/hassan/editing-scripts/twitter/post_tweet.py "$*"
