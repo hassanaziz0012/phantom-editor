@@ -3,12 +3,13 @@
 # Base directory of the project codebase.
 # Currently set to the development folder.
 # Change this to /opt/phantom-editor when deploying to production.
-BASE_DIR="/home/hassan/editing-scripts"
+BASE_DIR="/home/hassan/programming/phantom-editor"
 
 if [ $# -eq 0 ]; then
     echo "Usage: phantom <command> [arguments]"
     echo "Commands:"
     echo "  audio process <path_to_mp4>"
+    echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
     echo "  tweet <tweet_content>"
     echo "  speak <text>"
     exit 1
@@ -33,6 +34,17 @@ case "$COMMAND" in
             exit 1
         fi
         ;;
+    edit)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "add_bgm" ]; then
+            "$BASE_DIR/video-editing/add_bgm_to_video.sh" "$@"
+        else
+            echo "Unknown edit subcommand: $SUBCOMMAND"
+            echo "Usage: phantom edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
+            exit 1
+        fi
+        ;;
     tweet)
         if [ $# -eq 0 ]; then
             echo "Usage: phantom tweet <tweet_content>"
@@ -53,6 +65,7 @@ case "$COMMAND" in
         echo "Usage: phantom <command> [arguments]"
         echo "Commands:"
         echo "  audio process <path_to_mp4>"
+        echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
         echo "  tweet <tweet_content>"
         echo "  speak <text>"
         exit 1
