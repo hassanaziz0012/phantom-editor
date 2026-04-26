@@ -1,4 +1,4 @@
-# IMPORTANT: THIS SCRIPT MUST BE RUN FROM WINDOWS, NOT WSL!
+# IMPORTANT: IF RUNNING FROM WSL, USE "python.exe" SO YOU RUN THE WINDOWS VERSION OF PYTHON.
 
 import os
 import subprocess
@@ -14,11 +14,17 @@ if len(sys.argv) < 2:
 
 FILE_TO_IMPORT = sys.argv[1]
 EXE_PATH = r"C:\Users\hassa\AppData\Local\Wondershare\Wondershare Filmora\Wondershare Filmora Launcher.exe"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def img(name):
+    return os.path.join(BASE_DIR, "imgs", name)
 
 # 1. Path Extraction
 video_path = Path(FILE_TO_IMPORT)
 PROJECT_NAME = video_path.parent.name
-SAVE_FULL_PATH = str(video_path.parent / PROJECT_NAME) 
+# Construct absolute Windows paths for Filmora (which runs on Windows)
+FILE_TO_IMPORT = rf"C:\Users\hassa\Videos\YT Projects\{PROJECT_NAME}\{video_path.name}"
+SAVE_FULL_PATH = rf"C:\Users\hassa\Videos\YT Projects\{PROJECT_NAME}\{PROJECT_NAME}"
 
 def notify(title, msg):
     print("Notification: ", title, msg)
@@ -40,11 +46,11 @@ def run_automation():
     print(f"Log: Launching Filmora for: {PROJECT_NAME}")
     subprocess.Popen(EXE_PATH)
     time.sleep(12) 
-    find_and_click('imgs/new-project-btn.png')
+    find_and_click(img('new-project-btn.png'))
 
     # 2. Editor UI
     print("Log: Waiting for Editor...")
-    find_and_click('imgs/filmora-editor-blank-window.png', confidence=0.7, retries=10)
+    find_and_click(img('filmora-editor-blank-window.png'), confidence=0.7, retries=10)
 
     # 3. Import
     print("Log: Importing media...")
@@ -69,7 +75,7 @@ def run_automation():
     location = None
     for attempt in range(5):
         try:
-            location = pyautogui.locateCenterOnScreen('imgs/video-track-1.png', confidence=0.9)
+            location = pyautogui.locateCenterOnScreen(img('video-track-1.png'), confidence=0.9)
             if location:
                 break
         except Exception:
@@ -77,7 +83,7 @@ def run_automation():
         time.sleep(1)
         
     if not location:
-        raise RuntimeError("Could not find imgs/video-track-1.png on screen")
+        raise RuntimeError(f"Could not find {img('video-track-1.png')} on screen")
         
     x, y = location
     print(f"Log: Found video track at ({x}, {y}). Clicking at ({x + 200}, {y}) to select the clip.")
@@ -86,12 +92,12 @@ def run_automation():
     time.sleep(0.5)
     pyautogui.hotkey('ctrl', 'alt', 'm')
 
-    find_and_click('imgs/silence-detection-titlebar.png', confidence=0.8, click=False)
-    find_and_click('imgs/analyze-btn.png')
+    find_and_click(img('silence-detection-titlebar.png'), confidence=0.8, click=False)
+    find_and_click(img('analyze-btn.png'))
 
     try:
         print("Log: Processing...")
-        while pyautogui.locateOnScreen('imgs/processing-screen.png', confidence=0.8):
+        while pyautogui.locateOnScreen(img('processing-screen.png'), confidence=0.8):
             time.sleep(2)
     except pyautogui.ImageNotFoundException:
         pass
@@ -101,14 +107,14 @@ def run_automation():
     
     window_closed = False
     for attempt in range(3):
-        find_and_click('imgs/finish-and-replace-btn.png')
+        find_and_click(img('finish-and-replace-btn.png'))
         
         # Wait a bit for the window to potentially close
         timeout = 5
         start_time = time.time()
         while time.time() - start_time < timeout:
             try:
-                if not pyautogui.locateOnScreen('imgs/silence-detection-titlebar.png', confidence=0.8):
+                if not pyautogui.locateOnScreen(img('silence-detection-titlebar.png'), confidence=0.8):
                     window_closed = True
                     break
                 time.sleep(1)
