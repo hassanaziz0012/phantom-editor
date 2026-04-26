@@ -2,7 +2,7 @@
 """
 YouTube Video Uploader
 Usage: python upload_video.py /path/to/video.mp4
-Expects metadata.json and thumbnail.png in the same folder as the video.
+Expects metadata.json and thumbnail.png (optional) in the same folder as the video.
 """
 
 import argparse
@@ -33,6 +33,24 @@ TOKEN_FILE = Path(__file__).parent / "tokens/token.json"
 YOUTUBE_API_SERVICE = "youtube"
 YOUTUBE_API_VERSION = "v3"
 CHUNK_SIZE = 256 * 1024  # 256 KB — controls progress-bar granularity
+
+DESCRIPTION_TEMPLATE = """---
+
+Book a call: https://calendly.com/itshassanaziz/discuss-a-project
+
+==== ==== ====
+
+{video_description}
+
+==== ==== ====
+
+LINKS
+
+Website: https://www.hassandev.me
+Portfolio: https://www.hassandev.me/work
+YouTube: https://www.youtube.com/@itshassanaziz?sub_confirmation=1
+My Book: https://www.hassandev.me/designing-websites
+X / Twitter: https://x.com/nothassanaziz"""
 
 
 # ---------------------------------------------------------------------------
@@ -75,10 +93,13 @@ def load_metadata(video_path: Path) -> dict:
 def upload_video(youtube, video_path: Path, metadata: dict) -> str:
     """Upload the video and return its YouTube video ID."""
 
+    raw_description = metadata.get("description", "")
+    full_description = DESCRIPTION_TEMPLATE.format(video_description=raw_description)
+
     body = {
         "snippet": {
             "title":       metadata.get("title", video_path.stem),
-            "description": metadata.get("description", ""),
+            "description": full_description,
             "tags":        metadata.get("tags", []),
             "categoryId":  str(metadata.get("categoryId", "22")),  # 22 = People & Blogs
         },
@@ -188,7 +209,7 @@ def main():
         title=metadata.get("title", ""),
     )
     print(f"\n🐦 Posting tweet:\n   {tweet_content}")
-    subprocess.run(["tweet", tweet_content], check=True)
+    subprocess.run(["./phantom tweet", tweet_content], check=True)
     print("✅ Tweet posted!")
 
     print("\n🎉 All done!")
