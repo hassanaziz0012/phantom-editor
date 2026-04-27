@@ -31,6 +31,9 @@ async def post_tweet(content: str):
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         tweet_content = sys.argv[1]
+        if len(tweet_content) > 280:
+            print("Error: Tweet is longer than 280 characters.", file=sys.stderr)
+            sys.exit(1)
     else:
         print("Usage: python post_tweet.py <tweet_content>")
         sys.exit(1)
