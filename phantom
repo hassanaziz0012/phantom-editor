@@ -5,13 +5,20 @@
 # Change this to /opt/phantom-editor when deploying to production.
 BASE_DIR="/home/hassan/programming/phantom-editor"
 
-if [ $# -eq 0 ]; then
+show_usage() {
     echo "Usage: phantom <command> [arguments]"
     echo "Commands:"
     echo "  audio process <path_to_mp4>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
     echo "  tweet <tweet_content>"
     echo "  speak <text>"
+    echo "  youtube upload <video_path>"
+    echo "  youtube recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
+    echo "  youtube create-metadata <video_path>"
+}
+
+if [ $# -eq 0 ]; then
+    show_usage
     exit 1
 fi
 
@@ -60,14 +67,26 @@ case "$COMMAND" in
         # Using uv to run the python script with the project's virtual environment
         uv run --project "$BASE_DIR" python "$BASE_DIR/kokoro-tts/makesound.py" "$*"
         ;;
+    youtube)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "upload" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube-api/upload_video.py" "$@"
+        elif [ "$SUBCOMMAND" = "recommend-related" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube-api/recommend_related_videos.py" "$@"
+        elif [ "$SUBCOMMAND" = "create-metadata" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube-api/create_metadata.py" "$@"
+        else
+            echo "Unknown youtube subcommand: $SUBCOMMAND"
+            echo "Usage: phantom youtube upload <video_path>"
+            echo "       phantom youtube recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
+            echo "       phantom youtube create-metadata <video_path>"
+            exit 1
+        fi
+        ;;
     *)
         echo "Unknown command: $COMMAND"
-        echo "Usage: phantom <command> [arguments]"
-        echo "Commands:"
-        echo "  audio process <path_to_mp4>"
-        echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
-        echo "  tweet <tweet_content>"
-        echo "  speak <text>"
+        show_usage
         exit 1
         ;;
 esac
