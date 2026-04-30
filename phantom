@@ -11,7 +11,8 @@ show_usage() {
     echo "  audio process <path_to_mp4>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
     echo "  tweet <tweet_content>"
-    echo "  speak <text>"
+    echo "  tts speak <text>"
+    echo "  tts save <text> [--output-dir <dir>]"
     echo "  youtube upload <video_path>"
     echo "  youtube recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
     echo "  youtube create-metadata <video_path>"
@@ -59,13 +60,28 @@ case "$COMMAND" in
         fi
         "$BASE_DIR/twitter/tweet.sh" "$*"
         ;;
-    speak)
-        if [ $# -eq 0 ]; then
-            echo "Usage: phantom speak <text>"
+    tts)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "speak" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom tts speak <text>"
+                exit 1
+            fi
+            # Using uv to run the python script with the project's virtual environment
+            uv run --project "$BASE_DIR" python "$BASE_DIR/kokoro-tts/makesound.py" "$@"
+        elif [ "$SUBCOMMAND" = "save" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom tts save <text> [--output-dir <dir>]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/kokoro-tts/savesound.py" "$@"
+        else
+            echo "Unknown tts subcommand: $SUBCOMMAND"
+            echo "Usage: phantom tts speak <text>"
+            echo "       phantom tts save <text> [--output-dir <dir>]"
             exit 1
         fi
-        # Using uv to run the python script with the project's virtual environment
-        uv run --project "$BASE_DIR" python "$BASE_DIR/kokoro-tts/makesound.py" "$*"
         ;;
     youtube)
         SUBCOMMAND="$1"
