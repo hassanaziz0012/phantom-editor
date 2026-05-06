@@ -10,6 +10,7 @@ show_usage() {
     echo "Commands:"
     echo "  audio process <path_to_mp4>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
+    echo "  filmora detect-silence <path_to_mp4>"
     echo "  tweet <tweet_content>"
     echo "  tts speak <text>"
     echo "  tts save <text> [--output-dir <dir>]"
@@ -50,6 +51,22 @@ case "$COMMAND" in
         else
             echo "Unknown edit subcommand: $SUBCOMMAND"
             echo "Usage: phantom edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
+            exit 1
+        fi
+        ;;
+    filmora)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "detect-silence" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom filmora detect-silence <path_to_mp4>"
+                exit 1
+            fi
+            SCRIPT_PATH=$(wslpath -w "$BASE_DIR/filmora-automation/filmora_silence_detection.py")
+            python.exe "$SCRIPT_PATH" "$1"
+        else
+            echo "Unknown filmora subcommand: $SUBCOMMAND"
+            echo "Usage: phantom filmora detect-silence <path_to_mp4>"
             exit 1
         fi
         ;;
