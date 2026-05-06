@@ -65,7 +65,7 @@ def run_automation():
     pyautogui.click(425, 250) 
     time.sleep(0.5)
     pyautogui.hotkey('shift', 'i')
-    time.sleep(0.5)
+    time.sleep(1)
     pyautogui.press('enter')
     time.sleep(2) 
 
@@ -134,30 +134,15 @@ def run_automation():
     print(f"Log: Saving project to {SAVE_FULL_PATH}...")
     pyautogui.hotkey('ctrl', 's')
 
-    # Wait for "Save As" window to appear and be active
-    save_dialog_timeout = 10
-    start_time = time.time()
-    dialog_found = False
-
-    while time.time() - start_time < save_dialog_timeout:
-        windows = pyautogui.getWindowsWithTitle('Save As')
-        if windows:
-            dialog = windows[0]
-            dialog.activate()  # Force focus
-            dialog_found = True
-            time.sleep(0.5) # Small buffer for focus to take hold
-            break
-        time.sleep(0.5)
-
-    if not dialog_found:
-        raise RuntimeError("Save As dialog never appeared or was not found.")
-
-    time.sleep(1)  # Extra buffer for the dialog to fully render
-    pyautogui.hotkey('alt', 'n')  # Standard Windows shortcut to focus 'File name:' input
+    time.sleep(2)
+    
+    # Workaround for Windows focus bug: alt-tabbing away and back forces focus on the Save dialog
+    pyautogui.hotkey('alt', 'tab')
     time.sleep(0.5)
+    pyautogui.hotkey('alt', 'tab')
+    time.sleep(1)
 
     pyautogui.write(SAVE_FULL_PATH)
-    time.sleep(0.5)
     pyautogui.press('enter')
     
     # Handle "Overwrite?" dialog if it exists
