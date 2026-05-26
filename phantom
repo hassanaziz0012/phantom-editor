@@ -11,7 +11,7 @@ show_usage() {
     echo "  audio process <path_to_mp4>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
     echo "  filmora detect-silence <path_to_mp4>"
-    echo "  tweet <tweet_content>"
+    echo "  tweet [--image] <tweet_content>"
     echo "  tts speak <text>"
     echo "  tts save <text> [--output-dir <dir>]"
     echo "  youtube upload <video_path>"
@@ -72,10 +72,10 @@ case "$COMMAND" in
         ;;
     tweet)
         if [ $# -eq 0 ]; then
-            echo "Usage: phantom tweet <tweet_content>"
+            echo "Usage: phantom tweet [--image] <tweet_content>"
             exit 1
         fi
-        "$BASE_DIR/twitter/tweet.sh" "$*"
+        "$BASE_DIR/twitter/tweet.sh" "$@"
         ;;
     tts)
         SUBCOMMAND="$1"
@@ -104,11 +104,11 @@ case "$COMMAND" in
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "upload" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube-api/upload_video.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/upload_video.py" "$@"
         elif [ "$SUBCOMMAND" = "recommend-related" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube-api/recommend_related_videos.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/recommend_related_videos.py" "$@"
         elif [ "$SUBCOMMAND" = "create-metadata" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube-api/create_metadata.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/create_metadata.py" "$@"
         else
             echo "Unknown youtube subcommand: $SUBCOMMAND"
             echo "Usage: phantom youtube upload <video_path>"
