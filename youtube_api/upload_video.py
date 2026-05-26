@@ -34,9 +34,7 @@ YOUTUBE_API_SERVICE = "youtube"
 YOUTUBE_API_VERSION = "v3"
 CHUNK_SIZE = 256 * 1024  # 256 KB — controls progress-bar granularity
 
-DESCRIPTION_TEMPLATE = """---
-
-Book a call: https://calendly.com/itshassanaziz/discuss-a-project
+DESCRIPTION_TEMPLATE = """Book a call: https://calendly.com/itshassanaziz/discuss-a-project
 
 ==== ==== ====
 
@@ -209,7 +207,7 @@ def main():
         title=metadata.get("title", ""),
     )
     print(f"\n🐦 Posting tweet:\n   {tweet_content}")
-    subprocess.run(["./phantom tweet", tweet_content], check=True)
+    subprocess.run(["phantom tweet", tweet_content], check=True)
     print("✅ Tweet posted!")
 
     print("\n🎉 All done!")
