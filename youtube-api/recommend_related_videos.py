@@ -41,116 +41,36 @@ has a specific weight representing its importance:
 
 * Note: If the script evaluates the exact same video as the seed, it applies a -1.0 
 score penalty to ensure a video never recommends itself.
-
-Examples:
-  python youtube-api/recommend_related_videos.py --metadata /path/to/metadata.json
-  python youtube-api/recommend_related_videos.py --video-id dQw4w9WgXcQ
-  python youtube-api/recommend_related_videos.py --metadata /path/to/metadata.json --json
 """
 
 import argparse
 import json
-import math
 import os
-import re
-from dataclasses import dataclass
-from datetime import UTC, datetime
+import sys
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
-from fetch_videos import API_KEY, CHANNEL_ID, Video, fetch_channel_videos
+# Add the project root directory to sys.path to allow absolute package imports
+root_dir = str(Path(__file__).resolve().parent.parent)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
+# Import shared models and fetchers
+from youtube_api.models import Video, VideoSeed, RankedVideo
+from youtube_api.fetch_videos import fetch_channel_videos
+from youtube_api.utils import (
+    tokenize,
+    normalize_tags,
+    overlap_score,
+    parse_iso8601_duration,
+    duration_similarity,
+    recency_score,
+    popularity_score,
+)
 
 load_dotenv()
-
-TOKEN_RE = re.compile(r"[a-z0-9]+")
-STOP_WORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from",
-    "how", "i", "if", "in", "into", "is", "it", "my", "of", "on", "or",
-    "our", "out", "so", "that", "the", "this", "to", "up", "video", "vs",
-    "we", "with", "you", "your",
-}
-
-
-@dataclass
-class VideoSeed:
-    title: str
-    description: str
-    tags: list[str]
-    category_id: str | None = None
-    duration_seconds: int | None = None
-    video_id: str | None = None
-
-
-@dataclass
-class RankedVideo:
-    video: Video
-    score: float
-    reasons: dict[str, float]
-
-
-def tokenize(text: str) -> set[str]:
-    return {
-        token
-        for token in TOKEN_RE.findall(text.lower())
-        if token not in STOP_WORDS and len(token) > 1
-    }
-
-
-def normalize_tags(tags: list[str]) -> set[str]:
-    combined = " ".join(tags)
-    return tokenize(combined)
-
-
-def overlap_score(left: set[str], right: set[str]) -> float:
-    if not left or not right:
-        return 0.0
-    intersection = len(left & right)
-    if intersection == 0:
-        return 0.0
-    union = len(left | right)
-    return intersection / union
-
-
-def parse_iso8601_duration(value: str | None) -> int | None:
-    if not value:
-        return None
-
-    match = re.fullmatch(
-        r"PT(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?",
-        value,
-    )
-    if not match:
-        return None
-
-    hours = int(match.group("hours") or 0)
-    minutes = int(match.group("minutes") or 0)
-    seconds = int(match.group("seconds") or 0)
-    return hours * 3600 + minutes * 60 + seconds
-
-
-def duration_similarity(left_seconds: int | None, right_seconds: int | None) -> float:
-    if not left_seconds or not right_seconds:
-        return 0.0
-
-    ratio = min(left_seconds, right_seconds) / max(left_seconds, right_seconds)
-    return max(0.0, min(1.0, ratio))
-
-
-def recency_score(published_at: datetime) -> float:
-    now = datetime.now(UTC)
-    age_days = max(0.0, (now - published_at.astimezone(UTC)).days)
-
-    # Favors recent videos without letting age dominate the ranking.
-    return 1.0 / (1.0 + math.log10(age_days + 10.0))
-
-
-def popularity_score(video: Video) -> float:
-    if not video.view_count or video.view_count <= 0:
-        return 0.0
-    return min(1.0, math.log10(video.view_count + 1) / 7.0)
 
 
 def build_seed_from_metadata(metadata: dict[str, Any]) -> VideoSeed:
@@ -190,7 +110,7 @@ def score_video(seed: VideoSeed, candidate: Video) -> RankedVideo:
         "category": 0.08 if seed.category_id and seed.category_id == candidate.category_id else 0.0,
         "duration": duration_similarity(seed.duration_seconds, candidate_duration_seconds) * 0.05,
         "recency": recency_score(candidate.published_at) * 0.02,
-        "popularity": popularity_score(candidate) * 0.01,
+        "popularity": popularity_score(candidate.view_count) * 0.01,
     }
 
     if seed.video_id and seed.video_id == candidate.video_id:
@@ -266,17 +186,26 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    api_key = API_KEY or os.getenv("YOUTUBE_API_KEY")
-    channel_id = CHANNEL_ID or os.getenv("YOUTUBE_CHANNEL_ID")
+    api_key = os.getenv("YOUTUBE_API_KEY")
+    channel_id = os.getenv("YOUTUBE_CHANNEL_ID")
     if not api_key or not channel_id:
-        raise EnvironmentError("YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID must be set.")
+        print("Error: YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID must be set in .env", file=sys.stderr)
+        sys.exit(1)
 
-    videos = fetch_channel_videos(api_key, channel_id)
+    try:
+        videos = fetch_channel_videos(api_key, channel_id)
+    except Exception as e:
+        print(f"Error fetching channel videos: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if args.metadata:
         seed = build_seed_from_metadata(load_metadata(args.metadata))
     else:
-        seed = build_seed_from_existing_video(find_video_by_id(videos, args.video_id))
+        try:
+            seed = build_seed_from_existing_video(find_video_by_id(videos, args.video_id))
+        except Exception as e:
+            print(f"Error finding seed video: {e}", file=sys.stderr)
+            sys.exit(1)
 
     ranked = rank_related_videos(seed, videos, limit=args.limit)
 

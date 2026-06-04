@@ -10,86 +10,22 @@ Supports sorting by views or likes.
 import argparse
 import json
 import os
-import re
 import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from googleapiclient.discovery import build
 
-# Reuse Data models and helper functions from the existing fetch_videos module
-from youtube_api.fetch_videos import Video, fetch_video_details, get_uploads_playlist_id
+# Add the project root directory to sys.path to allow absolute package imports
+root_dir = str(Path(__file__).resolve().parent.parent)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
-
-def resolve_channel_id(youtube, channel_input: str) -> str:
-    """
-    Intelligently resolve a YouTube channel ID from various input formats:
-    - Direct Channel ID (UC...)
-    - Channel URL (/channel/UC...)
-    - Handle URL or raw handle (@handle)
-    - Custom/User URL (/c/..., /user/...)
-    """
-    channel_input = channel_input.strip()
-
-    # 1. Direct Channel ID
-    if re.fullmatch(r"UC[\w-]{22}", channel_input):
-        return channel_input
-
-    # 2. URL containing /channel/UC...
-    match = re.search(r"channel/(UC[\w-]{22})", channel_input)
-    if match:
-        return match.group(1)
-
-    # 3. Handle (starts with @ or URL contains /@)
-    handle_match = re.search(r"@([\w.-]+)", channel_input)
-    if handle_match:
-        handle = handle_match.group(1)
-        try:
-            # Try using forHandle API parameter if supported by the client library
-            response = youtube.channels().list(
-                part="id",
-                forHandle=f"@{handle}"
-            ).execute()
-            items = response.get("items", [])
-            if items:
-                return items[0]["id"]
-        except Exception:
-            pass  # Fallback to search API if forHandle fails or is unsupported
-
-    # 4. User URL containing /user/...
-    user_match = re.search(r"/user/([\w.-]+)", channel_input)
-    if user_match:
-        username = user_match.group(1)
-        try:
-            response = youtube.channels().list(
-                part="id",
-                forUsername=username
-            ).execute()
-            items = response.get("items", [])
-            if items:
-                return items[0]["id"]
-        except Exception:
-            pass
-
-    # 5. Robust Fallback: Search API to locate the channel reliably
-    if not any(flag in sys.argv for flag in ("--json",)):
-        print(f"🔍 Resolving channel ID via search for: {channel_input} …", file=sys.stderr)
-    
-    # Clean up input string for query if it's a full URL
-    query = channel_input.split("/")[-1] if "/" in channel_input else channel_input
-    response = youtube.search().list(
-        part="snippet",
-        q=query,
-        type="channel",
-        maxResults=1
-    ).execute()
-
-    items = response.get("items", [])
-    if items:
-        return items[0]["snippet"]["channelId"]
-
-    raise ValueError(f"Could not resolve YouTube channel ID for input: {channel_input!r}")
+# Reuse Data models and helper functions from package
+from youtube_api.models import Video
+from youtube_api.fetch_videos import fetch_video_details, get_uploads_playlist_id
+from youtube_api.utils import resolve_channel_id, get_youtube_client
 
 
 def fetch_video_ids_with_cutoff(
@@ -193,15 +129,22 @@ def main() -> None:
     args = parse_args()
 
     api_key = args.api_key or os.getenv("YOUTUBE_API_KEY")
-    if not api_key:
-        raise EnvironmentError("YOUTUBE_API_KEY environment variable or --api-key argument must be set.")
 
-    youtube = build("youtube", "v3", developerKey=api_key)
+    # 1. Authenticate and Build API Client
+    try:
+        youtube = get_youtube_client(args.api_key)
+    except Exception as e:
+        print(f"Error authenticating: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    # 1. Resolve Channel ID
-    channel_id = resolve_channel_id(youtube, args.channel)
+    # 2. Resolve Channel ID
+    try:
+        channel_id = resolve_channel_id(youtube, args.channel)
+    except Exception as e:
+        print(f"Error resolving channel ID: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    # 2. Determine Cutoff Date based on requested period
+    # 3. Determine Cutoff Date based on requested period
     now = datetime.now(UTC)
     cutoff_date: Optional[datetime] = None
 
@@ -216,10 +159,10 @@ def main() -> None:
         cutoff_date = now - timedelta(days=180)
     # 'all' leaves cutoff_date as None
 
-    # 3. Fetch Uploads Playlist ID
+    # 4. Fetch Uploads Playlist ID
     uploads_playlist_id = get_uploads_playlist_id(youtube, channel_id)
 
-    # 4. Fetch optimized video IDs up to the cutoff date
+    # 5. Fetch optimized video IDs up to the cutoff date
     if not args.json:
         print(f"📥 Collecting video IDs from playlist: {uploads_playlist_id} …", file=sys.stderr)
     
@@ -235,7 +178,7 @@ def main() -> None:
             print("No videos found in the specified time period.")
         return
 
-    # 5. Fetch comprehensive video details & statistics
+    # 6. Fetch comprehensive video details & statistics
     if not args.json:
         print("📊 Fetching statistics and metadata …", file=sys.stderr)
     
@@ -245,7 +188,7 @@ def main() -> None:
     if cutoff_date:
         videos = [v for v in videos if v.published_at >= cutoff_date]
 
-    # 6. Sort videos descending by requested metric
+    # 7. Sort videos descending by requested metric
     if args.sort == "views":
         videos.sort(key=lambda v: (v.view_count or 0), reverse=True)
     else:
@@ -253,7 +196,7 @@ def main() -> None:
 
     top_videos = videos[:args.limit]
 
-    # 7. Output results
+    # 8. Output results
     if args.json:
         payload = [
             {
