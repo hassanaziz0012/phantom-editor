@@ -19,3 +19,10 @@ wheels/
 auth.json
 tokens
 linkedin_tokens.json
+
+# NextJS
+node_modules
+.next
+
+# cached data
+cache
