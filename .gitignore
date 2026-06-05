@@ -26,3 +26,6 @@ node_modules
 
 # cached data
 cache
+
+# AI models
+Kokoro-82M
