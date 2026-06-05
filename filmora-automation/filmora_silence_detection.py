@@ -60,6 +60,25 @@ def run_automation():
     pyautogui.press('enter')
     time.sleep(3) 
 
+    # Save Project (First Save - dialog opens)
+    print(f"Log: Saving project (first save) to {SAVE_FULL_PATH}...")
+    pyautogui.hotkey('ctrl', 's')
+    time.sleep(2)
+    
+    # Workaround for Windows focus bug: alt-tabbing away and back forces focus on the Save dialog
+    pyautogui.hotkey('alt', 'tab')
+    time.sleep(0.5)
+    pyautogui.hotkey('alt', 'tab')
+    time.sleep(1)
+
+    pyautogui.write(SAVE_FULL_PATH)
+    pyautogui.press('enter')
+    
+    # Handle "Overwrite?" dialog if it exists
+    time.sleep(1)
+    pyautogui.press('y')
+    time.sleep(2) 
+
     # 4. Timeline
     print("Log: Adding to timeline...")
     pyautogui.click(425, 250) 
@@ -131,23 +150,9 @@ def run_automation():
         raise RuntimeError("Silence detection window did not close after clicking 'Finish and Replace' 3 times.")
 
     # 7. Save Project
-    print(f"Log: Saving project to {SAVE_FULL_PATH}...")
+    print("Log: Saving project...")
     pyautogui.hotkey('ctrl', 's')
-
     time.sleep(2)
-    
-    # Workaround for Windows focus bug: alt-tabbing away and back forces focus on the Save dialog
-    pyautogui.hotkey('alt', 'tab')
-    time.sleep(0.5)
-    pyautogui.hotkey('alt', 'tab')
-    time.sleep(1)
-
-    pyautogui.write(SAVE_FULL_PATH)
-    pyautogui.press('enter')
-    
-    # Handle "Overwrite?" dialog if it exists
-    time.sleep(1)
-    pyautogui.press('y')
 
     print("Log: Automation Finished Successfully.")
     notify('Filmora Automation', f'Project "{PROJECT_NAME}" saved.')
