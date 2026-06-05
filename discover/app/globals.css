@@ -1,0 +1,174 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-100: hsl(222, 28%, 17%);
+  --color-brand-200: hsl(222, 28%, 24%);
+  --color-brand-300: hsl(222, 28%, 31%);
+  --color-brand-400: hsl(222, 28%, 38%);
+  --color-brand-500: hsl(222, 28%, 45%);
+  --color-brand-600: hsl(222, 28%, 52%);
+  --color-brand-700: hsl(222, 28%, 59%);
+  --color-brand-800: hsl(222, 28%, 66%);
+  --color-brand-900: hsl(222, 28%, 73%);
+  --color-brand-1000: hsl(222, 28%, 80%);
+  --color-brand-1100: hsl(222, 28%, 87%);
+  --color-brand-1200: hsl(222, 28%, 94%);
+
+  --color-bg: var(--sys-bg);
+  --color-surface: var(--sys-surface);
+  --color-surface-raised: var(--sys-surface-raised);
+  --color-surface-overlay: var(--sys-surface-overlay);
+  --color-border: var(--sys-border);
+  --color-border-subtle: var(--sys-border-subtle);
+
+  --color-primary: var(--sys-text-primary);
+  --color-secondary: var(--sys-text-secondary);
+  --color-disabled: var(--sys-text-disabled);
+  --color-on-brand: var(--sys-text-on-brand);
+
+  --color-brand: var(--sys-brand);
+  --color-brand-hover: var(--sys-brand-hover);
+  --color-brand-subtle: var(--sys-brand-subtle);
+  --color-brand-text: var(--sys-brand-text);
+  --color-outlier-high: var(--sys-outlier-high);
+  --color-outlier-mid: var(--sys-outlier-mid);
+  --color-outlier-low: var(--sys-outlier-low);
+  --color-error: var(--sys-error);
+  --color-error-subtle: var(--sys-error-subtle);
+
+  --font-sans: var(--sys-font-sans);
+  --radius-sm: var(--border-radius-sm);
+  --radius-md: var(--border-radius-md);
+  --radius-lg: var(--border-radius-lg);
+
+  --animate-spin-slow: spin 0.8s linear infinite;
+  --animate-fade-in: fadeIn 0.25s ease-out;
+  --animate-scale-up: scaleUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-slide-in: slideIn 0.25s ease-out forwards;
+
+  --shadow-sm: var(--sys-shadow-sm);
+  --shadow-md: var(--sys-shadow-md);
+  --shadow-lg: var(--sys-shadow-lg);
+}
+
+:root {
+  /* Brand palette */
+  --brand-100: hsl(222, 28%, 17%);
+  --brand-200: hsl(222, 28%, 24%);
+  --brand-300: hsl(222, 28%, 31%);
+  --brand-400: hsl(222, 28%, 38%);
+  --brand-500: hsl(222, 28%, 45%);
+  --brand-600: hsl(222, 28%, 52%);
+  --brand-700: hsl(222, 28%, 59%);
+  --brand-800: hsl(222, 28%, 66%);
+  --brand-900: hsl(222, 28%, 73%);
+  --brand-1000: hsl(222, 28%, 80%);
+  --brand-1100: hsl(222, 28%, 87%);
+  --brand-1200: hsl(222, 28%, 94%);
+
+  /* Semantic — light mode */
+  --sys-bg: #F9F9F9;
+  --sys-surface: #FFFFFF;
+  --sys-surface-raised: #F2F2F2;
+  --sys-surface-overlay: #E5E5E5;
+  --sys-border: #CCCCCC;
+  --sys-border-subtle: #D9D9D9;
+  --sys-text-primary: #0D0D0D;
+  --sys-text-secondary: #666666;
+  --sys-text-disabled: #B3B3B3;
+  --sys-text-on-brand: #FFFFFF;
+  --sys-brand: var(--brand-600);
+  --sys-brand-hover: var(--brand-700);
+  --sys-brand-subtle: var(--brand-1200);
+  --sys-brand-text: var(--brand-500);
+  --sys-outlier-high: #16A34A;
+  --sys-outlier-mid: #D97706;
+  --sys-outlier-low: #666666;
+  --sys-error: #DC2626;
+  --sys-error-subtle: #FEF2F2;
+
+  /* Layout and other presets */
+  --sys-font-sans: 'Google Sans Flex', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --border-radius-sm: 8px;
+  --border-radius-md: 14px;
+  --border-radius-lg: 24px;
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --sys-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --sys-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  --sys-shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Semantic — dark mode */
+    --sys-bg: #0B0E14;
+    --sys-surface: #131924;
+    --sys-surface-raised: #1C2535;
+    --sys-surface-overlay: #253147;
+    --sys-border: #253147;
+    --sys-border-subtle: #1C2535;
+    --sys-text-primary: #F3F4F6;
+    --sys-text-secondary: #9CA3AF;
+    --sys-text-disabled: #4B5563;
+    --sys-text-on-brand: #FFFFFF;
+    --sys-brand: var(--brand-600);
+    --sys-brand-hover: var(--brand-500);
+    --sys-brand-subtle: var(--brand-100);
+    --sys-brand-text: var(--brand-800);
+    --sys-outlier-high: #4ADE80;
+    --sys-outlier-mid: #F59E0B;
+    --sys-outlier-low: #9CA3AF;
+    --sys-error: #EF4444;
+    --sys-error-subtle: rgba(239, 68, 68, 0.15);
+
+    --sys-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.1);
+    --sys-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.25), 0 2px 4px -1px rgba(0, 0, 0, 0.15);
+    --sys-shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* Global Keyframe Animations */
+@keyframes slideIn {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleUp {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
