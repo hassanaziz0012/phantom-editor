@@ -207,7 +207,7 @@ def main():
         title=metadata.get("title", ""),
     )
     print(f"\n🐦 Posting tweet:\n   {tweet_content}")
-    subprocess.run(["phantom tweet", tweet_content], check=True)
+    subprocess.run(["phantom", "tweet", tweet_content], check=True)
     print("✅ Tweet posted!")
 
     print("\n🎉 All done!")
