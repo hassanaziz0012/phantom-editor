@@ -18,6 +18,7 @@ show_usage() {
     echo "  youtube recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
     echo "  youtube create-metadata <video_path>"
     echo "  youtube analyze-comments [<video_url_or_id>] [--limit <int>] [--model <gemini-3.5-flash|gemma-4>]"
+    echo "  youtube count-uploads [<channel>] [--fresh]"
 }
 
 if [ $# -eq 0 ]; then
@@ -112,12 +113,15 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/create_metadata.py" "$@"
         elif [ "$SUBCOMMAND" = "analyze-comments" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/sentiment_analyzer.py" "$@"
+        elif [ "$SUBCOMMAND" = "count-uploads" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/count_youtube_uploads.py" "$@"
         else
             echo "Unknown youtube subcommand: $SUBCOMMAND"
             echo "Usage: phantom youtube upload <video_path>"
             echo "       phantom youtube recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
             echo "       phantom youtube create-metadata <video_path>"
             echo "       phantom youtube analyze-comments [<video_url_or_id>] [--limit <int>] [--model <gemini-3.5-flash|gemma-4>]"
+            echo "       phantom youtube count-uploads [<channel>] [--fresh]"
             exit 1
         fi
         ;;
