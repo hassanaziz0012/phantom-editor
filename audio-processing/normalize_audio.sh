@@ -68,7 +68,7 @@ fi
 echo "Normalizing '$INPUT_FILE' to '$OUTPUT_FILE'..."
 
 # Run ffmpeg normalization
-if ! ffmpeg -y -i "$INPUT_FILE" -af "loudnorm=I=-16:TP=-1.5:LRA=11" "$OUTPUT_FILE" -hide_banner -loglevel warning; then
+if ! ffmpeg -y -i "$INPUT_FILE" -af "loudnorm=I=-16:TP=-1.5:LRA=11" -ar 48000 -c:a pcm_s24le "$OUTPUT_FILE" -hide_banner -loglevel warning; then
     echo "Error: ffmpeg failed."
     exit 1
 fi

@@ -60,7 +60,7 @@ echo "--- Step 5: Copying final processed audio ---"
 cp "$NORMALIZED_WAV" "$PROCESSED_WAV"
 # 6. Replace audio in original MP4
 echo "--- Step 6: Replacing audio in original MP4 ---"
-ffmpeg -y -i "$INPUT_MP4" -i "$PROCESSED_WAV" -c:v copy -map 0:v:0 -map 1:a:0 -c:a aac -b:a 256k "$FINAL_MP4" -hide_banner -loglevel warning
+ffmpeg -y -i "$INPUT_MP4" -i "$PROCESSED_WAV" -c:v copy -map 0:v:0 -map 1:a:0 -c:a aac -b:a 384k "$FINAL_MP4" -hide_banner -loglevel warning
 
 echo "Audio processing pipeline complete!"
 echo "Final processed audio is located at: $PROCESSED_WAV"

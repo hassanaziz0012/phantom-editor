@@ -33,7 +33,7 @@ fi
 ffmpeg -loglevel error -i "$INPUT_FILE" \
        -vn \
        -acodec pcm_s16le \
-       -ar 44100 \
+       -ar 48000 \
        -ac 2 \
        -y \
        "$OUTPUT_FILE"
