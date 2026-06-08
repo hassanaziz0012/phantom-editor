@@ -14,10 +14,10 @@ show_usage() {
     echo "  tweet [--image] <tweet_content>"
     echo "  tts speak <text>"
     echo "  tts save <text> [--output-dir <dir>]"
-    echo "  youtube upload <video_path>"
-    echo "  youtube recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
-    echo "  youtube create-metadata <video_path>"
-    echo "  youtube count-uploads [<channel>] [--fresh]"
+    echo "  yt upload <video_path>"
+    echo "  yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
+    echo "  yt create-metadata <video_path>"
+    echo "  yt count-uploads [<channel>] [--fresh]"
 }
 
 if [ $# -eq 0 ]; then
@@ -101,7 +101,7 @@ case "$COMMAND" in
             exit 1
         fi
         ;;
-    youtube)
+    yt)
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "upload" ]; then
@@ -113,11 +113,11 @@ case "$COMMAND" in
         elif [ "$SUBCOMMAND" = "count-uploads" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/count_youtube_uploads.py" "$@"
         else
-            echo "Unknown youtube subcommand: $SUBCOMMAND"
-            echo "Usage: phantom youtube upload <video_path>"
-            echo "       phantom youtube recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
-            echo "       phantom youtube create-metadata <video_path>"
-            echo "       phantom youtube count-uploads [<channel>] [--fresh]"
+            echo "Unknown yt subcommand: $SUBCOMMAND"
+            echo "Usage: phantom yt upload <video_path>"
+            echo "       phantom yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
+            echo "       phantom yt create-metadata <video_path>"
+            echo "       phantom yt count-uploads [<channel>] [--fresh]"
             exit 1
         fi
         ;;
