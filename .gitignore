@@ -25,9 +25,11 @@ instagram_session.json
 node_modules
 .next
 
-# cached data
+# cache / data
 cache
+shorts/shorts.json
 
 # AI models
 Kokoro-82M
 video-editing/models/
+
