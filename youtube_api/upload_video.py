@@ -11,8 +11,14 @@ import json
 import os
 import subprocess
 import sys
-
 from pathlib import Path
+
+# Add project root to sys.path to import global config
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.append(str(repo_root))
+import config
+
 
 import httplib2
 from googleapiclient.discovery import build
@@ -34,21 +40,7 @@ YOUTUBE_API_SERVICE = "youtube"
 YOUTUBE_API_VERSION = "v3"
 CHUNK_SIZE = 256 * 1024  # 256 KB — controls progress-bar granularity
 
-DESCRIPTION_TEMPLATE = """Book a call: https://calendly.com/itshassanaziz/discuss-a-project
 
-==== ==== ====
-
-{video_description}
-
-==== ==== ====
-
-LINKS
-
-Website: https://www.hassandev.me
-Portfolio: https://www.hassandev.me/work
-YouTube: https://www.youtube.com/@itshassanaziz?sub_confirmation=1
-My Book: https://www.hassandev.me/designing-websites
-X / Twitter: https://x.com/nothassanaziz"""
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +84,7 @@ def upload_video(youtube, video_path: Path, metadata: dict) -> str:
     """Upload the video and return its YouTube video ID."""
 
     raw_description = metadata.get("description", "")
-    full_description = DESCRIPTION_TEMPLATE.format(video_description=raw_description)
+    full_description = config.DESCRIPTION_TEMPLATE.format(video_description=raw_description)
 
     body = {
         "snippet": {
