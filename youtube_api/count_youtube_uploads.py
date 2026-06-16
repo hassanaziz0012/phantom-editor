@@ -23,6 +23,7 @@ if root_dir not in sys.path:
 from youtube_api.fetch_videos import fetch_channel_videos
 from youtube_api.utils import (
     get_youtube_client,
+    parse_iso8601_duration,
     resolve_channel_id,
     supports_color,
 )
@@ -108,10 +109,21 @@ def main() -> None:
     local_tz = local_now.tzinfo
     today_date = local_now.date()
 
-    count_today = 0
-    count_7 = 0
-    count_14 = 0
-    count_30 = 0
+    videos_today = 0
+    shorts_today = 0
+    total_today = 0
+
+    videos_7 = 0
+    shorts_7 = 0
+    total_7 = 0
+
+    videos_14 = 0
+    shorts_14 = 0
+    total_14 = 0
+
+    videos_30 = 0
+    shorts_30 = 0
+    total_30 = 0
 
     for v in videos:
         # Convert video published_at to system local timezone
@@ -123,14 +135,33 @@ def main() -> None:
             # Skip videos published in the future
             continue
 
+        duration_sec = parse_iso8601_duration(v.duration)
+        is_short = duration_sec is not None and duration_sec <= 60
+
         if diff_days == 0:
-            count_today += 1
+            if is_short:
+                shorts_today += 1
+            else:
+                videos_today += 1
+            total_today += 1
         if diff_days < 7:
-            count_7 += 1
+            if is_short:
+                shorts_7 += 1
+            else:
+                videos_7 += 1
+            total_7 += 1
         if diff_days < 14:
-            count_14 += 1
+            if is_short:
+                shorts_14 += 1
+            else:
+                videos_14 += 1
+            total_14 += 1
         if diff_days < 30:
-            count_30 += 1
+            if is_short:
+                shorts_30 += 1
+            else:
+                videos_30 += 1
+            total_30 += 1
 
     # Format localized date strings for date ranges
     today_str = today_date.strftime("%Y-%m-%d")
@@ -145,41 +176,52 @@ def main() -> None:
 
     # 5. Display statistics in a premium ASCII table format
     # Column sizes (excluding spaces around content):
-    # Col 1: Period (20 chars)
-    # Col 2: Video Count (11 chars)
-    # Col 3: Date Range (24 chars)
+    # Col 1: Period (16 chars)
+    # Col 2: Videos (10 chars)
+    # Col 3: Shorts (10 chars)
+    # Col 4: Total (10 chars)
+    # Col 5: Date Range (24 chars)
     
+    border_top    = f"{c_bold}{c_header}┌" + "─" * 84 + f"┐{c_reset}"
+    border_middle = f"{c_bold}{c_header}├" + "─" * 18 + "┬" + "─" * 12 + "┬" + "─" * 12 + "┬" + "─" * 12 + "┬" + "─" * 26 + f"┤{c_reset}"
+    border_data   = f"{c_bold}{c_header}├" + "─" * 18 + "┼" + "─" * 12 + "┼" + "─" * 12 + "┼" + "─" * 12 + "┼" + "─" * 26 + f"┤{c_reset}"
+    border_bottom = f"{c_bold}{c_header}└" + "─" * 18 + "┴" + "─" * 12 + "┴" + "─" * 12 + "┴" + "─" * 12 + "┴" + "─" * 26 + f"┘{c_reset}"
+
     print()
-    print(f"{c_bold}{c_header}┌─────────────────────────────────────────────────────────────┐{c_reset}")
+    print(border_top)
     title_str = f"YOUTUBE UPLOAD STATISTICS - {channel_title}"
-    # Truncate if it's too long to fit centered in 59 characters
-    if len(title_str) > 57:
-        title_str = title_str[:54] + "..."
-    centered_title = title_str.center(59)
-    print(f"{c_bold}{c_header}│  {c_bold}{c_yellow}{centered_title}{c_reset}{c_bold}{c_header}  │{c_reset}")
-    print(f"{c_bold}{c_header}├──────────────────────┬─────────────┬────────────────────────┤{c_reset}")
+    # Truncate if it's too long to fit centered in 82 characters
+    if len(title_str) > 80:
+        title_str = title_str[:77] + "..."
+    centered_title = title_str.center(82)
+    print(f"{c_bold}{c_header}│{c_reset} {c_bold}{c_yellow}{centered_title}{c_reset} {c_bold}{c_header}│{c_reset}")
+    print(border_middle)
     
     # Header Row
-    h_col1 = f"{'Period':<20}"
-    h_col2 = f"{'Video Count':>11}"
-    h_col3 = f"{'Date Range (Local)':<24}"
-    print(f"{c_bold}{c_header}│{c_reset} {c_bold}{c_blue}{h_col1}{c_reset} {c_bold}{c_header}│{c_reset} {c_bold}{c_blue}{h_col2}{c_reset} {c_bold}{c_header}│{c_reset} {c_bold}{c_blue}{h_col3}{c_reset} {c_bold}{c_header}│{c_reset}")
-    print(f"{c_bold}{c_header}├──────────────────────┼─────────────┼────────────────────────┤{c_reset}")
+    h_col1 = f"{'Period':<16}"
+    h_col2 = f"{'Videos':>10}"
+    h_col3 = f"{'Shorts':>10}"
+    h_col4 = f"{'Total':>10}"
+    h_col5 = f"{'Date Range (Local)':<24}"
+    print(f"{c_bold}{c_header}│{c_reset} {c_bold}{c_blue}{h_col1}{c_reset} {c_bold}{c_header}│{c_reset} {c_bold}{c_blue}{h_col2}{c_reset} {c_bold}{c_header}│{c_reset} {c_bold}{c_blue}{h_col3}{c_reset} {c_bold}{c_header}│{c_reset} {c_bold}{c_blue}{h_col4}{c_reset} {c_bold}{c_header}│{c_reset} {c_bold}{c_blue}{h_col5}{c_reset} {c_bold}{c_header}│{c_reset}")
+    print(border_data)
 
     # Data Rows function to prevent color formatting string length distortion
-    def format_row(period: str, count: int, date_range: str) -> str:
-        p_part = f"{c_bold}{c_cyan}{period:<20}{c_reset}"
-        c_part = f"{c_bold}{c_green}{count:>11,}{c_reset}"
+    def format_row(period: str, videos: int, shorts: int, total: int, date_range: str) -> str:
+        p_part = f"{c_bold}{c_cyan}{period:<16}{c_reset}"
+        v_part = f"{c_bold}{c_green}{videos:>10,}{c_reset}"
+        s_part = f"{c_bold}{c_green}{shorts:>10,}{c_reset}"
+        t_part = f"{c_bold}{c_green}{total:>10,}{c_reset}"
         d_part = f"{date_range:<24}"
-        return f"{c_bold}{c_header}│{c_reset} {p_part} {c_bold}{c_header}│{c_reset} {c_part} {c_bold}{c_header}│{c_reset} {d_part} {c_bold}{c_header}│{c_reset}"
+        return f"{c_bold}{c_header}│{c_reset} {p_part} {c_bold}{c_header}│{c_reset} {v_part} {c_bold}{c_header}│{c_reset} {s_part} {c_bold}{c_header}│{c_reset} {t_part} {c_bold}{c_header}│{c_reset} {d_part} {c_bold}{c_header}│{c_reset}"
 
     # Print rows
-    print(format_row("Today", count_today, range_today))
-    print(format_row("Last 7 Days", count_7, range_7))
-    print(format_row("Last 14 Days", count_14, range_14))
-    print(format_row("Last 30 Days", count_30, range_30))
+    print(format_row("Today", videos_today, shorts_today, total_today, range_today))
+    print(format_row("Last 7 Days", videos_7, shorts_7, total_7, range_7))
+    print(format_row("Last 14 Days", videos_14, shorts_14, total_14, range_14))
+    print(format_row("Last 30 Days", videos_30, shorts_30, total_30, range_30))
     
-    print(f"{c_bold}{c_header}└──────────────────────┴─────────────┴────────────────────────┘{c_reset}")
+    print(border_bottom)
     print()
 
 
