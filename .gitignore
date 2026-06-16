@@ -19,6 +19,7 @@ wheels/
 auth.json
 tokens
 linkedin_tokens.json
+instagram_session.json
 
 # NextJS
 node_modules
@@ -29,3 +30,4 @@ cache
 
 # AI models
 Kokoro-82M
+video-editing/models/
