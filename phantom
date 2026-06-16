@@ -10,6 +10,7 @@ show_usage() {
     echo "Commands:"
     echo "  audio process <path_to_mp4>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
+    echo "  edit caption <video_path> [arguments]"
     echo "  filmora detect-silence <path_to_mp4>"
     echo "  tweet [--image] <tweet_content>"
     echo "  tts speak <text>"
@@ -18,6 +19,9 @@ show_usage() {
     echo "  yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
     echo "  yt create-metadata <video_path>"
     echo "  yt count-uploads [<channel>] [--fresh]"
+    echo "  shorts metadata create <folder_path> [arguments]"
+    echo "  shorts metadata clean"
+    echo "  shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
 }
 
 if [ $# -eq 0 ]; then
@@ -49,9 +53,16 @@ case "$COMMAND" in
         shift
         if [ "$SUBCOMMAND" = "add_bgm" ]; then
             "$BASE_DIR/video-editing/add_bgm_to_video.sh" "$@"
+        elif [ "$SUBCOMMAND" = "caption" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom edit caption <video_path> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/auto_caption.py" "$@"
         else
             echo "Unknown edit subcommand: $SUBCOMMAND"
             echo "Usage: phantom edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
+            echo "       phantom edit caption <video_path> [arguments]"
             exit 1
         fi
         ;;
@@ -118,6 +129,36 @@ case "$COMMAND" in
             echo "       phantom yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
             echo "       phantom yt create-metadata <video_path>"
             echo "       phantom yt count-uploads [<channel>] [--fresh]"
+            exit 1
+        fi
+        ;;
+    shorts)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "metadata" ]; then
+            METADATA_CMD="$1"
+            shift
+            if [ "$METADATA_CMD" = "create" ]; then
+                if [ $# -eq 0 ]; then
+                    echo "Usage: phantom shorts metadata create <folder_path> [arguments]"
+                    exit 1
+                fi
+                uv run --project "$BASE_DIR" python "$BASE_DIR/shorts/create_bulk_metadata.py" "$@"
+            elif [ "$METADATA_CMD" = "clean" ]; then
+                uv run --project "$BASE_DIR" python "$BASE_DIR/shorts/clean_metadata.py" "$@"
+            else
+                echo "Unknown shorts metadata subcommand: $METADATA_CMD"
+                echo "Usage: phantom shorts metadata create <folder_path> [arguments]"
+                echo "       phantom shorts metadata clean"
+                exit 1
+            fi
+        elif [ "$SUBCOMMAND" = "upload" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/shorts/upload.py" "$@"
+        else
+            echo "Unknown shorts subcommand: $SUBCOMMAND"
+            echo "Usage: phantom shorts metadata create <folder_path> [arguments]"
+            echo "       phantom shorts metadata clean"
+            echo "       phantom shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
             exit 1
         fi
         ;;
