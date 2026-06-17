@@ -152,12 +152,20 @@ if __name__ == "__main__":
         action="store_true",
         help="Only process the first 5 seconds of the video for preview."
     )
+    parser.add_argument(
+        "--output", "-o",
+        default=None,
+        help="Path to save the generated subtitles SRT file (default: captions.srt in the same directory as the input video)."
+    )
 
     args = parser.parse_args()
 
-    # Place output captions.srt in the same directory as the input video file
-    video_dir = os.path.dirname(os.path.abspath(args.video_path))
-    output_srt = os.path.join(video_dir, "captions.srt")
+    if args.output:
+        output_srt = args.output
+    else:
+        # Place output captions.srt in the same directory as the input video file
+        video_dir = os.path.dirname(os.path.abspath(args.video_path))
+        output_srt = os.path.join(video_dir, "captions.srt")
 
     transcribe_video(
         video_path=args.video_path,
