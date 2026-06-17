@@ -23,6 +23,7 @@ show_usage() {
     echo "  shorts metadata create <folder_path> [arguments]"
     echo "  shorts metadata clean"
     echo "  shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
+    echo "  shorts auto-trim [arguments]"
 }
 
 if [ $# -eq 0 ]; then
@@ -162,11 +163,14 @@ case "$COMMAND" in
             fi
         elif [ "$SUBCOMMAND" = "upload" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/shorts/upload.py" "$@"
+        elif [ "$SUBCOMMAND" = "auto-trim" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/auto_trim_shorts.py" "$@"
         else
             echo "Unknown shorts subcommand: $SUBCOMMAND"
             echo "Usage: phantom shorts metadata create <folder_path> [arguments]"
             echo "       phantom shorts metadata clean"
             echo "       phantom shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
+            echo "       phantom shorts auto-trim [arguments]"
             exit 1
         fi
         ;;
