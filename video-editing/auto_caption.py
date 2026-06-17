@@ -3,21 +3,26 @@ import shutil
 import subprocess
 import uuid
 from dataclasses import dataclass
-from faster_whisper import WhisperModel
+from transcribe import transcribe_video
 
 @dataclass
 class CaptionPreset:
     max_words: int
     font_size: int
     bottom_margin: int
+    uppercase: bool = True
 
 PRESETS = {
-    "shorts": CaptionPreset(max_words=5, font_size=12, bottom_margin=50)
+    "shorts": CaptionPreset(max_words=5, font_size=12, bottom_margin=50, uppercase=True)
 }
 
-def generate_captions(video_path, model_path_or_size="small.en", output_srt_path="captions.srt", max_words=None, output_video_path=None, srt_only=False, uppercase=True, font_size=16, preview=False, bottom_margin=10):
+def generate_captions(video_path, model_path_or_size="small.en", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True):
+    # Determine the directory of the input video first to save SRT file in the same folder
+    video_dir = os.path.dirname(os.path.abspath(video_path))
+    output_srt_path = os.path.join(video_dir, "captions.srt")
+
     # Determine the final output video path based on the original video path if not explicitly provided
-    if not srt_only and not output_video_path:
+    if not output_video_path:
         base, ext = os.path.splitext(video_path)
         output_video_path = f"{base}_captioned{ext}"
 
@@ -46,67 +51,21 @@ def generate_captions(video_path, model_path_or_size="small.en", output_srt_path
             raise
 
     try:
-        print(f"Loading Whisper model from: {model_path_or_size}")
-        model = WhisperModel(model_path_or_size, device="cpu", compute_type="int8")
-
-        print(True, f"Processing: {video_path}")
-        if max_words:
-            segments, info = model.transcribe(video_path, beam_size=5, word_timestamps=True)
+        if os.path.exists(output_srt_path):
+            print(f"Captions file '{output_srt_path}' already exists. Skipping transcription model run.")
         else:
-            segments, info = model.transcribe(video_path, beam_size=5)
+            # Generate the subtitles using the imported transcribe_video function
+            transcribe_video(
+                video_path=video_path,
+                model_path_or_size=model_path_or_size,
+                output_srt_path=output_srt_path,
+                max_words=max_words,
+                uppercase=uppercase,
+                preview=False,  # Cropping is already handled above if in preview mode
+                vad_filter=vad_filter
+            )
 
-        print(f"Detected language '{info.language}' with probability {info.language_probability:.2f}")
 
-        # Write to standard SRT format
-        with open(output_srt_path, "w", encoding="utf-8") as f:
-            if max_words:
-                caption_idx = 1
-                for segment in segments:
-                    words = getattr(segment, "words", None)
-                    if not words:
-                        # Fallback to standard segment logic if words are not available
-                        text = segment.text.strip()
-                        if uppercase:
-                            text = text.upper()
-                        if text:
-                            start_time = format_srt_time(segment.start)
-                            end_time = format_srt_time(segment.end)
-                            f.write(f"{caption_idx}\n{start_time} --> {end_time}\n{text}\n\n")
-                            print(f"[{start_time} -> {end_time}] {text}")
-                            caption_idx += 1
-                        continue
-                    
-                    # Split this segment's words into chunks of at most max_words
-                    for j in range(0, len(words), max_words):
-                        chunk = words[j:j + max_words]
-                        if not chunk:
-                            continue
-                        
-                        chunk_start = format_srt_time(chunk[0].start)
-                        chunk_end = format_srt_time(chunk[-1].end)
-                        chunk_text = " ".join(w.word.strip() for w in chunk).strip()
-                        if uppercase:
-                            chunk_text = chunk_text.upper()
-                        
-                        if chunk_text:
-                            f.write(f"{caption_idx}\n{chunk_start} --> {chunk_end}\n{chunk_text}\n\n")
-                            print(f"[{chunk_start} -> {chunk_end}] {chunk_text}")
-                            caption_idx += 1
-            else:
-                for i, segment in enumerate(segments, start=1):
-                    start_time = format_srt_time(segment.start)
-                    end_time = format_srt_time(segment.end)
-                    text = segment.text.strip()
-                    if uppercase:
-                        text = text.upper()
-                    
-                    f.write(f"{i}\n{start_time} --> {end_time}\n{text}\n\n")
-                    print(f"[{start_time} -> {end_time}] {text}")
-
-        print(f"\nSuccess! Captions saved to {output_srt_path}")
-
-        if srt_only:
-            return
 
         print(f"Burning captions into video and saving to: {output_video_path}")
         
@@ -138,14 +97,6 @@ def generate_captions(video_path, model_path_or_size="small.en", output_srt_path
         if preview_video_path and os.path.exists(preview_video_path):
             os.remove(preview_video_path)
 
-def format_srt_time(seconds):
-    """Converts seconds to SRT time format: HH:MM:SS,mmm"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    milliseconds = int((seconds % 1) * 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
-
 if __name__ == "__main__":
     import argparse
 
@@ -170,11 +121,7 @@ if __name__ == "__main__":
         default=default_model,
         help="Path to local model directory or Hugging Face model size (default: video-editing/models/faster-whisper-small.en)."
     )
-    parser.add_argument(
-        "--output", "-o",
-        default="captions.srt",
-        help="Path to the output SRT file (default: captions.srt)."
-    )
+
     parser.add_argument(
         "--max-words", "-w",
         type=positive_int,
@@ -184,24 +131,31 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-video", "-v",
         default=None,
-        help="Path to the output video file with burned captions. If not specified, defaults to <input_basename>_captioned.mp4."
-    )
-    parser.add_argument(
-        "--srt-only",
-        action="store_true",
-        help="Only generate the SRT subtitle file and skip burning it into the video."
+        help="Path to the output video file with burned captions. If not specified, defaults to <input_basename>_captioned{ext}."
     )
     parser.add_argument(
         "--uppercase",
         action="store_true",
-        default=True,
-        help="Convert captions to uppercase (default: True)."
+        default=None,
+        help="Convert captions to uppercase (default: False)."
     )
     parser.add_argument(
         "--no-uppercase",
         dest="uppercase",
         action="store_false",
         help="Disable converting captions to uppercase."
+    )
+    parser.add_argument(
+        "--vad-filter",
+        action="store_true",
+        default=None,
+        help="Use VAD (Voice Activity Detection) filter to ignore silences (default: True)."
+    )
+    parser.add_argument(
+        "--no-vad-filter",
+        dest="vad_filter",
+        action="store_false",
+        help="Disable VAD (Voice Activity Detection) filter."
     )
     parser.add_argument(
         "--font-size", "-f",
@@ -231,6 +185,8 @@ if __name__ == "__main__":
     max_words = args.max_words
     font_size = args.font_size
     bottom_margin = args.bottom_margin
+    uppercase = args.uppercase
+    vad_filter = args.vad_filter
 
     if args.preset:
         preset = PRESETS[args.preset]
@@ -240,6 +196,14 @@ if __name__ == "__main__":
             font_size = preset.font_size
         if bottom_margin is None:
             bottom_margin = preset.bottom_margin
+        if uppercase is None:
+            uppercase = preset.uppercase
+
+    if uppercase is None:
+        uppercase = False
+
+    if vad_filter is None:
+        vad_filter = True
 
     if font_size is None:
         font_size = 16
@@ -249,12 +213,11 @@ if __name__ == "__main__":
     generate_captions(
         args.video_path,
         model_path_or_size=args.model,
-        output_srt_path=args.output,
         max_words=max_words,
         output_video_path=args.output_video,
-        srt_only=args.srt_only,
-        uppercase=args.uppercase,
+        uppercase=uppercase,
         font_size=font_size,
         preview=args.preview,
-        bottom_margin=bottom_margin
+        bottom_margin=bottom_margin,
+        vad_filter=vad_filter
     )
