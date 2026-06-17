@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 import json
+import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
 from instagrapi import Client
@@ -115,7 +116,7 @@ def main():
     if session_loaded:
         try:
             # Perform a lightweight API call to verify if the session is still active/valid
-            cl.get_timeline_feed(amount=1)
+            cl.get_timeline_feed()
             logged_in = True
             print("Session is valid. Logged in successfully.")
         except LoginRequired:
@@ -136,6 +137,27 @@ def main():
         except Exception as e:
             print(f"Error: Login failed: {e}", file=sys.stderr)
             sys.exit(1)
+
+    # Auto-generate thumbnail if none specified or found
+    temp_thumbnail = False
+    if not thumbnail_path:
+        print("No thumbnail specified. Generating thumbnail using ffmpeg...")
+        generated_thumb = video_path.with_suffix(".jpg")
+        try:
+            subprocess.run([
+                "ffmpeg", "-y",
+                "-ss", "00:00:01",
+                "-i", str(video_path),
+                "-vframes", "1",
+                "-q:v", "2",
+                str(generated_thumb)
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            if generated_thumb.exists():
+                thumbnail_path = generated_thumb
+                temp_thumbnail = True
+                print(f"Generated thumbnail: '{thumbnail_path}'")
+        except Exception as e:
+            print(f"Warning: Failed to generate thumbnail with ffmpeg: {e}", file=sys.stderr)
 
     # 3. Upload the Reel
     print(f"Uploading Reel: '{video_path}'...")
@@ -177,6 +199,13 @@ def main():
     except Exception as e:
         print(f"Error: Upload failed: {e}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        if temp_thumbnail and thumbnail_path and thumbnail_path.exists():
+            try:
+                thumbnail_path.unlink()
+                print("Cleaned up temporary thumbnail.")
+            except Exception as e:
+                print(f"Warning: Failed to clean up temporary thumbnail: {e}", file=sys.stderr)
 
 if __name__ == "__main__":
     main()
