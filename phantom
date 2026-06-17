@@ -11,6 +11,7 @@ show_usage() {
     echo "  audio process <path_to_mp4>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
     echo "  edit caption <video_path> [arguments]"
+    echo "  edit transcribe <video_path> [arguments]"
     echo "  filmora detect-silence <path_to_mp4>"
     echo "  tweet [--image] <tweet_content>"
     echo "  tts speak <text>"
@@ -59,10 +60,17 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/auto_caption.py" "$@"
+        elif [ "$SUBCOMMAND" = "transcribe" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom edit transcribe <video_path> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/transcribe.py" "$@"
         else
             echo "Unknown edit subcommand: $SUBCOMMAND"
             echo "Usage: phantom edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
             echo "       phantom edit caption <video_path> [arguments]"
+            echo "       phantom edit transcribe <video_path> [arguments]"
             exit 1
         fi
         ;;
