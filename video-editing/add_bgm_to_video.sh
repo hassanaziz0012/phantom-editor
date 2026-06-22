@@ -90,11 +90,14 @@ fi
 
 process_video() {
     local VIDEO_FILE="$1"
+    local OUTPUT_FILE="$2"
     
-    local VIDEO_DIR=$(dirname "$VIDEO_FILE")
-    local VIDEO_BASENAME=$(basename "$VIDEO_FILE")
-    local VIDEO_NAME="${VIDEO_BASENAME%.*}"
-    local OUTPUT_FILE="$VIDEO_DIR/${VIDEO_NAME}-bgm.mp4"
+    if [ -z "$OUTPUT_FILE" ]; then
+        local VIDEO_DIR=$(dirname "$VIDEO_FILE")
+        local VIDEO_BASENAME=$(basename "$VIDEO_FILE")
+        local VIDEO_NAME="${VIDEO_BASENAME%.*}"
+        OUTPUT_FILE="$VIDEO_DIR/${VIDEO_NAME}-bgm.mp4"
+    fi
 
     echo "Video file: $VIDEO_FILE"
     echo "BGM file: $BGM_FILE"
@@ -182,6 +185,10 @@ if [ -d "$INPUT_PATH" ]; then
         exit 0
     fi
 
+    ABS_INPUT_PATH=$(realpath "$INPUT_PATH")
+    PARENT_DIR=$(dirname "$ABS_INPUT_PATH")
+    OUTPUT_DIR="$PARENT_DIR/added_bgm"
+
     echo "Found ${#VIDEO_FILES[@]} video file(s) to process."
     SUCCESS_COUNT=0
     FAILURE_COUNT=0
@@ -192,7 +199,12 @@ if [ -d "$INPUT_PATH" ]; then
         echo ""
         echo "[$NUM/${#VIDEO_FILES[@]}] Processing: $VIDEO_FILE"
         
-        if process_video "$VIDEO_FILE"; then
+        ABS_VIDEO_FILE=$(realpath "$VIDEO_FILE")
+        REL_PATH=$(realpath --relative-to="$ABS_INPUT_PATH" "$ABS_VIDEO_FILE")
+        OUTPUT_FILE="$OUTPUT_DIR/$REL_PATH"
+        mkdir -p "$(dirname "$OUTPUT_FILE")"
+
+        if process_video "$VIDEO_FILE" "$OUTPUT_FILE"; then
             SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
         else
             echo "Failed to process: $VIDEO_FILE"
