@@ -353,6 +353,10 @@ if __name__ == "__main__":
         if args.output_video is not None:
             parser.error("Cannot specify --output-video when the input is a directory.")
 
+        input_dir = os.path.abspath(args.video_path)
+        parent_dir = os.path.dirname(input_dir)
+        output_dir = os.path.join(parent_dir, "captioned")
+
         video_files = []
         if args.recursive:
             for root, dirs, files in os.walk(args.video_path):
@@ -375,13 +379,18 @@ if __name__ == "__main__":
 
         print(f"Found {len(video_files)} video file(s) to process.")
         for idx, video_file in enumerate(sorted(video_files), 1):
+            abs_video_file = os.path.abspath(video_file)
+            rel_path = os.path.relpath(abs_video_file, start=input_dir)
+            output_video_path = os.path.join(output_dir, rel_path)
+            os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
             print(f"\n[{idx}/{len(video_files)}] Processing: {video_file}")
+            print(f"Target output: {output_video_path}")
             try:
                 generate_captions(
                     video_file,
                     model_path_or_size=args.model,
                     max_words=max_words,
-                    output_video_path=None,
+                    output_video_path=output_video_path,
                     uppercase=uppercase,
                     font_size=font_size,
                     preview=args.preview,
