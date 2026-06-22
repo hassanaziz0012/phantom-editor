@@ -48,6 +48,9 @@ def transcribe_video(video_path, model_path_or_size, output_srt_path, max_words=
 
         print(f"Detected language '{info.language}' with probability {info.language_probability:.2f}")
 
+        # Create output directory if it doesn't exist
+        os.makedirs(os.path.dirname(os.path.abspath(output_srt_path)), exist_ok=True)
+
         # Write to standard SRT format
         with open(output_srt_path, "w", encoding="utf-8") as f:
             if max_words:
@@ -102,7 +105,7 @@ def transcribe_video(video_path, model_path_or_size, output_srt_path, max_words=
 if __name__ == "__main__":
     import argparse
 
-    default_model = os.path.join(os.path.dirname(__file__), "models", "faster-whisper-small.en")
+    default_model = os.path.join(os.path.dirname(__file__), "models", "faster-whisper-medium.en")
 
     def positive_int(value):
         ivalue = int(value)
@@ -155,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output", "-o",
         default=None,
-        help="Path to save the generated subtitles SRT file (default: captions.srt in the same directory as the input video)."
+        help="Path to save the generated subtitles SRT file (default: same name as video file with .srt extension in the same directory)."
     )
 
     args = parser.parse_args()
@@ -163,9 +166,10 @@ if __name__ == "__main__":
     if args.output:
         output_srt = args.output
     else:
-        # Place output captions.srt in the same directory as the input video file
+        # Place output SRT in the same directory as the input video file with the same name
         video_dir = os.path.dirname(os.path.abspath(args.video_path))
-        output_srt = os.path.join(video_dir, "captions.srt")
+        video_name_without_ext, _ = os.path.splitext(os.path.basename(args.video_path))
+        output_srt = os.path.join(video_dir, f"{video_name_without_ext}.srt")
 
     transcribe_video(
         video_path=args.video_path,

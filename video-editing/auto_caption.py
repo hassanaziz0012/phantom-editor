@@ -1,6 +1,8 @@
 import os
+import re
 import shutil
 import subprocess
+import textwrap
 import uuid
 from dataclasses import dataclass
 from transcribe import transcribe_video
@@ -16,10 +18,128 @@ PRESETS = {
     "shorts": CaptionPreset(max_words=5, font_size=12, bottom_margin=50, uppercase=True)
 }
 
+# Helper functions for ASS caption styling with white rounded backgrounds
+def srt_time_to_ass(srt_time_str):
+    h_m_s, ms = srt_time_str.split(',')
+    h, m, s = h_m_s.split(':')
+    return f"{int(h)}:{m}:{s}.{round(int(ms)/10):02d}"
+
+def get_video_resolution(video_path):
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=s=x:p=0",
+            video_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        out = result.stdout.strip()
+        if 'x' in out:
+            w, h = out.split('x')
+            return int(w), int(h)
+    except Exception as e:
+        print(f"Warning: Could not determine video resolution using ffprobe: {e}")
+    return 1080, 1920
+
+def convert_srt_to_ass(srt_path, ass_path, video_width, video_height, font_size, bottom_margin, uppercase=False):
+    play_res_y = 384
+    play_res_x = int(play_res_y * video_width / video_height)
+    
+    with open(srt_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+        
+    blocks = re.split(r'\n\s*\n', content.strip().replace('\r\n', '\n'))
+    ass_events = []
+    
+    for block in blocks:
+        lines = block.strip().split('\n')
+        if len(lines) < 3:
+            continue
+        
+        # Parse times
+        time_line = lines[1]
+        match = re.match(r'(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})', time_line)
+        if not match:
+            continue
+        start_t = srt_time_to_ass(match.group(1))
+        end_t = srt_time_to_ass(match.group(2))
+        
+        text = " ".join(lines[2:]).strip()
+        if uppercase:
+            text = text.upper()
+            
+        # Wrap text to ~20 characters per line
+        wrapped_text = textwrap.fill(text, width=20)
+        lines_list = wrapped_text.split('\n')
+        
+        # Estimate text dimensions without Pillow
+        text_width = max(len(l) for l in lines_list) * (font_size * 0.55)
+        text_height = len(lines_list) * (font_size * 1.0)
+        
+        pad_x = font_size * 0.6
+        pad_y = font_size * 0.1
+        box_width = text_width + 2 * pad_x
+        box_height = text_height + 2 * pad_y
+        radius = font_size * 0.35
+        
+        xl, xr, yt, yb = 0, round(box_width), 0, round(box_height)
+        r = round(radius)
+        c = 0.5522847
+        
+        path = (
+            f"m {xl + r} {yt} "
+            f"l {xr - r} {yt} "
+            f"b {round(xr - r + r*c)} {yt} {xr} {round(yt + r - r*c)} {xr} {yt + r} "
+            f"l {xr} {round(yb - r)} "
+            f"b {xr} {round(yb - r + r*c)} {round(xr - r + r*c)} {yb} {xr - r} {yb} "
+            f"l {xl + r} {yb} "
+            f"b {round(xl + r - r*c)} {yb} {xl} {round(yb - r + r*c)} {xl} {yb - r} "
+            f"l {xl} {round(yt + r)} "
+            f"b {xl} {round(yt + r - r*c)} {round(xl + r - r*c)} {yt} {xl + r} {yt}"
+        )
+        
+        pos_x = play_res_x // 2
+        pos_y = play_res_y - bottom_margin - box_height // 2
+        
+        box_pos_x = round(pos_x - box_width / 2)
+        box_pos_y = round(pos_y - box_height / 2)
+        
+        ass_text = wrapped_text.replace('\n', '\\N')
+        
+        box_line = f"Dialogue: 0,{start_t},{end_t},CaptionBox,,0,0,0,,{{\\an7\\pos({box_pos_x},{box_pos_y})\\p1}}{path}{{\\p0}}"
+        text_line = f"Dialogue: 1,{start_t},{end_t},CaptionText,,0,0,0,,{{\\an5\\pos({pos_x},{pos_y})}}{ass_text}"
+        
+        ass_events.append(box_line)
+        ass_events.append(text_line)
+        
+    header = f"""[Script Info]
+Title: Auto Captions
+ScriptType: v4.00+
+PlayResX: {play_res_x}
+PlayResY: {play_res_y}
+ScaledBorderAndShadow: Yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: CaptionText,Google Sans,{font_size},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,10,10,10,1
+Style: CaptionBox,Google Sans,{font_size},&H00FFFFFF,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    
+    with open(ass_path, 'w', encoding='utf-8') as f:
+        f.write(header)
+        for line in ass_events:
+            f.write(line + '\n')
+
+
 def generate_captions(video_path, model_path_or_size="small.en", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True):
     # Determine the directory of the input video first to save SRT file in the same folder
     video_dir = os.path.dirname(os.path.abspath(video_path))
-    output_srt_path = os.path.join(video_dir, "captions.srt")
+    video_name_without_ext, _ = os.path.splitext(os.path.basename(video_path))
+    output_srt_path = os.path.join(video_dir, f"{video_name_without_ext}.srt")
 
     # Determine the final output video path based on the original video path if not explicitly provided
     if not output_video_path:
@@ -69,16 +189,29 @@ def generate_captions(video_path, model_path_or_size="small.en", max_words=None,
 
         print(f"Burning captions into video and saving to: {output_video_path}")
         
-        # Copy to a temporary file in CWD with a simple random name to avoid ffmpeg path escaping issues
-        temp_srt = f"temp_captions_{uuid.uuid4().hex[:8]}.srt"
-        shutil.copy2(output_srt_path, temp_srt)
+        # Generate temporary ASS file with rounded box formatting
+        temp_ass = f"temp_captions_{uuid.uuid4().hex[:8]}.ass"
         
         try:
-            # FFmpeg command to burn subtitles with clean style (including MarginV for bottom margin):
+            # Get video width and height to calculate reference canvas
+            v_width, v_height = get_video_resolution(video_path)
+            
+            # Convert the SRT file to ASS format
+            convert_srt_to_ass(
+                srt_path=output_srt_path,
+                ass_path=temp_ass,
+                video_width=v_width,
+                video_height=v_height,
+                font_size=font_size,
+                bottom_margin=bottom_margin,
+                uppercase=uppercase
+            )
+            
+            # FFmpeg command to burn the styled ASS subtitles:
             cmd = [
                 "ffmpeg", "-y",
                 "-i", video_path,
-                "-vf", f"subtitles={temp_srt}:force_style='Fontname=Liberation Sans,Fontsize={font_size},PrimaryColour=&H00FFFFFF&,OutlineColour=&H00000000&,BorderStyle=1,Outline=3,Shadow=0,Alignment=2,Bold=1,MarginV={bottom_margin}'",
+                "-vf", f"subtitles={temp_ass}",
                 "-c:a", "copy",
                 output_video_path
             ]
@@ -88,11 +221,11 @@ def generate_captions(video_path, model_path_or_size="small.en", max_words=None,
             print(f"Error burning subtitles: ffmpeg failed with exit code {e.returncode}")
             raise
         except FileNotFoundError:
-            print("Error: ffmpeg is not installed or not found in system PATH. Cannot burn captions.")
+            print("Error: ffmpeg or ffprobe is not installed or not found in system PATH. Cannot burn captions.")
             raise
         finally:
-            if os.path.exists(temp_srt):
-                os.remove(temp_srt)
+            if os.path.exists(temp_ass):
+                os.remove(temp_ass)
     finally:
         if preview_video_path and os.path.exists(preview_video_path):
             os.remove(preview_video_path)
