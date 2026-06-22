@@ -8,7 +8,7 @@ BASE_DIR="/home/hassan/programming/phantom-editor"
 show_usage() {
     echo "Usage: phantom <command> [arguments]"
     echo "Commands:"
-    echo "  audio process <path_to_mp4>"
+    echo "  audio process [-R|--recursive] <path>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
     echo "  edit caption <video_path> [arguments]"
     echo "  edit transcribe <video_path> [arguments]"
@@ -41,13 +41,13 @@ case "$COMMAND" in
         shift
         if [ "$SUBCOMMAND" = "process" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom audio process <path_to_mp4>"
+                echo "Usage: phantom audio process [-R|--recursive] <path>"
                 exit 1
             fi
-            "$BASE_DIR/audio-processing/process_audio.sh" "$1"
+            "$BASE_DIR/audio-processing/process_audio.sh" "$@"
         else
             echo "Unknown audio subcommand: $SUBCOMMAND"
-            echo "Usage: phantom audio process <path_to_mp4>"
+            echo "Usage: phantom audio process [-R|--recursive] <path>"
             exit 1
         fi
         ;;
