@@ -12,6 +12,18 @@ def format_srt_time(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
 
 def transcribe_video(video_path, model_path_or_size, output_srt_path, max_words=None, uppercase=False, preview=False, vad_filter=True):
+    model_mapping = {
+        "small": "faster-whisper-small.en",
+        "medium": "faster-whisper-medium.en",
+        "large": "faster-whisper-large-v3",
+    }
+    if isinstance(model_path_or_size, str) and model_path_or_size.lower() in model_mapping:
+        model_path_or_size = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "models",
+            model_mapping[model_path_or_size.lower()]
+        )
+
     preview_video_path = None
     if preview:
         print("Preview mode enabled: extracting first 5 seconds of the video...")
@@ -105,8 +117,6 @@ def transcribe_video(video_path, model_path_or_size, output_srt_path, max_words=
 if __name__ == "__main__":
     import argparse
 
-    default_model = os.path.join(os.path.dirname(__file__), "models", "faster-whisper-medium.en")
-
     def positive_int(value):
         ivalue = int(value)
         if ivalue <= 0:
@@ -117,8 +127,9 @@ if __name__ == "__main__":
     parser.add_argument("video_path", help="Path to the input video file (e.g. mp4).")
     parser.add_argument(
         "--model", "-m",
-        default=default_model,
-        help="Path to local model directory or Hugging Face model size (default: video-editing/models/faster-whisper-small.en)."
+        choices=["small", "medium", "large"],
+        default="medium",
+        help="Whisper model size to use locally: small, medium, or large (default: medium)."
     )
     parser.add_argument(
         "--max-words", "-w",

@@ -86,8 +86,6 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
     subprocess.run(cmd, check=True)
 
 if __name__ == "__main__":
-    default_model = os.path.join(os.path.dirname(__file__), "models", "faster-whisper-small.en")
-
     parser = argparse.ArgumentParser(description="Trim silences from a video using speech/caption intervals.")
     parser.add_argument("video_path", help="Path to the input video file (e.g. mp4).")
     parser.add_argument(
@@ -97,8 +95,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model", "-m",
-        default=default_model,
-        help="Path to local model directory or Hugging Face model size (default: video-editing/models/faster-whisper-small.en)."
+        choices=["small", "medium", "large"],
+        default="medium",
+        help="Whisper model size to use locally: small, medium, or large (default: medium)."
     )
     parser.add_argument(
         "--padding",

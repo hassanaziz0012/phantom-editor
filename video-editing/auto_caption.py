@@ -135,7 +135,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             f.write(line + '\n')
 
 
-def generate_captions(video_path, model_path_or_size="small.en", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True):
+def generate_captions(video_path, model_path_or_size="medium", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True):
     # Determine the directory of the input video first to save SRT file in the same folder
     video_dir = os.path.dirname(os.path.abspath(video_path))
     video_name_without_ext, _ = os.path.splitext(os.path.basename(video_path))
@@ -233,8 +233,6 @@ def generate_captions(video_path, model_path_or_size="small.en", max_words=None,
 if __name__ == "__main__":
     import argparse
 
-    default_model = os.path.join(os.path.dirname(__file__), "models", "faster-whisper-small.en")
-
     def positive_int(value):
         ivalue = int(value)
         if ivalue <= 0:
@@ -251,8 +249,9 @@ if __name__ == "__main__":
     parser.add_argument("video_path", help="Path to the input video file (e.g. mp4).")
     parser.add_argument(
         "--model", "-m",
-        default=default_model,
-        help="Path to local model directory or Hugging Face model size (default: video-editing/models/faster-whisper-small.en)."
+        choices=["small", "medium", "large"],
+        default="medium",
+        help="Whisper model size to use locally: small, medium, or large (default: medium)."
     )
 
     parser.add_argument(
