@@ -110,6 +110,50 @@ def parse_timestamp(val: str) -> float:
         raise ValueError(f"Invalid timestamp format: '{val}'. Expected float seconds or HH:MM:SS,mmm")
 
 
+def prompt_for_timestamps(title: str) -> tuple[float, float]:
+    """Prompts the user to enter start and end timestamps for a short."""
+    while True:
+        try:
+            val = input(f"\n👉 Enter start and end timestamps for '{title}' (e.g. '01:23,456 01:54,321' or '83.4 114.3'): ").strip()
+            if not val:
+                print("❌ Input cannot be empty.")
+                continue
+            
+            # First split by whitespace
+            parts = val.split()
+            if len(parts) != 2:
+                # If no whitespace, try splitting by comma (e.g., 12.5,14.2)
+                if "," in val and " " not in val:
+                    # Note: we need to be careful with HH:MM:SS,mmm formats.
+                    # If they typed HH:MM:SS,mmm,HH:MM:SS,mmm without spaces, splitting by comma yields 4 parts.
+                    # If there's only one comma, it's definitely a separator: e.g., 12.5,14.2
+                    if val.count(",") == 1:
+                        parts = val.split(",")
+                    # If there are three commas, e.g., 00:01:02,300,00:01:05,400
+                    elif val.count(",") == 3:
+                        comma_indices = [i for i, c in enumerate(val) if c == ',']
+                        if len(comma_indices) == 3:
+                            # The middle one separates the two timestamps
+                            mid_comma = comma_indices[1]
+                            parts = [val[:mid_comma], val[mid_comma+1:]]
+                
+            if len(parts) != 2:
+                print("❌ Invalid format. Please enter exactly two timestamps separated by a space.")
+                continue
+                
+            start_t = parse_timestamp(parts[0])
+            end_t = parse_timestamp(parts[1])
+            if start_t >= end_t:
+                print("❌ Start timestamp must be less than end timestamp.")
+                continue
+            return start_t, end_t
+        except ValueError as e:
+            print(f"❌ Error parsing timestamps: {e}. Please try again.")
+        except (KeyboardInterrupt, EOFError):
+            print("\n👋 Prompt aborted by user.")
+            sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Step 1: Pull Script from Google Docs
 # ---------------------------------------------------------------------------
@@ -572,7 +616,17 @@ def main():
             # Check if auto segment matching is available
             if segments is None or idx not in matches:
                 print_no_segment_warning(short, slug, args.min_confidence)
-                flagged_jobs.append((short, slug, None, 0.0, "No segments detected"))
+                if args.dry_run:
+                    flagged_jobs.append((short, slug, None, 0.0, "No segments detected"))
+                else:
+                    start_t, end_t = prompt_for_timestamps(title)
+                    cut_jobs.append({
+                        "short": short,
+                        "slug": slug,
+                        "start": start_t,
+                        "end": end_t,
+                        "source": "Manually entered"
+                    })
             else:
                 match_info = matches[idx]
                 seg_idx = match_info["segment_idx"]
@@ -598,7 +652,17 @@ def main():
                         end_idx=segment["end_cap_idx"],
                         min_confidence=args.min_confidence
                     )
-                    flagged_jobs.append((short, slug, segment, confidence, f"Low confidence {confidence:.1f}"))
+                    if args.dry_run:
+                        flagged_jobs.append((short, slug, segment, confidence, f"Low confidence {confidence:.1f}"))
+                    else:
+                        start_t, end_t = prompt_for_timestamps(title)
+                        cut_jobs.append({
+                            "short": short,
+                            "slug": slug,
+                            "start": start_t,
+                            "end": end_t,
+                            "source": "Manually entered"
+                        })
                     
     # Display Cut Plan Summary
     print("\n=======================================================")
