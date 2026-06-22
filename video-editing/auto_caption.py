@@ -312,6 +312,11 @@ if __name__ == "__main__":
         choices=list(PRESETS.keys()),
         help=f"Apply a predefined set of styling options (available presets: {', '.join(PRESETS.keys())})."
     )
+    parser.add_argument(
+        "--recursive", "-R",
+        action="store_true",
+        help="Recursively process videos if input path is a folder."
+    )
 
     args = parser.parse_args()
 
@@ -343,14 +348,58 @@ if __name__ == "__main__":
     if bottom_margin is None:
         bottom_margin = 10
 
-    generate_captions(
-        args.video_path,
-        model_path_or_size=args.model,
-        max_words=max_words,
-        output_video_path=args.output_video,
-        uppercase=uppercase,
-        font_size=font_size,
-        preview=args.preview,
-        bottom_margin=bottom_margin,
-        vad_filter=vad_filter
-    )
+    VIDEO_EXTENSIONS = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp')
+
+    if os.path.isdir(args.video_path):
+        if args.output_video is not None:
+            parser.error("Cannot specify --output-video when the input is a directory.")
+
+        video_files = []
+        if args.recursive:
+            for root, dirs, files in os.walk(args.video_path):
+                for f in files:
+                    if f.lower().endswith(VIDEO_EXTENSIONS):
+                        name, _ = os.path.splitext(f)
+                        if not name.endswith('_captioned'):
+                            video_files.append(os.path.join(root, f))
+        else:
+            for f in os.listdir(args.video_path):
+                full_path = os.path.join(args.video_path, f)
+                if os.path.isfile(full_path) and f.lower().endswith(VIDEO_EXTENSIONS):
+                    name, _ = os.path.splitext(f)
+                    if not name.endswith('_captioned'):
+                        video_files.append(full_path)
+
+        if not video_files:
+            print(f"No video files found in directory: {args.video_path}")
+            exit(0)
+
+        print(f"Found {len(video_files)} video file(s) to process.")
+        for idx, video_file in enumerate(sorted(video_files), 1):
+            print(f"\n[{idx}/{len(video_files)}] Processing: {video_file}")
+            try:
+                generate_captions(
+                    video_file,
+                    model_path_or_size=args.model,
+                    max_words=max_words,
+                    output_video_path=None,
+                    uppercase=uppercase,
+                    font_size=font_size,
+                    preview=args.preview,
+                    bottom_margin=bottom_margin,
+                    vad_filter=vad_filter
+                )
+            except Exception as e:
+                print(f"Error processing {video_file}: {e}")
+    else:
+        generate_captions(
+            args.video_path,
+            model_path_or_size=args.model,
+            max_words=max_words,
+            output_video_path=args.output_video,
+            uppercase=uppercase,
+            font_size=font_size,
+            preview=args.preview,
+            bottom_margin=bottom_margin,
+            vad_filter=vad_filter
+        )
