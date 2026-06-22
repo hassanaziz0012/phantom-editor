@@ -33,3 +33,7 @@ shorts/shorts.json
 Kokoro-82M
 video-editing/models/
 
+# Temp files
+*.ass
+temp_*
+
