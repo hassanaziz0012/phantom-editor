@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Automated Shorts Cutter
-Usage: python auto_trim_shorts.py --video raw_video.mp4 --captions captions.srt [options]
+Usage: python auto_trim_shorts.py --video raw_video.mp4 [options]
 """
 
 import os
@@ -20,11 +20,16 @@ if str(repo_root) not in sys.path:
 # Load environment variables
 load_dotenv(repo_root / ".env")
 
-# Google API client library imports
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+# Import local transcribe utility and shared utilities
+from transcribe import transcribe_video
+from utils import (
+    format_srt_time,
+    parse_timestamp,
+    slugify,
+    get_google_doc_shorts,
+    find_client_secrets,
+    GDOCS_TOKEN_FILE,
+)
 
 # Fuzzy matching and optimal assignment
 from rapidfuzz import fuzz
@@ -35,209 +40,8 @@ import numpy as np
 # Configuration & Constants
 # ---------------------------------------------------------------------------
 
-SCOPES = ["https://www.googleapis.com/auth/documents.readonly"]
-
 # Google Doc ID is hardcoded/loaded as a constant from the environment
 GOOGLE_DOC_ID = os.environ.get("SHORTS_GOOGLE_DOC_ID")
-
-# OAuth token and secrets files
-GDOCS_TOKEN_FILE = Path(__file__).resolve().parent / "tokens/gdocs_token.json"
-
-
-def find_client_secrets():
-    """Locate client_secret.json across common directories."""
-    # 1. video-editing/tokens/client_secret.json
-    p1 = Path(__file__).resolve().parent / "tokens/client_secret.json"
-    if p1.exists():
-        return p1
-    # 2. youtube_api/tokens/client_secret.json
-    p2 = Path(__file__).resolve().parent.parent / "youtube_api/tokens/client_secret.json"
-    if p2.exists():
-        return p2
-    # 3. root tokens/client_secret.json
-    p3 = Path(__file__).resolve().parent.parent / "tokens/client_secret.json"
-    if p3.exists():
-        return p3
-    return p1  # Default fallback path
-
-
-# ---------------------------------------------------------------------------
-# Timestamps & Formatting Helpers
-# ---------------------------------------------------------------------------
-
-def format_srt_time(seconds: float) -> str:
-    """Converts seconds to SRT time format: HH:MM:SS,mmm"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    milliseconds = int(round((seconds % 1) * 1000))
-    if milliseconds == 1000:
-        milliseconds = 0
-        secs += 1
-        if secs == 60:
-            secs = 0
-            minutes += 1
-            if minutes == 60:
-                minutes = 0
-                hours += 1
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
-
-
-def parse_timestamp(val: str) -> float:
-    """Parses float seconds or HH:MM:SS,mmm formatted timestamps into float seconds."""
-    val = val.strip()
-    if not val:
-        return 0.0
-    try:
-        return float(val)
-    except ValueError:
-        pass
-    
-    val = val.replace(',', '.')
-    parts = val.split(':')
-    if len(parts) == 3:
-        # HH:MM:SS.mmm
-        h = int(parts[0])
-        m = int(parts[1])
-        s = float(parts[2])
-        return h * 3600 + m * 60 + s
-    elif len(parts) == 2:
-        # MM:SS.mmm
-        m = int(parts[0])
-        s = float(parts[1])
-        return m * 60 + s
-    else:
-        raise ValueError(f"Invalid timestamp format: '{val}'. Expected float seconds or HH:MM:SS,mmm")
-
-
-def prompt_for_timestamps(title: str) -> tuple[float, float]:
-    """Prompts the user to enter start and end timestamps for a short."""
-    while True:
-        try:
-            val = input(f"\n👉 Enter start and end timestamps for '{title}' (e.g. '01:23,456 01:54,321' or '83.4 114.3'): ").strip()
-            if not val:
-                print("❌ Input cannot be empty.")
-                continue
-            
-            # First split by whitespace
-            parts = val.split()
-            if len(parts) != 2:
-                # If no whitespace, try splitting by comma (e.g., 12.5,14.2)
-                if "," in val and " " not in val:
-                    # Note: we need to be careful with HH:MM:SS,mmm formats.
-                    # If they typed HH:MM:SS,mmm,HH:MM:SS,mmm without spaces, splitting by comma yields 4 parts.
-                    # If there's only one comma, it's definitely a separator: e.g., 12.5,14.2
-                    if val.count(",") == 1:
-                        parts = val.split(",")
-                    # If there are three commas, e.g., 00:01:02,300,00:01:05,400
-                    elif val.count(",") == 3:
-                        comma_indices = [i for i, c in enumerate(val) if c == ',']
-                        if len(comma_indices) == 3:
-                            # The middle one separates the two timestamps
-                            mid_comma = comma_indices[1]
-                            parts = [val[:mid_comma], val[mid_comma+1:]]
-                
-            if len(parts) != 2:
-                print("❌ Invalid format. Please enter exactly two timestamps separated by a space.")
-                continue
-                
-            start_t = parse_timestamp(parts[0])
-            end_t = parse_timestamp(parts[1])
-            if start_t >= end_t:
-                print("❌ Start timestamp must be less than end timestamp.")
-                continue
-            return start_t, end_t
-        except ValueError as e:
-            print(f"❌ Error parsing timestamps: {e}. Please try again.")
-        except (KeyboardInterrupt, EOFError):
-            print("\n👋 Prompt aborted by user.")
-            sys.exit(1)
-
-
-# ---------------------------------------------------------------------------
-# Step 1: Pull Script from Google Docs
-# ---------------------------------------------------------------------------
-
-def get_google_doc_shorts(doc_id: str, credentials_file: Path, token_file: Path):
-    """Fetches the Google Doc content and parses it into {title, body} shorts."""
-    if not doc_id:
-        raise ValueError("Google Doc ID is missing. Set SHORTS_GOOGLE_DOC_ID in your environment or .env file.")
-
-    creds = None
-    if token_file.exists():
-        try:
-            creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
-        except Exception as e:
-            print(f"⚠️  Error reading token file {token_file}: {e}. Re-authenticating...")
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-            except Exception as e:
-                print(f"⚠️  Failed to refresh credentials: {e}. Re-running auth flow...")
-                creds = None
-        
-        if not creds:
-            if not credentials_file.exists():
-                raise FileNotFoundError(
-                    f"Google client_secret.json credentials file not found.\n"
-                    f"Searched paths:\n"
-                    f" - {Path(__file__).resolve().parent / 'tokens/client_secret.json'}\n"
-                    f" - {Path(__file__).resolve().parent.parent / 'youtube_api/tokens/client_secret.json'}\n"
-                    f"Please verify client_secret.json exists."
-                )
-            
-            # Ensure tokens parent folder exists
-            token_file.parent.mkdir(parents=True, exist_ok=True)
-            flow = InstalledAppFlow.from_client_secrets_file(str(credentials_file), SCOPES)
-            creds = flow.run_local_server(port=0)
-            
-        with open(token_file, "w") as f:
-            f.write(creds.to_json())
-
-    service = build("docs", "v1", credentials=creds)
-    print(f"📖 Fetching Google Doc ID: {doc_id}...")
-    doc = service.documents().get(documentId=doc_id).execute()
-    
-    shorts = []
-    current_short = None
-    
-    body_elements = doc.get("body", {}).get("content", [])
-    for elem in body_elements:
-        if "paragraph" in elem:
-            para = elem["paragraph"]
-            style = para.get("paragraphStyle", {}).get("namedStyleType", "")
-            
-            # Extract plain text content
-            text = ""
-            for part in para.get("elements", []):
-                if "textRun" in part:
-                    text += part["textRun"].get("content", "")
-            
-            text_str = text.strip()
-            if not text_str:
-                continue
-                
-            if style == "HEADING_2":
-                if current_short:
-                    shorts.append(current_short)
-                current_short = {
-                    "title": text_str,
-                    "body": ""
-                }
-            elif style == "NORMAL_TEXT":
-                if current_short:
-                    if current_short["body"]:
-                        current_short["body"] += "\n" + text_str
-                    else:
-                        current_short["body"] = text_str
-                        
-    if current_short:
-        shorts.append(current_short)
-        
-    return shorts
-
 
 # ---------------------------------------------------------------------------
 # Step 2: Parse Captions
@@ -275,135 +79,156 @@ def parse_srt(srt_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Step 3: Title-Based Keyword Fuzzy Matching (Dynamic Programming Alignment)
+# Step 3: Segment Boundary Detection (Gap Detection)
 # ---------------------------------------------------------------------------
 
-def get_title_match_score(title: str, captions, i: int) -> float:
-    """Calculates a combined similarity score (fuzzy match score weighted by the
-    fraction of title tokens matched) in a sliding window of 1 to 3 captions.
-    """
-    title_words = set(re.findall(r'\w+', title.lower()))
-    if not title_words:
-        return 0.0
+def detect_segment_boundaries(captions, num_shorts: int, sanity_floor: float = 3.0):
+    """Computes gaps between captions and divides timeline into N candidate segments."""
+    n = num_shorts
+    if n <= 1:
+        # If N=1, no boundary division is needed
+        if captions:
+            return [{
+                "captions": captions,
+                "start_time": captions[0][0],
+                "end_time": captions[-1][1],
+                "text": " ".join(c[2] for c in captions),
+                "start_cap_idx": 0,
+                "end_cap_idx": len(captions) - 1
+            }]
+        return []
+
+    needed_gaps = n - 1
+    valid_gaps = []
     
-    best_score = 0.0
-    for w in range(1, 4):  # windows of size 1, 2, 3
-        if i + w <= len(captions):
-            combined_text = " ".join(captions[idx][2] for idx in range(i, i + w))
-            combined_words = set(re.findall(r'\w+', combined_text.lower()))
+    for i in range(len(captions) - 1):
+        current_end = captions[i][1]
+        next_start = captions[i+1][0]
+        gap_dur = next_start - current_end
+        if gap_dur >= sanity_floor:
+            valid_gaps.append({
+                "index": i,  # Boundary index is the caption index after which the cut occurs
+                "duration": gap_dur,
+                "start_time": current_end,
+                "end_time": next_start
+            })
             
-            # Intersection of words
-            intersection = title_words.intersection(combined_words)
-            match_ratio = len(intersection) / len(title_words)
-            
-            # Fuzzy token set ratio
-            fuzzy_score = fuzz.token_set_ratio(title, combined_text)
-            
-            # Calculate fraction of title words in the first caption captions[i]
-            first_words = set(re.findall(r'\w+', captions[i][2].lower()))
-            first_intersection = title_words.intersection(first_words)
-            first_match_ratio = len(first_intersection) / len(title_words)
-            
-            # Penalty for larger window sizes to prefer tighter windows
-            window_penalty = 0.01 * (w - 1)
-            
-            # Combine metrics
-            combined_score = fuzzy_score * match_ratio + 5.0 * first_match_ratio - window_penalty
-            if combined_score > best_score:
-                best_score = combined_score
-    return best_score
-
-
-
-def find_short_starts(shorts, captions):
-    """Computes the optimal starting caption index for each short such that
-    the indices are chronologically ordered (I_0 < I_1 < ... < I_{N-1}) using DP.
-    """
-    N = len(shorts)
-    L = len(captions)
-    if N > L or N == 0:
+    if len(valid_gaps) < needed_gaps:
+        # Not enough gaps above sanity floor
         return None
-        
-    # Precompute scores: scores[k][i] is the score for matching short k starting at caption index i
-    scores = np.zeros((N, L))
-    for k in range(N):
-        title = shorts[k]["title"]
-        for i in range(L):
-            scores[k, i] = get_title_match_score(title, captions, i)
-            
-    # dp[k][i] stores the max score for matching first k shorts, with the k-th short starting at caption i
-    dp = np.full((N, L), -1.0)
-    parent = np.full((N, L), -1, dtype=int)
+
+    # Sort gaps descending and pick the largest N-1
+    valid_gaps.sort(key=lambda x: x["duration"], reverse=True)
+    top_gaps = valid_gaps[:needed_gaps]
     
-    # Initialize first short
-    for i in range(L - N + 1):
-        dp[0, i] = scores[0, i]
-        
-    # DP transitions
-    for k in range(1, N):
-        for i in range(k, L - N + k + 1):
-            best_prev_score = -1.0
-            best_prev_idx = -1
-            for j in range(k - 1, i):
-                if dp[k-1, j] > best_prev_score:
-                    best_prev_score = dp[k-1, j]
-                    best_prev_idx = j
-            if best_prev_score >= 0:
-                dp[k, i] = scores[k, i] + best_prev_score
-                parent[k, i] = best_prev_idx
-                
-    # Find the best ending state
-    best_last_idx = -1
-    best_total_score = -1.0
-    for i in range(N - 1, L):
-        if dp[N-1, i] > best_total_score:
-            best_total_score = dp[N-1, i]
-            best_last_idx = i
-            
-    if best_last_idx == -1:
-        return None
-        
-    # Reconstruct path
-    starts = [0] * N
-    curr_idx = best_last_idx
-    for k in range(N - 1, -1, -1):
-        starts[k] = curr_idx
-        curr_idx = parent[k, curr_idx]
-        
-    return starts, scores
-
-
-def build_segments_from_starts(captions, starts):
-    """Partitions the captions into N segments based on start indices."""
+    # Sort chronologically
+    top_gaps.sort(key=lambda x: x["index"])
+    
     segments = []
-    N = len(starts)
-    L = len(captions)
-    for k in range(N):
-        start_idx = starts[k]
-        end_idx = starts[k+1] - 1 if k < N - 1 else L - 1
+    start_idx = 0
+    for gap in top_gaps:
+        cut_idx = gap["index"]
+        seg_caps = captions[start_idx : cut_idx + 1]
+        if seg_caps:
+            segments.append({
+                "captions": seg_caps,
+                "start_time": seg_caps[0][0],
+                "end_time": seg_caps[-1][1],
+                "text": " ".join(c[2] for c in seg_caps),
+                "start_cap_idx": start_idx,
+                "end_cap_idx": cut_idx
+            })
+        start_idx = cut_idx + 1
         
-        seg_caps = captions[start_idx : end_idx + 1]
+    # Final segment
+    seg_caps = captions[start_idx:]
+    if seg_caps:
         segments.append({
             "captions": seg_caps,
             "start_time": seg_caps[0][0],
             "end_time": seg_caps[-1][1],
             "text": " ".join(c[2] for c in seg_caps),
             "start_cap_idx": start_idx,
-            "end_cap_idx": end_idx
+            "end_cap_idx": len(captions) - 1
         })
+        
     return segments
 
+
+# ---------------------------------------------------------------------------
+# Step 4: Match Segments to Titles
+# ---------------------------------------------------------------------------
+
+def match_segments(shorts, segments):
+    """Computes a fuzzy matching matrix and solves as a linear sum assignment problem."""
+    num_shorts = len(shorts)
+    num_segments = len(segments)
+    
+    score_matrix = np.zeros((num_shorts, num_segments))
+    for i, short in enumerate(shorts):
+        short_content = f"{short['title']} {short['body']}"
+        for j, segment in enumerate(segments):
+            # Compute token-set ratio between script content and concatenated segment captions
+            score = fuzz.token_set_ratio(short_content, segment["text"])
+            score_matrix[i, j] = score
+            
+    # scipy.optimize.linear_sum_assignment minimizes the sum of costs.
+    # Therefore, cost_matrix = 100 - score_matrix.
+    cost_matrix = 100.0 - score_matrix
+    
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    
+    matches = {}
+    for r, c in zip(row_ind, col_ind):
+        matches[r] = {
+            "segment_idx": c,
+            "confidence": score_matrix[r, c]
+        }
+        
+    return matches
+
+
+def extract_title_keywords(title: str) -> list[str]:
+    """Extracts meaningful words from a short title for keyword scanning."""
+    STOPWORDS = {
+        "a", "an", "the", "in", "on", "at", "to", "for", "of", "and",
+        "or", "but", "is", "are", "was", "were", "be", "been", "being",
+        "with", "by", "from", "that", "this", "it", "its", "why", "how",
+        "what", "when", "will", "just", "than", "then", "their", "they",
+        "we", "our", "not", "no", "so", "if", "as", "up", "do", "did",
+        "who", "which", "more", "about", "might", "could", "would", "x"
+    }
+    words = re.findall(r"[a-zA-Z0-9]+", title.lower())
+    return [w for w in words if w not in STOPWORDS and len(w) > 2]
+
+
+def find_keyword_start(captions: list, start_idx: int, end_idx: int, keywords: list[str], window: int = 6) -> int:
+    """
+    Scans captions[start_idx:end_idx+1] and returns the index of the first caption
+    where any keyword appears within a sliding window of `window` consecutive words.
+    Falls back to start_idx if no match is found.
+    """
+    if not keywords:
+        return start_idx
+
+    # Build a list of (caption_idx, word) pairs for the window
+    words_in_range = []
+    for i in range(start_idx, end_idx + 1):
+        word = captions[i][2].strip().lower().rstrip(".,!?;:'\"")
+        words_in_range.append((i, word))
+
+    for pos in range(len(words_in_range)):
+        window_words = {w for _, w in words_in_range[pos: pos + window]}
+        if any(kw in window_words for kw in keywords):
+            return words_in_range[pos][0]
+
+    return start_idx  # fallback: no keyword found
 
 # ---------------------------------------------------------------------------
 # Step 5 & 6: Overrides, Warning Output & Video Cutting
 # ---------------------------------------------------------------------------
 
-def slugify(text: str) -> str:
-    """Safely converts text to a lowercase hyphenated slug filename (alphanumeric and hyphens only)."""
-    text = text.lower().strip()
-    text = re.sub(r'[^a-z0-9\s-]', '', text)
-    text = re.sub(r'[\s-]+', '-', text)
-    return text.strip('-')
+# (Shared utility function slugify is imported from utils.py)
 
 
 def print_low_confidence_warning(short, slug, segment, confidence, captions, start_idx, end_idx, min_confidence):
@@ -435,15 +260,34 @@ def print_low_confidence_warning(short, slug, segment, confidence, captions, sta
 
 
 def print_no_segment_warning(short, slug, min_confidence):
-    """Prints warning when segment matching fails and segments cannot be extracted."""
+    """Prints warning when gap detection fails and segments cannot be extracted."""
     print(f"\n⚠️  [LOW CONFIDENCE] Match for short: '{short['title']}'")
     print(f"   Slug: {slug}")
     print(f"   Confidence score: 0.0 (threshold: {min_confidence})")
-    print("   Reason: Title-based fuzzy matching failed or chronological order constraint could not be met.")
+    print("   Reason: Gap detection failed (fewer than N-1 gaps cleared sanity floor).")
     print("   Please use the override flag to supply manually determined timestamps.")
     print("   Script snippet:")
     snippet = short["body"][:200] + "..." if len(short["body"]) > 200 else short["body"]
     print(f"     {snippet}")
+
+
+def get_video_duration(video_path: Path) -> float:
+    """Gets the duration of the video file in seconds using ffprobe."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(video_path)
+    ]
+    try:
+        result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return float(result.stdout.strip())
+    except subprocess.CalledProcessError as e:
+        print(f"❌ ffprobe failed to get video duration: {e.stderr}")
+        raise
+    except FileNotFoundError:
+        print("❌ Error: ffprobe binary was not found. Please install ffmpeg/ffprobe.")
+        sys.exit(1)
 
 
 def run_ffmpeg_cut(video_path: Path, start_time: float, end_time: float, padding: float, output_path: Path):
@@ -488,11 +332,6 @@ def main():
         help="Path to the raw long-form video file."
     )
     parser.add_argument(
-        "--captions",
-        required=True,
-        help="Path to the SRT captions file."
-    )
-    parser.add_argument(
         "--padding",
         type=float,
         default=0.5,
@@ -515,39 +354,21 @@ def main():
         action="store_true",
         help="Compute and print the match/cut plan without invoking ffmpeg or writing files."
     )
+    parser.add_argument(
+        "--manual",
+        action="store_true",
+        help="Interactive manual mode: prompts for start times of each short."
+    )
     
     args = parser.parse_args()
     
     # Resolve paths & validate existence
     video_path = Path(args.video).resolve()
-    captions_path = Path(args.captions).resolve()
     
     if not video_path.is_file():
         print(f"❌ Error: Video file does not exist at '{video_path}'")
         sys.exit(1)
-    if not captions_path.is_file():
-        print(f"❌ Error: Captions file does not exist at '{captions_path}'")
-        sys.exit(1)
         
-    # Parse overrides
-    overrides = {}
-    for ov_str in args.override:
-        if "=" not in ov_str:
-            print(f"⚠️  Skipping invalid override string format: '{ov_str}' (expected slug=START,END)")
-            continue
-        slug, times = ov_str.split("=", 1)
-        if "," not in times:
-            print(f"⚠️  Skipping invalid override timestamps: '{times}' for slug '{slug}' (expected START,END)")
-            continue
-        start_str, end_str = times.split(",", 1)
-        try:
-            start_t = parse_timestamp(start_str)
-            end_t = parse_timestamp(end_str)
-            overrides[slug.strip()] = (start_t, end_t)
-        except ValueError as err:
-            print(f"⚠️  Error parsing timestamps in override '{ov_str}': {err}")
-            continue
-
     # Setup Google Doc credentials
     client_secret_file = find_client_secrets()
     
@@ -563,106 +384,207 @@ def main():
     if N == 0:
         print("❌ Error: No shorts scripts found (make sure scripts are headings with HEADING_2 style).")
         sys.exit(1)
-        
-    # 2. Parse Captions
-    try:
-        captions = parse_srt(captions_path)
-    except Exception as e:
-        print(f"❌ Error parsing SRT file: {e}")
-        sys.exit(1)
-        
-    print(f"💬 Parsed {len(captions)} caption intervals from SRT.")
-    if not captions:
-        print("❌ Error: Captions file contains no valid subtitle intervals.")
-        sys.exit(1)
-        
-    # 3. Find Short Start Caption Indices using Keyword Fuzzy Matching
-    result = find_short_starts(shorts, captions)
-    
-    # 4. Build Segments and Matches
-    segments = None
-    matches = {}
-    if result is not None:
-        starts, scores = result
-        segments = build_segments_from_starts(captions, starts)
-        print(f"✂️  Title-based keyword matching segmented video timeline into {len(segments)} segments.")
-        for k in range(N):
-            matches[k] = {
-                "segment_idx": k,
-                "confidence": min(100.0, scores[k, starts[k]])
-            }
-    else:
-        print(f"⚠️  Could not match short titles to captions (chronological order constraint could not be met).")
 
-    # 5. Review Matches & Apply Overrides
-    cut_jobs = []
-    flagged_jobs = []
-    
-    for idx, short in enumerate(shorts):
-        title = short["title"]
-        slug = slugify(title)
-        
-        # Check override
-        if slug in overrides:
-            start_t, end_t = overrides[slug]
+    if args.manual:
+        print("\n🧠 Manual interactive mode selected.")
+        try:
+            video_duration = get_video_duration(video_path)
+        except Exception as e:
+            print(f"❌ Failed to get video duration: {e}")
+            sys.exit(1)
+        print(f"📹 Video duration: {format_srt_time(video_duration)} ({video_duration:.3f} seconds)")
+
+        start_times = []
+        for idx, short in enumerate(shorts):
+            title = short["title"]
+            print(f"\n[{idx + 1}/{N}] Short Title: '{title}'")
+            while True:
+                try:
+                    val = input("   Enter start time (e.g. 12.3 or 00:01:23,456): ").strip()
+                    if not val:
+                        print("   ⚠️  Start time cannot be empty. Please enter a valid timestamp.")
+                        continue
+                    start_t = parse_timestamp(val)
+                    if start_t < 0:
+                        print("   ⚠️  Start time cannot be negative.")
+                        continue
+                    if start_t > video_duration:
+                        print(f"   ⚠️  Start time ({format_srt_time(start_t)}) cannot be after video duration ({format_srt_time(video_duration)}).")
+                        continue
+                    if start_times and start_t < start_times[-1]:
+                        print(f"   ⚠️  Start time cannot be before previous short's start time ({format_srt_time(start_times[-1])}).")
+                        continue
+                    start_times.append(start_t)
+                    break
+                except ValueError as err:
+                    print(f"   ⚠️  {err}")
+
+        # Build cut jobs
+        cut_jobs = []
+        for idx, short in enumerate(shorts):
+            title = short["title"]
+            slug = slugify(title)
+            start_t = start_times[idx]
+            end_t = start_times[idx + 1] if idx + 1 < N else video_duration
+            
             cut_jobs.append({
                 "short": short,
                 "slug": slug,
                 "start": start_t,
                 "end": end_t,
-                "source": "Override flag"
+                "source": "Manual input"
             })
+            
+        flagged_jobs = []
+
+    else:
+        # Auto-generate captions file path
+        video_dir = video_path.parent
+        video_name_without_ext = video_path.stem
+        captions_path = video_dir / f"{video_name_without_ext}-1word.srt"
+        
+        # Auto-transcribe if the captions file does not exist
+        if not captions_path.is_file():
+            print(f"📝 Auto-transcribing video file '{video_path}' using Whisper 'medium' model...")
+            try:
+                transcribe_video(
+                    video_path=str(video_path),
+                    model_path_or_size="medium",
+                    output_srt_path=str(captions_path),
+                    max_words=1,
+                    uppercase=False,
+                    preview=False,
+                    vad_filter=True
+                )
+            except Exception as e:
+                print(f"❌ Error during auto-transcription: {e}")
+                sys.exit(1)
         else:
-            # Check if auto segment matching is available
-            if segments is None or idx not in matches:
-                print_no_segment_warning(short, slug, args.min_confidence)
-                if args.dry_run:
-                    flagged_jobs.append((short, slug, None, 0.0, "No segments detected"))
-                else:
-                    start_t, end_t = prompt_for_timestamps(title)
-                    cut_jobs.append({
-                        "short": short,
-                        "slug": slug,
-                        "start": start_t,
-                        "end": end_t,
-                        "source": "Manually entered"
-                    })
-            else:
+            print(f"📖 Using existing captions file at '{captions_path}'")
+            
+        # Parse overrides
+        overrides = {}
+        for ov_str in args.override:
+            if "=" not in ov_str:
+                print(f"⚠️  Skipping invalid override string format: '{ov_str}' (expected slug=START,END)")
+                continue
+            slug, times = ov_str.split("=", 1)
+            if "," not in times:
+                print(f"⚠️  Skipping invalid override timestamps: '{times}' for slug '{slug}' (expected START,END)")
+                continue
+            start_str, end_str = times.split(",", 1)
+            try:
+                start_t = parse_timestamp(start_str)
+                end_t = parse_timestamp(end_str)
+                overrides[slug.strip()] = (start_t, end_t)
+            except ValueError as err:
+                print(f"⚠️  Error parsing timestamps in override '{ov_str}': {err}")
+                continue
+
+        # 2. Parse Captions
+        try:
+            captions = parse_srt(captions_path)
+        except Exception as e:
+            print(f"❌ Error parsing SRT file: {e}")
+            sys.exit(1)
+            
+        print(f"💬 Parsed {len(captions)} caption intervals from SRT.")
+        if not captions:
+            print("❌ Error: Captions file contains no valid subtitle intervals.")
+            sys.exit(1)
+            
+        # 3. Detect Segment Boundaries
+        segments = detect_segment_boundaries(captions, N)
+        
+        # 4. Perform Bipartite Matching
+        matches = {}
+        if segments is not None:
+            print(f"✂️  Segment boundary detection split video timeline into {len(segments)} candidate segments.")
+            matches = match_segments(shorts, segments)
+        else:
+            print(f"⚠️  Could not automatically segment video timeline (insufficient gaps >3.0s).")
+
+        # 5. Review Matches, Refine Start Times & Apply Overrides
+        # First pass: collect all keyword-refined start times so we can use
+        # short[i+1]'s start as short[i]'s end.
+        refined = {}  # idx -> {start_cap_idx, end_cap_idx, start_time, end_time, confidence}
+
+        if segments is not None:
+            for idx, short in enumerate(shorts):
+                if idx not in matches:
+                    continue
                 match_info = matches[idx]
                 seg_idx = match_info["segment_idx"]
                 confidence = match_info["confidence"]
                 segment = segments[seg_idx]
-                
+
+                keywords = extract_title_keywords(short["title"])
+                true_start_idx = find_keyword_start(
+                    captions,
+                    segment["start_cap_idx"],
+                    segment["end_cap_idx"],
+                    keywords
+                )
+                refined[idx] = {
+                    "start_cap_idx": true_start_idx,
+                    "end_cap_idx": segment["end_cap_idx"],
+                    "start_time": captions[true_start_idx][0],
+                    "end_time": segment["end_time"],
+                    "confidence": confidence,
+                    "segment": segment,
+                }
+
+            # Second pass: set each short's end_time = the refined start of the next short
+            sorted_idxs = sorted(refined.keys())
+            for i, idx in enumerate(sorted_idxs):
+                if i + 1 < len(sorted_idxs):
+                    next_idx = sorted_idxs[i + 1]
+                    refined[idx]["end_time"] = captions[refined[next_idx]["start_cap_idx"]][0]
+                    refined[idx]["end_cap_idx"] = refined[next_idx]["start_cap_idx"] - 1
+
+        cut_jobs = []
+        flagged_jobs = []
+
+        for idx, short in enumerate(shorts):
+            title = short["title"]
+            slug = slugify(title)
+
+            if slug in overrides:
+                start_t, end_t = overrides[slug]
+                cut_jobs.append({
+                    "short": short,
+                    "slug": slug,
+                    "start": start_t,
+                    "end": end_t,
+                    "source": "Override flag"
+                })
+            elif segments is None or idx not in refined:
+                print_no_segment_warning(short, slug, args.min_confidence)
+                flagged_jobs.append((short, slug, None, 0.0, "No segments detected"))
+            else:
+                r = refined[idx]
+                confidence = r["confidence"]
+
                 if confidence >= args.min_confidence:
                     cut_jobs.append({
                         "short": short,
                         "slug": slug,
-                        "start": segment["start_time"],
-                        "end": segment["end_time"],
-                        "source": f"Auto-detected (confidence {confidence:.1f})"
+                        "start": r["start_time"],
+                        "end": r["end_time"],
+                        "source": f"Keyword-refined (confidence {confidence:.1f})"
                     })
                 else:
                     print_low_confidence_warning(
                         short=short,
                         slug=slug,
-                        segment=segment,
+                        segment=r["segment"],
                         confidence=confidence,
                         captions=captions,
-                        start_idx=segment["start_cap_idx"],
-                        end_idx=segment["end_cap_idx"],
+                        start_idx=r["start_cap_idx"],
+                        end_idx=r["end_cap_idx"],
                         min_confidence=args.min_confidence
                     )
-                    if args.dry_run:
-                        flagged_jobs.append((short, slug, segment, confidence, f"Low confidence {confidence:.1f}"))
-                    else:
-                        start_t, end_t = prompt_for_timestamps(title)
-                        cut_jobs.append({
-                            "short": short,
-                            "slug": slug,
-                            "start": start_t,
-                            "end": end_t,
-                            "source": "Manually entered"
-                        })
+                    flagged_jobs.append((short, slug, r["segment"], confidence, f"Low confidence {confidence:.1f}"))
                     
     # Display Cut Plan Summary
     print("\n=======================================================")

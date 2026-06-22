@@ -3,13 +3,7 @@ import subprocess
 import uuid
 from faster_whisper import WhisperModel
 
-def format_srt_time(seconds):
-    """Converts seconds to SRT time format: HH:MM:SS,mmm"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    milliseconds = int((seconds % 1) * 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+from utils import format_srt_time
 
 def transcribe_video(video_path, model_path_or_size, output_srt_path, max_words=None, uppercase=False, preview=False, vad_filter=True):
     model_mapping = {
