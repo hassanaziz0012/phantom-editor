@@ -4,7 +4,7 @@ This directory contains scripts to automate Wondershare Filmora video editing wo
 
 ## Scripts
 
-### [filmora_silence_detection.py](file:///home/hassan/programming/phantom-editor/filmora-automation/filmora_silence_detection.py)
+### [filmora_silence_detection.py](../filmora-automation/filmora_silence_detection.py)
 Automates Filmora's **Silence Detection** feature. It launches Filmora, imports a video clip, adds it to the timeline, runs the Silence Detection analysis, replaces the timeline clip with the silence-removed version, and saves the project.
 
 * **Usage**: `python.exe filmora_silence_detection.py <path_to_mp4_file>`
@@ -12,7 +12,7 @@ Automates Filmora's **Silence Detection** feature. It launches Filmora, imports 
   > When running from **WSL**, you must invoke the script using `python.exe` (instead of `python`) to interact with the Windows GUI environment.
 * **Requirements**:
   - Wondershare Filmora installed on Windows.
-  - PyAutoGUI image-matching templates stored in the [imgs/](file:///home/hassan/programming/phantom-editor/filmora-automation/imgs) directory (used to identify buttons and windows).
+  - PyAutoGUI image-matching templates stored in the [imgs/](../filmora-automation/imgs) directory (used to identify buttons and windows).
   - The input file path must correspond to a folder structure containing `YT Projects/<project_name>/`.
 * **Pipeline Steps**:
   1. **Launch**: Starts Filmora and opens a "New Project".

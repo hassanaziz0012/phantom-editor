@@ -4,13 +4,13 @@ This directory contains scripts for automating video editing tasks such as mixin
 
 ## Scripts
 
-### [add_bgm_to_video.sh](file:///home/hassan/programming/phantom-editor/video-editing/add_bgm_to_video.sh)
+### [add_bgm_to_video.sh](../video-editing/add_bgm_to_video.sh)
 Mixes a background music (BGM) track into a video's audio track. Loops the music if it is shorter than the video, adjusts BGM volume, and outputs a new video file while performing a lossless video stream copy.
 * **Usage**: `./video-editing/add_bgm_to_video.sh <path_to_video> <bgm_track> [--volume <percentage>]`
 * **Default Output**: `<video_name>-bgm.mp4` in the same directory as the source video.
 * **BGM Library**: Looks up tracks relative to `/mnt/c/Users/hassa/Videos/Asset Library/BGM` if a full path is not provided.
 
-### [auto_caption.py](file:///home/hassan/programming/phantom-editor/video-editing/auto_caption.py)
+### [auto_caption.py](../video-editing/auto_caption.py)
 Transcribes audio from a video using the Faster Whisper model, generates a subtitles `.srt` file, and optionally burns the captions directly into the video using `ffmpeg` with custom styling or presets (e.g. for shorts).
 * **CLI Command**: `phantom edit caption <video_path> [arguments]`
 * **Usage/Arguments**:
