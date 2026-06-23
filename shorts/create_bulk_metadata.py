@@ -4,6 +4,15 @@ import json
 import argparse
 from datetime import datetime
 
+# Import clean_metadata function from clean_metadata module
+try:
+    from clean_metadata import clean_metadata
+except ImportError:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    from clean_metadata import clean_metadata
+
 def load_shorts_json(json_path):
     """Loads metadata from shorts.json. Returns a list of dicts."""
     if not os.path.exists(json_path):
@@ -84,8 +93,8 @@ def main():
     print(f"Target folder: {folder_path}")
     print(f"Shorts metadata file: {shorts_json_path}")
 
-    # Load existing database
-    shorts_data = load_shorts_json(shorts_json_path)
+    # Clean the metadata first, prompt user if there are fully posted shorts
+    shorts_data = clean_metadata(shorts_json_path, interactive=True)
     
     # Store existing paths as canonical absolute paths for lookup
     existing_paths = set()
