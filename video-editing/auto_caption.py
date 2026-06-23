@@ -42,7 +42,7 @@ def get_video_resolution(video_path):
         print(f"Warning: Could not determine video resolution using ffprobe: {e}")
     return 1080, 1920
 
-def convert_srt_to_ass(srt_path, ass_path, video_width, video_height, font_size, bottom_margin, uppercase=False):
+def convert_srt_to_ass(srt_path, ass_path, video_width, video_height, font_size, bottom_margin, uppercase=False, width=20):
     play_res_y = 384
     play_res_x = int(play_res_y * video_width / video_height)
     
@@ -69,8 +69,8 @@ def convert_srt_to_ass(srt_path, ass_path, video_width, video_height, font_size,
         if uppercase:
             text = text.upper()
             
-        # Wrap text to ~20 characters per line
-        wrapped_text = textwrap.fill(text, width=20)
+        # Wrap text to width characters per line
+        wrapped_text = textwrap.fill(text, width=width)
         lines_list = wrapped_text.split('\n')
         
         # Estimate text dimensions without Pillow
@@ -135,7 +135,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             f.write(line + '\n')
 
 
-def generate_captions(video_path, model_path_or_size="medium", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True):
+def generate_captions(video_path, model_path_or_size="medium", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True, width=20):
     # Determine the directory of the input video first to save SRT file in the same folder
     video_dir = os.path.dirname(os.path.abspath(video_path))
     video_name_without_ext, _ = os.path.splitext(os.path.basename(video_path))
@@ -204,7 +204,8 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
                 video_height=v_height,
                 font_size=font_size,
                 bottom_margin=bottom_margin,
-                uppercase=uppercase
+                uppercase=uppercase,
+                width=width
             )
             
             # FFmpeg command to burn the styled ASS subtitles:
@@ -307,6 +308,12 @@ if __name__ == "__main__":
         help="Bottom margin for the burned captions in pixels (default: 10)."
     )
     parser.add_argument(
+        "--width",
+        type=positive_int,
+        default=20,
+        help="Maximum line width in characters for text wrapping (default: 20)."
+    )
+    parser.add_argument(
         "--preset",
         choices=list(PRESETS.keys()),
         help=f"Apply a predefined set of styling options (available presets: {', '.join(PRESETS.keys())})."
@@ -324,6 +331,7 @@ if __name__ == "__main__":
     bottom_margin = args.bottom_margin
     uppercase = args.uppercase
     vad_filter = args.vad_filter
+    width = args.width
 
     if args.preset:
         preset = PRESETS[args.preset]
@@ -395,7 +403,8 @@ if __name__ == "__main__":
                     font_size=font_size,
                     preview=args.preview,
                     bottom_margin=bottom_margin,
-                    vad_filter=vad_filter
+                    vad_filter=vad_filter,
+                    width=width
                 )
             except Exception as e:
                 print(f"Error processing {video_file}: {e}")
@@ -409,5 +418,6 @@ if __name__ == "__main__":
             font_size=font_size,
             preview=args.preview,
             bottom_margin=bottom_margin,
-            vad_filter=vad_filter
+            vad_filter=vad_filter,
+            width=width
         )
