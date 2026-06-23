@@ -2,7 +2,7 @@
 """
 Add Thumbnail Prepending Script
 Extracts the first frame of a video, overlays the title in the center with Pillow,
-and prepends this frame to the video for 0.5s (with audio shifted accordingly to preserve sync).
+and prepends this frame to the video for 0.25s (with audio shifted accordingly to preserve sync).
 """
 
 import os
@@ -184,7 +184,7 @@ def draw_title_pillow(image_path, title_text, output_path, font_size_override=No
         
     img.save(output_path, quality=95)
 
-def prepend_thumbnail(video_path, thumb_path, output_path, duration=0.5):
+def prepend_thumbnail(video_path, thumb_path, output_path, duration=0.25):
     """Prepends the static thumbnail image to the video for a set duration, delaying audio to keep sync."""
     width, height = get_video_resolution(video_path)
     has_aud, channels = get_audio_info(video_path)
@@ -229,7 +229,7 @@ def prepend_thumbnail(video_path, thumb_path, output_path, duration=0.5):
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg composition failed:\n{result.stderr}")
 
-def process_single_video(video_path, output_path, shorts_json_path, title_override=None, font_size_override=None, duration=0.5):
+def process_single_video(video_path, output_path, shorts_json_path, title_override=None, font_size_override=None, duration=0.25):
     """Processes a single video by extracting first frame, drawing title cover, and prepending it."""
     video_path = Path(video_path).resolve()
     
@@ -269,7 +269,7 @@ def process_single_video(video_path, output_path, shorts_json_path, title_overri
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Extract the first frame of a short, overlay the title in the center, and prepend it for 0.5s."
+        description="Extract the first frame of a short, overlay the title in the center, and prepend it for 0.25s."
     )
     parser.add_argument("video_path", help="Path to the video file or directory (if recursive).")
     parser.add_argument(
@@ -296,8 +296,8 @@ def main():
     parser.add_argument(
         "-d", "--duration",
         type=float,
-        default=0.5,
-        help="Duration in seconds to display the cover frame (default: 0.5s)."
+        default=0.25,
+        help="Duration in seconds to display the cover frame (default: 0.25s)."
     )
     
     args = parser.parse_args()
