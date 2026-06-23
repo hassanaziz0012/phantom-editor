@@ -12,10 +12,13 @@ import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Add project root to sys.path
+# Add project root and video-editing directory to sys.path
 repo_root = Path(__file__).resolve().parent.parent
+video_editing_dir = repo_root / "video-editing"
 if str(repo_root) not in sys.path:
     sys.path.append(str(repo_root))
+if str(video_editing_dir) not in sys.path:
+    sys.path.append(str(video_editing_dir))
 
 # Load environment variables
 load_dotenv(repo_root / ".env")
