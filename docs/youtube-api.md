@@ -32,3 +32,14 @@ Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a 
 
 ### [utils.py](../youtube_api/utils.py)
 Utility functions containing API authentication, channel ID resolution, Jaccard text similarity helpers, and logarithmic scoring algorithms.
+
+### [upload_short.py](../youtube_api/upload_short.py)
+Uploads a vertical Short video to YouTube. Under the hood, it reuses the authentication and upload helpers from `upload_video.py`.
+* **Usage**: `python youtube_api/upload_short.py /path/to/short_video.mp4` or via `phantom shorts upload --platform youtube <video_path>`
+* **Metadata Lookup**:
+  - Automatically queries the unified database `shorts/shorts.json` to find matching metadata (matching by exact path, filename, or stem).
+  - Fetches the title, description, and custom thumbnail path.
+* **Key Features**:
+  - Checks the video's posted status first; if it's already marked as posted to YouTube in `shorts.json`, it skips the upload to avoid duplicates.
+  - Updates the `posted.youtube` boolean to `True` in `shorts/shorts.json` upon a successful upload.
+
