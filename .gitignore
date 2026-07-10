@@ -15,6 +15,9 @@ wheels/
 # ENVs
 .env
 
+# Agents
+.agents
+
 # Credentials
 auth.json
 tokens
