@@ -14,6 +14,7 @@ show_usage() {
     echo "  edit auto-attach-webcam --screen <screen_video> --webcam <webcam_video> [arguments]"
     echo "  edit caption <video_path> [arguments]"
     echo "  edit transcribe <video_path> [arguments]"
+    echo "  edit transcribe-cloud <video_path> [arguments]"
     echo "  edit trim-silences <video_path> [arguments]"
     echo "  filmora detect-silence <path_to_mp4>"
     echo "  tweet [--image] <tweet_content>"
@@ -26,6 +27,8 @@ show_usage() {
     echo "  shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
     echo "  shorts add-thumbnail [arguments] <video_path>"
     echo "  shorts trim [arguments]"
+    echo "  review inspect <video_path> [arguments]"
+    echo "  review find-bad-takes <transcript_path> [arguments]"
     echo "  docs open"
 }
 
@@ -82,6 +85,12 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/transcribe.py" "$@"
+        elif [ "$SUBCOMMAND" = "transcribe-cloud" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom edit transcribe-cloud <video_path> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/transcribe_cloud.py" "$@"
         elif [ "$SUBCOMMAND" = "trim-silences" ]; then
             if [ $# -eq 0 ]; then
                 echo "Usage: phantom edit trim-silences <video_path> [arguments]"
@@ -95,6 +104,7 @@ case "$COMMAND" in
             echo "       phantom edit auto-attach-webcam --screen <screen_video> --webcam <webcam_video> [arguments]"
             echo "       phantom edit caption <video_path> [arguments]"
             echo "       phantom edit transcribe <video_path> [arguments]"
+            echo "       phantom edit transcribe-cloud <video_path> [arguments]"
             echo "       phantom edit trim-silences <video_path> [arguments]"
             exit 1
         fi
@@ -220,6 +230,28 @@ case "$COMMAND" in
         else
             echo "Unknown docs subcommand: $SUBCOMMAND"
             echo "Usage: phantom docs open"
+            exit 1
+        fi
+        ;;
+    review)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "inspect" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom review inspect <video_path> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/review/video_inspector.py" "$@"
+        elif [ "$SUBCOMMAND" = "find-bad-takes" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom review find-bad-takes <transcript_path> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/review/find_bad_takes.py" "$@"
+        else
+            echo "Unknown review subcommand: $SUBCOMMAND"
+            echo "Usage: phantom review inspect <video_path> [arguments]"
+            echo "       phantom review find-bad-takes <transcript_path> [arguments]"
             exit 1
         fi
         ;;
