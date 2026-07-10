@@ -1,0 +1,1140 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Documentation for Phantom Editor script collection">
+      
+      
+        <meta name="author" content="Hassan">
+      
+      
+      
+        <link rel="prev" href="../filmora-automation/">
+      
+      
+        <link rel="next" href="../youtube-api/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Shorts Workflow - Phantom Editor Docs</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#shorts-pipeline" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Phantom Editor Docs" class="md-header__button md-logo" aria-label="Phantom Editor Docs" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Phantom Editor Docs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Shorts Workflow
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../audio-processing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Audio Processing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../video-editing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video Editing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../filmora-automation/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Filmora Automation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Platform Integrations
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Phantom Editor Docs" class="md-nav__button md-logo" aria-label="Phantom Editor Docs" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Phantom Editor Docs
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../audio-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audio Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../video-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../filmora-automation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filmora Automation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Platform Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shorts Workflow
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shorts Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#database-shortsjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database: shorts.json
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scripts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scripts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scripts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#process_shortspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        process_shorts.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uploadpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        upload.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create_bulk_metadatapy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        create_bulk_metadata.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clean_metadatapy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        clean_metadata.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add_thumbnailpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        add_thumbnail.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto_trim_shortspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        auto_trim_shorts.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../youtube-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YouTube API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instagram/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Instagram
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tiktok/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TikTok
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../twitter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Twitter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../linkedin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LinkedIn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#database-shortsjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database: shorts.json
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scripts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scripts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scripts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#process_shortspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        process_shorts.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#uploadpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        upload.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create_bulk_metadatapy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        create_bulk_metadata.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clean_metadatapy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        clean_metadata.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add_thumbnailpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        add_thumbnail.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto_trim_shortspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        auto_trim_shorts.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="shorts-pipeline">Shorts Pipeline</h1>
+<p>This directory contains the core pipeline scripts for managing, cutting, prepping, and uploading vertical short-form videos (YouTube Shorts, Instagram Reels, and TikToks).</p>
+<h2 id="database-shortsjson">Database: <a href="../shorts/shorts.json">shorts.json</a></h2>
+<p>The pipeline is driven by a unified metadata database <code>shorts.json</code> stored in the <code>shorts/</code> directory. Each item in the database has the following schema:</p>
+<pre><code class="language-json">{
+  &quot;video_path&quot;: &quot;/absolute/path/to/video.mp4&quot;,
+  &quot;title&quot;: &quot;Short Title&quot;,
+  &quot;description&quot;: &quot;Short description text&quot;,
+  &quot;thumbnail&quot;: &quot;relative/or/absolute/path/to/thumbnail.png&quot;,
+  &quot;tags&quot;: [&quot;tag1&quot;, &quot;tag2&quot;],
+  &quot;scheduled_time&quot;: &quot;YYYY-MM-DD HH:MM&quot;,
+  &quot;added_at&quot;: &quot;ISO-8601-Timestamp&quot;,
+  &quot;posted&quot;: {
+    &quot;youtube&quot;: false,
+    &quot;instagram&quot;: false,
+    &quot;tiktok&quot;: false
+  }
+}
+</code></pre>
+<h2 id="scripts">Scripts</h2>
+<h3 id="process_shortspy"><a href="../shorts/process_shorts.py">process_shorts.py</a></h3>
+<p>Unified Shorts Production Pipeline. It orchestrates the entire flow from a raw video file to fully processed, captioned, and cataloged shorts.
+* <strong>Usage</strong>: <code>python shorts/process_shorts.py &lt;raw_video&gt; --bgm-track &lt;track&gt; [arguments]</code>
+* <strong>Arguments</strong>:
+  - <code>raw_video</code>: Path to the raw input video file.
+  - <code>--bgm-track</code>: Background music track name or full path to mix in.
+  - <code>--bgm-volume</code>: Volume percentage (1-100) for BGM (default: <code>10</code>).
+  - <code>--output-dir</code>, <code>-O</code>: Custom workspace path. Defaults to a folder named after the video stem under the video's parent.
+  - <code>--skip-silence</code>: Skip silence-trimming (Step 1).
+  - <code>--silence-model</code>: Whisper model size for silence detection (<code>small</code>, <code>medium</code>, <code>large</code>; default: <code>medium</code>).
+  - <code>--silence-padding</code>: Padding in seconds for speech intervals (default: <code>0.15</code>s).
+  - <code>--silence-min</code>: Minimum silence duration to split segments (default: <code>0.4</code>s).
+  - <code>--trim-padding</code>: Pre/post-roll buffer for cut clips (default: <code>0.5</code>s).
+  - <code>--min-confidence</code>: Fuzzy-match confidence threshold (default: <code>70.0</code>).
+  - <code>--override</code>: Repeatable override flag (<code>slug=START,END</code>).
+  - <code>--dry-run</code>: Preview cut plan without cutting clips (presents interactive prompt to proceed, override, run manually, or abort).
+  - <code>--manual</code>: Run clip cutting in interactive manual mode.
+  - <code>--thumb-font-size</code>: Font size override for the cover text.
+  - <code>--thumb-duration</code>: Duration in seconds to display cover frame (default: <code>0.25</code>s).
+  - <code>--caption-model</code>: Whisper model size for captions (default: <code>medium</code>).
+  - <code>--caption-max-words</code>: Max words per caption segment.
+  - <code>--caption-font-size</code>: Font size for burned captions.
+  - <code>--caption-bottom-margin</code>: Bottom margin for captions in pixels.
+  - <code>--caption-width</code>: Max line width in characters for text wrapping (default: <code>20</code>).
+  - <code>--caption-preset</code>: Predefined caption styling preset (e.g. <code>shorts</code>).
+  - <code>--caption-font</code>: Font family name to use for captions.
+  - <code>--caption-uppercase</code> / <code>--caption-no-uppercase</code>: Force or disable uppercase captions.
+  - <code>--caption-vad-filter</code> / <code>--caption-no-vad-filter</code>: Enable or disable VAD filtering.
+  - <code>--shorts-json</code>: Path to custom <code>shorts.json</code> file.
+* <strong>Workflow Steps</strong>:
+  1. <strong>Trim Silences</strong>: Automatically runs <code>trim_silences.py</code> on the raw video to remove dead space.
+  2. <strong>Trim Clips</strong>: Runs <code>auto_trim_shorts.py</code> to match scripts against Whisper transcripts and cut matching segments.
+  3. <strong>Process Audio</strong>: Runs <code>process_audio.sh</code> recursively on cut clips to clean and normalize vocal audio.
+  4. <strong>Add BGM</strong>: Runs <code>add_bgm_to_video.sh</code> recursively to mix in the specified background music.
+  5. <strong>Manual Review</strong>: Pauses execution and prompts the user to verify the cuts in the workspace directory.
+  6. <strong>Prepend Thumbnails</strong>: Runs <code>add_thumbnail.py</code> recursively to generate and burn styled title cover frames.
+  7. <strong>Auto Captioning</strong>: Runs <code>auto_caption.py</code> recursively to transcribe and overlay bouncy styled subtitles.
+  8. <strong>Catalog Metadata</strong>: Runs <code>create_bulk_metadata.py</code> recursively to catalog all created shorts in the metadata database.</p>
+<h3 id="uploadpy"><a href="../shorts/upload.py">upload.py</a></h3>
+<p>Unified entry-point script to orchestrate uploading a short video to one or all platforms.
+* <strong>CLI Command</strong>: <code>phantom shorts upload --platform &lt;youtube|instagram|tiktok|all&gt; &lt;video_path&gt;</code>
+* <strong>Usage</strong>: <code>python shorts/upload.py &lt;video_path&gt; --platform &lt;youtube|instagram|tiktok|all&gt;</code>
+* <strong>Key Features</strong>:
+  - Validates that the target video file exists.
+  - If the video's metadata is missing from <code>shorts.json</code>, the script prompts the user to interactively enter the title, description, tags, thumbnail, and scheduled time, cataloging it automatically before proceeding.
+  - Automatically routes execution to the platform-specific scripts (<code>youtube_api/upload_short.py</code>, <code>instagram/upload_reel.py</code>, and <code>tiktok/upload_tiktok.py</code>).
+  - Tracks success/failure across platforms and prints a clean completion summary.</p>
+<h3 id="create_bulk_metadatapy"><a href="../shorts/create_bulk_metadata.py">create_bulk_metadata.py</a></h3>
+<p>Interactively scans a folder of MP4 files, filters out videos already in <code>shorts.json</code>, and guides the user through typing metadata for each new video.
+* <strong>CLI Command</strong>: <code>phantom shorts metadata create &lt;folder_path&gt; [arguments]</code>
+* <strong>Usage</strong>: <code>python shorts/create_bulk_metadata.py &lt;folder_path&gt; [--shorts-json &lt;custom_json_path&gt;]</code>
+* <strong>Key Features</strong>:
+  - Automatically runs <code>clean_metadata</code> first (prompting to clean fully-posted items).
+  - Prompts the user for: Title, Description, Thumbnail, Tags (comma-separated), and Scheduled Time.
+  - Saves progress immediately after each video to prevent loss of inputs.
+  - Allows skipping a video by leaving title blank or typing <code>s</code>/<code>skip</code>, and global exit by typing <code>q</code>/<code>quit</code>.</p>
+<h3 id="clean_metadatapy"><a href="../shorts/clean_metadata.py">clean_metadata.py</a></h3>
+<p>Utility to remove fully posted items from the database.
+* <strong>CLI Command</strong>: <code>phantom shorts metadata clean</code>
+* <strong>Usage</strong>: <code>python shorts/clean_metadata.py</code>
+* <strong>Key Features</strong>:
+  - Detects items in <code>shorts.json</code> that have been posted to all three platforms (YouTube, Instagram, TikTok).
+  - Backs up the current database to <code>shorts.json.bak</code>.
+  - Clears fully posted entries and saves the remaining ones back.</p>
+<h3 id="add_thumbnailpy"><a href="../shorts/add_thumbnail.py">add_thumbnail.py</a></h3>
+<p>Extracts the first frame of a short video, overlays a stylized text box in the center containing the short's title, and prepends this cover frame to the video for a split-second. This ensures that browsers/players display the title cover as the video's default poster frame.
+* <strong>CLI Command</strong>: <code>phantom shorts add-thumbnail [arguments] &lt;video_path&gt;</code>
+* <strong>Usage/Arguments</strong>:
+  - <code>video_path</code>: Path to video file or directory (if recursive).
+  - <code>-R</code>, <code>--recursive</code>: Process a directory recursively, writing files to a parallel <code>thumbnail_prepended/</code> directory.
+  - <code>-o</code>, <code>--output</code>: Output file path (single file mode only).
+  - <code>-t</code>, <code>--title</code>: Override the title text to burn (bypasses <code>shorts.json</code> lookup).
+  - <code>-f</code>, <code>--font-size</code>: Custom font size override.
+  - <code>-d</code>, <code>--duration</code>: Duration in seconds to display the cover frame (default: <code>0.25</code>s).
+* <strong>Key Features</strong>:
+  - Resolves the title by searching <code>shorts.json</code> (matching exact path, filename, or stem); falls back to the video stem if not found.
+  - Overlays the title in a rounded white background box with black uppercase text using Pillow (safely looking up common bold system fonts).
+  - Concatenates the static frame to the video using FFmpeg.
+  - To prevent video-audio de-sync, it automatically shifts/delays the audio stream using FFmpeg's <code>adelay</code> filter graph by the exact duration of the prepended cover.</p>
+<h3 id="auto_trim_shortspy"><a href="../shorts/auto_trim_shorts.py">auto_trim_shorts.py</a></h3>
+<p>Automates cutting long raw video files into individual shorts by matching spoken speech (Whisper transcripts) with scripts outlined in a Google Doc.
+* <strong>CLI Command</strong>: <code>phantom shorts trim [arguments]</code>
+* <strong>Usage/Arguments</strong>:
+  - <code>--video</code>: Path to the raw long-form video file.
+  - <code>--padding</code>: Seconds of pre/post-roll buffer added to each cut (default: <code>0.5</code>s).
+  - <code>--min-confidence</code>: Fuzzy-match confidence score threshold (0-100) (default: <code>70.0</code>).
+  - <code>--override</code>: Bypass detection for a short. Format: <code>slug=START,END</code> (repeatable).
+  - <code>--dry-run</code>: Compute and print the match/cut plan without invoking FFmpeg or writing files.
+  - <code>--manual</code>: Interactive manual mode that prompts the user for start times of each short.
+* <strong>Environment Configuration</strong>:
+  - <code>SHORTS_GOOGLE_DOC_ID</code>: The ID of the Google Doc outlining your short scripts. The document structure should have each short script starting with a <code>HEADING_2</code> title, followed by <code>NORMAL_TEXT</code> paragraphs containing the body/script.
+* <strong>Workflow</strong>:
+  - Fetches the short scripts outline from Google Docs.
+  - Transcribes the video using local Faster Whisper (generating a word-level SRT if it doesn't already exist).
+  - Computes natural silence gaps between speech segments to identify candidate boundaries.
+  - Formulates a bipartite matching problem and solves it using linear sum assignment (via <code>scipy.optimize.linear_sum_assignment</code> and fuzzy ratios from <code>rapidfuzz</code>) to pair scripts to video segments.
+  - Refines start times by scanning for the title's keywords in the candidate speech block.
+  - Flags low confidence matches (or instances where gap detection fails) for manual review.
+  - Invokes FFmpeg to cut the matching video segments into individual files named <code>{slug}.mp4</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
