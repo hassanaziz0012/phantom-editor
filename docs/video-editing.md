@@ -87,6 +87,21 @@ Transcribes audio from a video using local Faster Whisper models and outputs a s
   - Automatically maps standard Whisper model size strings to local directory models under `video-editing/models/` (e.g. `faster-whisper-small.en`).
   - Runs model inference on CPU using `int8` quantization for optimal execution speed.
 
+### [transcribe_cloud.py](../video-editing/transcribe_cloud.py)
+Transcribes audio from a video using Groq Cloud's Whisper API and outputs a standardized subtitle `.srt` file.
+
+* **CLI Command**: `phantom edit transcribe-cloud <video_path> [arguments]`
+* **Usage/Arguments**:
+  - `--model`, `-m`: Whisper model to use on Groq Cloud: `whisper-large-v3` or `whisper-large-v3-turbo` (default: `whisper-large-v3`).
+  - `--max-words`, `-w`: Maximum words per caption segment (for short-form video formats).
+  - `--uppercase` / `--no-uppercase`: Convert captions to uppercase (default: `False`).
+  - `--preview`: Only process the first 5 seconds of the video for a fast preview test.
+  - `--output`, `-o`: Path to save the generated subtitles `.srt` file (default: same folder and basename as input video file with `.srt` extension).
+* **Key Features**:
+  - Automatically handles the 25 MB file size limit of Groq Cloud by compressing audio or segmenting/chunking it into 10-minute blocks using `ffmpeg`.
+  - Runs transcription in the cloud for near-instant speeds compared to local execution.
+  - Processes word-level timestamps returned from Groq's top-level `"words"` response array and always saves a companion 1-word-per-timestamp subtitle file named `{output_file}-1word.srt` in the same directory.
+
 ### [trim_silences.py](../video-editing/trim_silences.py)
 Trims silences from a video using speech/caption intervals generated via Whisper.
 
