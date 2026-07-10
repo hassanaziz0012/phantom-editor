@@ -6,28 +6,34 @@ This directory contains scripts for automating video editing tasks such as mixin
 
 ### [add_bgm_to_video.sh](../video-editing/add_bgm_to_video.sh)
 Mixes a background music (BGM) track into a video's audio track. Loops the music if it is shorter than the video, adjusts BGM volume, and outputs a new video file while performing a lossless video stream copy.
+
 * **Usage**: `./video-editing/add_bgm_to_video.sh <path_to_video> <bgm_track> [--volume <percentage>]`
 * **Default Output**: `<video_name>-bgm.mp4` in the same directory as the source video.
 * **BGM Library**: Looks up tracks relative to `/mnt/c/Users/hassa/Videos/Asset Library/BGM` if a full path is not provided.
 
 ### [auto_caption.py](../video-editing/auto_caption.py)
-Transcribes audio from a video using the Faster Whisper model, generates a subtitles `.srt` file, and optionally burns the captions directly into the video using `ffmpeg` with custom styling or presets (e.g. for shorts).
+Transcribes audio from a video using the Faster Whisper model, generates a subtitles `.srt` file, and burns the captions directly into the video using `ffmpeg` with custom styling or presets (e.g. for shorts and longs).
+
 * **CLI Command**: `phantom edit caption <video_path> [arguments]`
 * **Usage/Arguments**:
   - `-h`, `--help`: Show the help message and exit.
-  - `-m MODEL`, `--model MODEL`: Path to local model directory or Hugging Face model size (default: `video-editing/models/faster-whisper-small.en`).
-  - `-o OUTPUT`, `--output OUTPUT`: Path to the output SRT file (default: `captions.srt`).
+  - `-m MODEL`, `--model MODEL`: Whisper model size/path locally (default: `medium`, mapped to directories in `video-editing/models/`).
   - `-w MAX_WORDS`, `--max-words MAX_WORDS`: Maximum words per caption segment.
-  - `-v OUTPUT_VIDEO`, `--output-video OUTPUT_VIDEO`: Path to the output video file with burned captions.
-  - `--srt-only`: Only generate the SRT subtitle file and skip burning it into the video.
-  - `--no-uppercase`: Disable converting captions to uppercase.
-  - `-f FONT_SIZE`, `--font-size FONT_SIZE`: Font size for the burned captions.
-  - `--preview`: Only process the first 5 seconds of the video for preview.
-  - `-b BOTTOM_MARGIN`, `--bottom-margin BOTTOM_MARGIN`: Bottom margin for the burned captions in pixels.
-  - `--preset {shorts}`: Apply a predefined set of styling options.
+  - `-v OUTPUT_VIDEO`, `--output-video OUTPUT_VIDEO`: Path to the output video file with burned captions (default: `<input_basename>_captioned{ext}`). Cannot be specified in directory mode.
+  - `--uppercase` / `--no-uppercase`: Convert captions to uppercase (default: `False`, but `True` in `shorts` preset).
+  - `--vad-filter` / `--no-vad-filter`: Use VAD (Voice Activity Detection) filter to ignore silences (default: `True`).
+  - `-f FONT_SIZE`, `--font-size FONT_SIZE`: Font size for the burned captions (default: `16`).
+  - `--preview`: Only process the first 5 seconds of the video for a fast preview test.
+  - `-b BOTTOM_MARGIN`, `--bottom-margin BOTTOM_MARGIN`: Bottom margin for the burned captions in pixels (default: `10`).
+  - `--width WIDTH`: Maximum line width in characters for text wrapping (default: `20`).
+  - `--font`, `--font-name FONT_NAME`: Font family name to use for the captions (default: `Google Sans`).
+  - `--animated` / `--no-animated`: Enable or disable bouncy popup animation for captions (default: `False`, but `True` in `shorts` preset).
+  - `--preset {shorts, longs}`: Apply a predefined set of styling options.
+  - `-R`, `--recursive`: Recursively process videos if the input path is a directory.
 
 ### [attach_webcam_mask.py](../video-editing/attach_webcam_mask.py)
 Overlays a webcam video recording in the top-right corner of screen footage with rounded corners.
+
 * **CLI Command**: `phantom edit attach-webcam-mask --screen <screen_video> --webcam <webcam_video> [arguments]`
 * **Usage/Arguments**:
   - `--screen`: Path to the screen recording video file.
@@ -43,8 +49,32 @@ Overlays a webcam video recording in the top-right corner of screen footage with
   - Uses webcam audio track if available; falls back to screen audio track if webcam has no audio; writes a video-only output if neither has audio.
   - Performs mathematically rounded corner masking on the fly using FFmpeg's `split`, `geq`, `format=gray`, and `alphamerge` filter graphs.
 
+### [auto_attach_webcam_mask.py](../video-editing/auto_attach_webcam_mask.py)
+Overlays a webcam video recording in the top-right corner of screen footage with rounded corners dynamically, toggling the overlay on and off based on voice commands in the audio (`webcam start`/`webcam stop`).
+
+* **CLI Command**: `phantom edit auto-attach-webcam --screen <screen_video> --webcam <webcam_video> [arguments]`
+* **Usage/Arguments**:
+  - `--screen`: Path to the screen recording video file.
+  - `--webcam`: Path to the webcam recording video file.
+  - `-o`, `--output`: Path to save the output video file (default: `[screen_basename]_auto_webcam.mp4` in screen folder).
+  - `-w`, `--width`: Width of the webcam overlay in pixels (default: `400`).
+  - `-r`, `--radius`: Corner radius for the webcam overlay rounded rectangle in pixels (default: `20`).
+  - `-d`, `--offset`: Margin/offset from the top-right corner in pixels (default: `20`).
+  - `-m`, `--model`: Whisper model size to use locally for transcription (`small`, `medium`, `large`; default: `medium`).
+  - `--captions`: Path to save or reuse the intermediate one-word captions file (default: `[webcam_basename]_1word.srt`).
+  - `--default-overlay`: Start the video in overlay mode (default: `False`, meaning it starts full-screen raw webcam).
+  - `--force-reencode`: Force re-encoding of all video segments, bypassing stream copy optimization for raw segments.
+* **Requirements**: `ffmpeg` and `ffprobe` installed on system.
+* **Key Features**:
+  - Transcribes the webcam audio using Faster Whisper with word-level timestamps (`max_words=1`).
+  - Parses the SRT file using a state machine to resolve overlay ranges based on voice triggers: "webcam start"/"stop" or "web cam start"/"stop".
+  - Segments the timeline into contiguous blocks (either full-screen raw webcam, or screen footage with webcam overlay).
+  - Optimizes processing by using direct video stream copy (`-c:v copy`) for raw segments if the webcam resolution and codec match the target screen resolution.
+  - Applies rounded-corner masking on overlay segments using complex FFmpeg filter graphs on the fly.
+
 ### [transcribe.py](../video-editing/transcribe.py)
 Transcribes audio from a video using local Faster Whisper models and outputs a standardized subtitle `.srt` file.
+
 * **CLI Command**: `phantom edit transcribe <video_path> [arguments]`
 * **Usage/Arguments**:
   - `--model`, `-m`: Whisper model size to use locally: `small`, `medium`, or `large` (default: `medium`, mapped to directories in `video-editing/models/`).
@@ -59,6 +89,7 @@ Transcribes audio from a video using local Faster Whisper models and outputs a s
 
 ### [trim_silences.py](../video-editing/trim_silences.py)
 Trims silences from a video using speech/caption intervals generated via Whisper.
+
 * **CLI Command**: `phantom edit trim-silences <video_path> [arguments]`
 * **Usage/Arguments**:
   - `-o`, `--output`: Path to save the trimmed output video (default: `trimmed_output.mp4` in input video's directory). Cannot be used with `--recursive`.
@@ -72,6 +103,7 @@ Trims silences from a video using speech/caption intervals generated via Whisper
 
 ### [utils.py](../video-editing/utils.py)
 A shared utility module containing helper functions for timestamp parsing/formatting, slug generation, and Google Docs retrieval:
+
 - `format_srt_time(seconds)`: Converts float seconds to `HH:MM:SS,mmm` string format.
 - `parse_timestamp(val)`: Parses float seconds or `HH:MM:SS,mmm` strings into float seconds.
 - `slugify(text)`: Converts arbitrary text to a lowercase hyphenated filename-safe slug.

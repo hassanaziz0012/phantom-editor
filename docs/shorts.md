@@ -4,6 +4,7 @@ This directory contains the core pipeline scripts for managing, cutting, preppin
 
 ## Database: [shorts.json](../shorts/shorts.json)
 The pipeline is driven by a unified metadata database `shorts.json` stored in the `shorts/` directory. Each item in the database has the following schema:
+
 ```json
 {
   "video_path": "/absolute/path/to/video.mp4",
@@ -19,21 +20,65 @@ The pipeline is driven by a unified metadata database `shorts.json` stored in th
     "tiktok": false
   }
 }
+
 ```
 
 ## Scripts
 
+### [process_shorts.py](../shorts/process_shorts.py)
+Unified Shorts Production Pipeline. It orchestrates the entire flow from a raw video file to fully processed, captioned, and cataloged shorts.
+
+* **Usage**: `python shorts/process_shorts.py <raw_video> --bgm-track <track> [arguments]`
+* **Arguments**:
+  - `raw_video`: Path to the raw input video file.
+  - `--bgm-track`: Background music track name or full path to mix in.
+  - `--bgm-volume`: Volume percentage (1-100) for BGM (default: `10`).
+  - `--output-dir`, `-O`: Custom workspace path. Defaults to a folder named after the video stem under the video's parent.
+  - `--skip-silence`: Skip silence-trimming (Step 1).
+  - `--silence-model`: Whisper model size for silence detection (`small`, `medium`, `large`; default: `medium`).
+  - `--silence-padding`: Padding in seconds for speech intervals (default: `0.15`s).
+  - `--silence-min`: Minimum silence duration to split segments (default: `0.4`s).
+  - `--trim-padding`: Pre/post-roll buffer for cut clips (default: `0.5`s).
+  - `--min-confidence`: Fuzzy-match confidence threshold (default: `70.0`).
+  - `--override`: Repeatable override flag (`slug=START,END`).
+  - `--dry-run`: Preview cut plan without cutting clips (presents interactive prompt to proceed, override, run manually, or abort).
+  - `--manual`: Run clip cutting in interactive manual mode.
+  - `--thumb-font-size`: Font size override for the cover text.
+  - `--thumb-duration`: Duration in seconds to display cover frame (default: `0.25`s).
+  - `--caption-model`: Whisper model size for captions (default: `medium`).
+  - `--caption-max-words`: Max words per caption segment.
+  - `--caption-font-size`: Font size for burned captions.
+  - `--caption-bottom-margin`: Bottom margin for captions in pixels.
+  - `--caption-width`: Max line width in characters for text wrapping (default: `20`).
+  - `--caption-preset`: Predefined caption styling preset (e.g. `shorts`).
+  - `--caption-font`: Font family name to use for captions.
+  - `--caption-uppercase` / `--caption-no-uppercase`: Force or disable uppercase captions.
+  - `--caption-vad-filter` / `--caption-no-vad-filter`: Enable or disable VAD filtering.
+  - `--shorts-json`: Path to custom `shorts.json` file.
+* **Workflow Steps**:
+  1. **Trim Silences**: Automatically runs `trim_silences.py` on the raw video to remove dead space.
+  2. **Trim Clips**: Runs `auto_trim_shorts.py` to match scripts against Whisper transcripts and cut matching segments.
+  3. **Process Audio**: Runs `process_audio.sh` recursively on cut clips to clean and normalize vocal audio.
+  4. **Add BGM**: Runs `add_bgm_to_video.sh` recursively to mix in the specified background music.
+  5. **Manual Review**: Pauses execution and prompts the user to verify the cuts in the workspace directory.
+  6. **Prepend Thumbnails**: Runs `add_thumbnail.py` recursively to generate and burn styled title cover frames.
+  7. **Auto Captioning**: Runs `auto_caption.py` recursively to transcribe and overlay bouncy styled subtitles.
+  8. **Catalog Metadata**: Runs `create_bulk_metadata.py` recursively to catalog all created shorts in the metadata database.
+
 ### [upload.py](../shorts/upload.py)
 Unified entry-point script to orchestrate uploading a short video to one or all platforms.
+
 * **CLI Command**: `phantom shorts upload --platform <youtube|instagram|tiktok|all> <video_path>`
 * **Usage**: `python shorts/upload.py <video_path> --platform <youtube|instagram|tiktok|all>`
 * **Key Features**:
   - Validates that the target video file exists.
+  - If the video's metadata is missing from `shorts.json`, the script prompts the user to interactively enter the title, description, tags, thumbnail, and scheduled time, cataloging it automatically before proceeding.
   - Automatically routes execution to the platform-specific scripts (`youtube_api/upload_short.py`, `instagram/upload_reel.py`, and `tiktok/upload_tiktok.py`).
   - Tracks success/failure across platforms and prints a clean completion summary.
 
 ### [create_bulk_metadata.py](../shorts/create_bulk_metadata.py)
 Interactively scans a folder of MP4 files, filters out videos already in `shorts.json`, and guides the user through typing metadata for each new video.
+
 * **CLI Command**: `phantom shorts metadata create <folder_path> [arguments]`
 * **Usage**: `python shorts/create_bulk_metadata.py <folder_path> [--shorts-json <custom_json_path>]`
 * **Key Features**:
@@ -44,6 +89,7 @@ Interactively scans a folder of MP4 files, filters out videos already in `shorts
 
 ### [clean_metadata.py](../shorts/clean_metadata.py)
 Utility to remove fully posted items from the database.
+
 * **CLI Command**: `phantom shorts metadata clean`
 * **Usage**: `python shorts/clean_metadata.py`
 * **Key Features**:
@@ -53,6 +99,7 @@ Utility to remove fully posted items from the database.
 
 ### [add_thumbnail.py](../shorts/add_thumbnail.py)
 Extracts the first frame of a short video, overlays a stylized text box in the center containing the short's title, and prepends this cover frame to the video for a split-second. This ensures that browsers/players display the title cover as the video's default poster frame.
+
 * **CLI Command**: `phantom shorts add-thumbnail [arguments] <video_path>`
 * **Usage/Arguments**:
   - `video_path`: Path to video file or directory (if recursive).
@@ -69,6 +116,7 @@ Extracts the first frame of a short video, overlays a stylized text box in the c
 
 ### [auto_trim_shorts.py](../shorts/auto_trim_shorts.py)
 Automates cutting long raw video files into individual shorts by matching spoken speech (Whisper transcripts) with scripts outlined in a Google Doc.
+
 * **CLI Command**: `phantom shorts trim [arguments]`
 * **Usage/Arguments**:
   - `--video`: Path to the raw long-form video file.

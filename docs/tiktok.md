@@ -4,6 +4,7 @@ This directory contains scripts to automate uploading short-form video content t
 
 ## Configuration
 Authentication with TikTok is performed through multiple fallback methods in the following order of priority:
+
 1. **Cookies Files**:
    - `tiktok_cookies.txt` or `cookies.txt` at the repository root. If either file exists, the browser will use these cookies to authenticate directly. You can export cookies from your browser session using standard Netscape cookies format extensions.
 2. **Session ID**:
@@ -18,6 +19,7 @@ Authentication with TikTok is performed through multiple fallback methods in the
 
 ### [upload_tiktok.py](../tiktok/upload_tiktok.py)
 Launches Playwright underneath using the `tiktok-uploader` library to upload a video to TikTok.
+
 * **Usage**: `python tiktok/upload_tiktok.py <path_to_video.mp4> [--headed]` or via `phantom shorts upload --platform tiktok <video_path>`
 * **Metadata Lookup**:
   - Automatically queries the unified database `shorts/shorts.json` to find matching metadata for the video (matching by path, filename, or stem).
