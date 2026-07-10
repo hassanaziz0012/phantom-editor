@@ -2,10 +2,13 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import textwrap
 import uuid
 from dataclasses import dataclass
 from transcribe import transcribe_video
+
+DEFAULT_FONT = "Google Sans"
 
 @dataclass
 class CaptionPreset:
@@ -13,10 +16,57 @@ class CaptionPreset:
     font_size: int
     bottom_margin: int
     uppercase: bool = True
+    width: int = 20
+    font_name: str = DEFAULT_FONT
+    animated: bool = False
 
 PRESETS = {
-    "shorts": CaptionPreset(max_words=5, font_size=12, bottom_margin=50, uppercase=True)
+    "shorts": CaptionPreset(max_words=3, font_size=24, bottom_margin=25, uppercase=True, width=14, font_name="League Spartan SemiBold", animated=True),
+    "longs": CaptionPreset(max_words=12, font_size=10, bottom_margin=20, uppercase=False, width=60, font_name="Google Sans", animated=False)
 }
+
+_WARNED_FONTS = set()
+
+def verify_font(font_name):
+    try:
+        # Check if the exact name matches fc-list
+        list_result = subprocess.run(["fc-list", font_name], capture_output=True, text=True, check=True)
+        if list_result.stdout.strip():
+            return True, None
+        
+        # If not, let's get all available font families
+        result = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True, check=True)
+        families = set()
+        for line in result.stdout.splitlines():
+            for family in line.split(","):
+                f = family.strip()
+                if f:
+                    families.add(f.lower())
+        
+        # Check if the lowercase font_name matches any family
+        font_name_lower = font_name.lower()
+        if font_name_lower in families:
+            return True, None
+            
+        # Check if the base family name matches any family (stripping style modifiers)
+        modifiers = {"regular", "bold", "italic", "semibold", "medium", "light", "thin", "black", "extrabold", "extralight", "oblique"}
+        words = font_name.split()
+        while words and words[-1].lower() in modifiers:
+            words.pop()
+        base_name = " ".join(words).lower()
+        if base_name in families:
+            return True, None
+            
+        # If still not found, it is not available. Get fallback using fc-match
+        match_result = subprocess.run(
+            ["fc-match", "-f", "%{family} (%{file})", font_name],
+            capture_output=True, text=True, check=True
+        )
+        fallback = match_result.stdout.strip()
+        return False, fallback
+    except Exception:
+        # If fc-list or fc-match fail/are missing (e.g. non-Linux / no fontconfig)
+        return True, None
 
 # Helper functions for ASS caption styling with white rounded backgrounds
 def srt_time_to_ass(srt_time_str):
@@ -42,7 +92,7 @@ def get_video_resolution(video_path):
         print(f"Warning: Could not determine video resolution using ffprobe: {e}")
     return 1080, 1920
 
-def convert_srt_to_ass(srt_path, ass_path, video_width, video_height, font_size, bottom_margin, uppercase=False, width=20):
+def convert_srt_to_ass(srt_path, ass_path, video_width, video_height, font_size, bottom_margin, uppercase=False, width=20, font_name="Google Sans", animated=False):
     play_res_y = 384
     play_res_x = int(play_res_y * video_width / video_height)
     
@@ -83,7 +133,10 @@ def convert_srt_to_ass(srt_path, ass_path, video_width, video_height, font_size,
         box_height = text_height + 2 * pad_y
         radius = font_size * 0.35
         
-        xl, xr, yt, yb = 0, round(box_width), 0, round(box_height)
+        xl = 0
+        xr = round(box_width)
+        yt = 0
+        yb = round(box_height)
         r = round(radius)
         c = 0.5522847
         
@@ -102,13 +155,16 @@ def convert_srt_to_ass(srt_path, ass_path, video_width, video_height, font_size,
         pos_x = play_res_x // 2
         pos_y = play_res_y - bottom_margin - box_height // 2
         
-        box_pos_x = round(pos_x - box_width / 2)
-        box_pos_y = round(pos_y - box_height / 2)
-        
         ass_text = wrapped_text.replace('\n', '\\N')
         
-        box_line = f"Dialogue: 0,{start_t},{end_t},CaptionBox,,0,0,0,,{{\\an7\\pos({box_pos_x},{box_pos_y})\\p1}}{path}{{\\p0}}"
-        text_line = f"Dialogue: 1,{start_t},{end_t},CaptionText,,0,0,0,,{{\\an5\\pos({pos_x},{pos_y})}}{ass_text}"
+        # Prepare animation override tags if animated=True
+        # Scale starts at 95%, scales to 105% in 100ms, then scales to 100% in 100ms
+        anim_tags = ""
+        if animated:
+            anim_tags = "\\fscx95\\fscy95\\t(0,100,\\fscx105\\fscy105)\\t(100,200,\\fscx100\\fscy100)"
+            
+        box_line = f"Dialogue: 0,{start_t},{end_t},CaptionBox,,0,0,0,,{{\\an5\\pos({pos_x},{pos_y}){anim_tags}\\p1}}{path}{{\\p0}}"
+        text_line = f"Dialogue: 1,{start_t},{end_t},CaptionText,,0,0,0,,{{\\an5\\pos({pos_x},{pos_y}){anim_tags}}}{ass_text}"
         
         ass_events.append(box_line)
         ass_events.append(text_line)
@@ -122,8 +178,8 @@ ScaledBorderAndShadow: Yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: CaptionText,Google Sans,{font_size},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,10,10,10,1
-Style: CaptionBox,Google Sans,{font_size},&H00FFFFFF,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,10,10,10,1
+Style: CaptionText,{font_name},{font_size},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,10,10,10,1
+Style: CaptionBox,{font_name},{font_size},&H00FFFFFF,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -135,7 +191,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             f.write(line + '\n')
 
 
-def generate_captions(video_path, model_path_or_size="medium", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True, width=20):
+def generate_captions(video_path, model_path_or_size="medium", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True, width=20, font_name="Google Sans", animated=False):
+    # Verify font availability and prompt user if fallback will be used
+    is_available, fallback = verify_font(font_name)
+    if not is_available and font_name not in _WARNED_FONTS:
+        _WARNED_FONTS.add(font_name)
+        print(f"\n[WARNING] Chosen font '{font_name}' is not available on this system.")
+        print(f"Fallback font that will be used: {fallback}")
+        if sys.stdin.isatty():
+            response = input("Do you want to proceed with the fallback font? [Y/n]: ").strip().lower()
+            if response not in ('', 'y', 'yes'):
+                print("Aborted by user.")
+                sys.exit(0)
+        else:
+            print("Non-interactive terminal detected. Proceeding automatically.")
+
     # Determine the directory of the input video first to save SRT file in the same folder
     video_dir = os.path.dirname(os.path.abspath(video_path))
     video_name_without_ext, _ = os.path.splitext(os.path.basename(video_path))
@@ -205,7 +275,9 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
                 font_size=font_size,
                 bottom_margin=bottom_margin,
                 uppercase=uppercase,
-                width=width
+                width=width,
+                font_name=font_name,
+                animated=animated
             )
             
             # FFmpeg command to burn the styled ASS subtitles:
@@ -213,6 +285,9 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
                 "ffmpeg", "-y",
                 "-i", video_path,
                 "-vf", f"subtitles={temp_ass}",
+                "-c:v", "libx264",
+                "-crf", "18",
+                "-preset", "slow",
                 "-c:a", "copy",
                 output_video_path
             ]
@@ -310,8 +385,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--width",
         type=positive_int,
-        default=20,
+        default=None,
         help="Maximum line width in characters for text wrapping (default: 20)."
+    )
+    parser.add_argument(
+        "--font", "--font-name",
+        dest="font_name",
+        default=None,
+        help=f"Font name to use for the captions (default: {DEFAULT_FONT})."
+    )
+    parser.add_argument(
+        "--animated",
+        action="store_true",
+        default=None,
+        help="Enable bouncy popup animation for captions (default: False, but True for shorts preset)."
+    )
+    parser.add_argument(
+        "--no-animated",
+        dest="animated",
+        action="store_false",
+        help="Disable bouncy popup animation for captions."
     )
     parser.add_argument(
         "--preset",
@@ -332,6 +425,8 @@ if __name__ == "__main__":
     uppercase = args.uppercase
     vad_filter = args.vad_filter
     width = args.width
+    font_name = args.font_name
+    animated = args.animated
 
     if args.preset:
         preset = PRESETS[args.preset]
@@ -343,6 +438,12 @@ if __name__ == "__main__":
             bottom_margin = preset.bottom_margin
         if uppercase is None:
             uppercase = preset.uppercase
+        if width is None:
+            width = preset.width
+        if font_name is None:
+            font_name = preset.font_name
+        if animated is None:
+            animated = preset.animated
 
     if uppercase is None:
         uppercase = False
@@ -350,10 +451,17 @@ if __name__ == "__main__":
     if vad_filter is None:
         vad_filter = True
 
+    if animated is None:
+        animated = False
+
     if font_size is None:
         font_size = 16
     if bottom_margin is None:
         bottom_margin = 10
+    if width is None:
+        width = 20
+    if font_name is None:
+        font_name = DEFAULT_FONT
 
     VIDEO_EXTENSIONS = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp')
 
@@ -404,7 +512,9 @@ if __name__ == "__main__":
                     preview=args.preview,
                     bottom_margin=bottom_margin,
                     vad_filter=vad_filter,
-                    width=width
+                    width=width,
+                    font_name=font_name,
+                    animated=animated
                 )
             except Exception as e:
                 print(f"Error processing {video_file}: {e}")
@@ -419,5 +529,7 @@ if __name__ == "__main__":
             preview=args.preview,
             bottom_margin=bottom_margin,
             vad_filter=vad_filter,
-            width=width
+            width=width,
+            font_name=font_name,
+            animated=animated
         )
