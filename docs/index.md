@@ -42,3 +42,16 @@ Automatic publishing and uploading scripts to distribute finalized content acros
 ## 🚀 Getting Started
 
 To read the details about any script, choose a section from the navigation sidebar or tabs at the top. Every document includes usage flags, requirements, and examples.
+
+---
+
+## 📖 Serving Documentation
+
+You can preview the documentation locally using the `phantom` CLI wrapper:
+
+```bash
+phantom docs open
+```
+
+This starts the MkDocs development server (if not already running) at `http://127.0.0.1:8000` and automatically opens the home page in your web browser. If the server is already active, it will directly open the browser.
+
