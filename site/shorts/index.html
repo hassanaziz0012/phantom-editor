@@ -13,7 +13,7 @@
       
       
       
-        <link rel="prev" href="../filmora-automation/">
+        <link rel="prev" href="../review/">
       
       
         <link rel="next" href="../youtube-api/">
@@ -287,6 +287,25 @@
   
   
   
+  
+    <li class="md-tabs__item">
+      <a href="../review/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video Quality Review
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
     
   
   
@@ -450,6 +469,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video Quality Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -471,10 +517,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
             
   
   
@@ -492,8 +538,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -974,107 +1020,120 @@
     &quot;tiktok&quot;: false
   }
 }
+
 </code></pre>
 <h2 id="scripts">Scripts</h2>
 <h3 id="process_shortspy"><a href="../shorts/process_shorts.py">process_shorts.py</a></h3>
-<p>Unified Shorts Production Pipeline. It orchestrates the entire flow from a raw video file to fully processed, captioned, and cataloged shorts.
-* <strong>Usage</strong>: <code>python shorts/process_shorts.py &lt;raw_video&gt; --bgm-track &lt;track&gt; [arguments]</code>
-* <strong>Arguments</strong>:
-  - <code>raw_video</code>: Path to the raw input video file.
-  - <code>--bgm-track</code>: Background music track name or full path to mix in.
-  - <code>--bgm-volume</code>: Volume percentage (1-100) for BGM (default: <code>10</code>).
-  - <code>--output-dir</code>, <code>-O</code>: Custom workspace path. Defaults to a folder named after the video stem under the video's parent.
-  - <code>--skip-silence</code>: Skip silence-trimming (Step 1).
-  - <code>--silence-model</code>: Whisper model size for silence detection (<code>small</code>, <code>medium</code>, <code>large</code>; default: <code>medium</code>).
-  - <code>--silence-padding</code>: Padding in seconds for speech intervals (default: <code>0.15</code>s).
-  - <code>--silence-min</code>: Minimum silence duration to split segments (default: <code>0.4</code>s).
-  - <code>--trim-padding</code>: Pre/post-roll buffer for cut clips (default: <code>0.5</code>s).
-  - <code>--min-confidence</code>: Fuzzy-match confidence threshold (default: <code>70.0</code>).
-  - <code>--override</code>: Repeatable override flag (<code>slug=START,END</code>).
-  - <code>--dry-run</code>: Preview cut plan without cutting clips (presents interactive prompt to proceed, override, run manually, or abort).
-  - <code>--manual</code>: Run clip cutting in interactive manual mode.
-  - <code>--thumb-font-size</code>: Font size override for the cover text.
-  - <code>--thumb-duration</code>: Duration in seconds to display cover frame (default: <code>0.25</code>s).
-  - <code>--caption-model</code>: Whisper model size for captions (default: <code>medium</code>).
-  - <code>--caption-max-words</code>: Max words per caption segment.
-  - <code>--caption-font-size</code>: Font size for burned captions.
-  - <code>--caption-bottom-margin</code>: Bottom margin for captions in pixels.
-  - <code>--caption-width</code>: Max line width in characters for text wrapping (default: <code>20</code>).
-  - <code>--caption-preset</code>: Predefined caption styling preset (e.g. <code>shorts</code>).
-  - <code>--caption-font</code>: Font family name to use for captions.
-  - <code>--caption-uppercase</code> / <code>--caption-no-uppercase</code>: Force or disable uppercase captions.
-  - <code>--caption-vad-filter</code> / <code>--caption-no-vad-filter</code>: Enable or disable VAD filtering.
-  - <code>--shorts-json</code>: Path to custom <code>shorts.json</code> file.
-* <strong>Workflow Steps</strong>:
-  1. <strong>Trim Silences</strong>: Automatically runs <code>trim_silences.py</code> on the raw video to remove dead space.
-  2. <strong>Trim Clips</strong>: Runs <code>auto_trim_shorts.py</code> to match scripts against Whisper transcripts and cut matching segments.
-  3. <strong>Process Audio</strong>: Runs <code>process_audio.sh</code> recursively on cut clips to clean and normalize vocal audio.
-  4. <strong>Add BGM</strong>: Runs <code>add_bgm_to_video.sh</code> recursively to mix in the specified background music.
-  5. <strong>Manual Review</strong>: Pauses execution and prompts the user to verify the cuts in the workspace directory.
-  6. <strong>Prepend Thumbnails</strong>: Runs <code>add_thumbnail.py</code> recursively to generate and burn styled title cover frames.
-  7. <strong>Auto Captioning</strong>: Runs <code>auto_caption.py</code> recursively to transcribe and overlay bouncy styled subtitles.
-  8. <strong>Catalog Metadata</strong>: Runs <code>create_bulk_metadata.py</code> recursively to catalog all created shorts in the metadata database.</p>
+<p>Unified Shorts Production Pipeline. It orchestrates the entire flow from a raw video file to fully processed, captioned, and cataloged shorts.</p>
+<ul>
+<li><strong>Usage</strong>: <code>python shorts/process_shorts.py &lt;raw_video&gt; --bgm-track &lt;track&gt; [arguments]</code></li>
+<li><strong>Arguments</strong>:</li>
+<li><code>raw_video</code>: Path to the raw input video file.</li>
+<li><code>--bgm-track</code>: Background music track name or full path to mix in.</li>
+<li><code>--bgm-volume</code>: Volume percentage (1-100) for BGM (default: <code>10</code>).</li>
+<li><code>--output-dir</code>, <code>-O</code>: Custom workspace path. Defaults to a folder named after the video stem under the video's parent.</li>
+<li><code>--skip-silence</code>: Skip silence-trimming (Step 1).</li>
+<li><code>--silence-model</code>: Whisper model size for silence detection (<code>small</code>, <code>medium</code>, <code>large</code>; default: <code>medium</code>).</li>
+<li><code>--silence-padding</code>: Padding in seconds for speech intervals (default: <code>0.15</code>s).</li>
+<li><code>--silence-min</code>: Minimum silence duration to split segments (default: <code>0.4</code>s).</li>
+<li><code>--trim-padding</code>: Pre/post-roll buffer for cut clips (default: <code>0.5</code>s).</li>
+<li><code>--min-confidence</code>: Fuzzy-match confidence threshold (default: <code>70.0</code>).</li>
+<li><code>--override</code>: Repeatable override flag (<code>slug=START,END</code>).</li>
+<li><code>--dry-run</code>: Preview cut plan without cutting clips (presents interactive prompt to proceed, override, run manually, or abort).</li>
+<li><code>--manual</code>: Run clip cutting in interactive manual mode.</li>
+<li><code>--thumb-font-size</code>: Font size override for the cover text.</li>
+<li><code>--thumb-duration</code>: Duration in seconds to display cover frame (default: <code>0.25</code>s).</li>
+<li><code>--caption-model</code>: Whisper model size for captions (default: <code>medium</code>).</li>
+<li><code>--caption-max-words</code>: Max words per caption segment.</li>
+<li><code>--caption-font-size</code>: Font size for burned captions.</li>
+<li><code>--caption-bottom-margin</code>: Bottom margin for captions in pixels.</li>
+<li><code>--caption-width</code>: Max line width in characters for text wrapping (default: <code>20</code>).</li>
+<li><code>--caption-preset</code>: Predefined caption styling preset (e.g. <code>shorts</code>).</li>
+<li><code>--caption-font</code>: Font family name to use for captions.</li>
+<li><code>--caption-uppercase</code> / <code>--caption-no-uppercase</code>: Force or disable uppercase captions.</li>
+<li><code>--caption-vad-filter</code> / <code>--caption-no-vad-filter</code>: Enable or disable VAD filtering.</li>
+<li><code>--shorts-json</code>: Path to custom <code>shorts.json</code> file.</li>
+<li><strong>Workflow Steps</strong>:</li>
+<li><strong>Trim Silences</strong>: Automatically runs <code>trim_silences.py</code> on the raw video to remove dead space.</li>
+<li><strong>Trim Clips</strong>: Runs <code>auto_trim_shorts.py</code> to match scripts against Whisper transcripts and cut matching segments.</li>
+<li><strong>Process Audio</strong>: Runs <code>process_audio.sh</code> recursively on cut clips to clean and normalize vocal audio.</li>
+<li><strong>Add BGM</strong>: Runs <code>add_bgm_to_video.sh</code> recursively to mix in the specified background music.</li>
+<li><strong>Manual Review</strong>: Pauses execution and prompts the user to verify the cuts in the workspace directory.</li>
+<li><strong>Prepend Thumbnails</strong>: Runs <code>add_thumbnail.py</code> recursively to generate and burn styled title cover frames.</li>
+<li><strong>Auto Captioning</strong>: Runs <code>auto_caption.py</code> recursively to transcribe and overlay bouncy styled subtitles.</li>
+<li><strong>Catalog Metadata</strong>: Runs <code>create_bulk_metadata.py</code> recursively to catalog all created shorts in the metadata database.</li>
+</ul>
 <h3 id="uploadpy"><a href="../shorts/upload.py">upload.py</a></h3>
-<p>Unified entry-point script to orchestrate uploading a short video to one or all platforms.
-* <strong>CLI Command</strong>: <code>phantom shorts upload --platform &lt;youtube|instagram|tiktok|all&gt; &lt;video_path&gt;</code>
-* <strong>Usage</strong>: <code>python shorts/upload.py &lt;video_path&gt; --platform &lt;youtube|instagram|tiktok|all&gt;</code>
-* <strong>Key Features</strong>:
-  - Validates that the target video file exists.
-  - If the video's metadata is missing from <code>shorts.json</code>, the script prompts the user to interactively enter the title, description, tags, thumbnail, and scheduled time, cataloging it automatically before proceeding.
-  - Automatically routes execution to the platform-specific scripts (<code>youtube_api/upload_short.py</code>, <code>instagram/upload_reel.py</code>, and <code>tiktok/upload_tiktok.py</code>).
-  - Tracks success/failure across platforms and prints a clean completion summary.</p>
+<p>Unified entry-point script to orchestrate uploading a short video to one or all platforms.</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom shorts upload --platform &lt;youtube|instagram|tiktok|all&gt; &lt;video_path&gt;</code></li>
+<li><strong>Usage</strong>: <code>python shorts/upload.py &lt;video_path&gt; --platform &lt;youtube|instagram|tiktok|all&gt;</code></li>
+<li><strong>Key Features</strong>:</li>
+<li>Validates that the target video file exists.</li>
+<li>If the video's metadata is missing from <code>shorts.json</code>, the script prompts the user to interactively enter the title, description, tags, thumbnail, and scheduled time, cataloging it automatically before proceeding.</li>
+<li>Automatically routes execution to the platform-specific scripts (<code>youtube_api/upload_short.py</code>, <code>instagram/upload_reel.py</code>, and <code>tiktok/upload_tiktok.py</code>).</li>
+<li>Tracks success/failure across platforms and prints a clean completion summary.</li>
+</ul>
 <h3 id="create_bulk_metadatapy"><a href="../shorts/create_bulk_metadata.py">create_bulk_metadata.py</a></h3>
-<p>Interactively scans a folder of MP4 files, filters out videos already in <code>shorts.json</code>, and guides the user through typing metadata for each new video.
-* <strong>CLI Command</strong>: <code>phantom shorts metadata create &lt;folder_path&gt; [arguments]</code>
-* <strong>Usage</strong>: <code>python shorts/create_bulk_metadata.py &lt;folder_path&gt; [--shorts-json &lt;custom_json_path&gt;]</code>
-* <strong>Key Features</strong>:
-  - Automatically runs <code>clean_metadata</code> first (prompting to clean fully-posted items).
-  - Prompts the user for: Title, Description, Thumbnail, Tags (comma-separated), and Scheduled Time.
-  - Saves progress immediately after each video to prevent loss of inputs.
-  - Allows skipping a video by leaving title blank or typing <code>s</code>/<code>skip</code>, and global exit by typing <code>q</code>/<code>quit</code>.</p>
+<p>Interactively scans a folder of MP4 files, filters out videos already in <code>shorts.json</code>, and guides the user through typing metadata for each new video.</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom shorts metadata create &lt;folder_path&gt; [arguments]</code></li>
+<li><strong>Usage</strong>: <code>python shorts/create_bulk_metadata.py &lt;folder_path&gt; [--shorts-json &lt;custom_json_path&gt;]</code></li>
+<li><strong>Key Features</strong>:</li>
+<li>Automatically runs <code>clean_metadata</code> first (prompting to clean fully-posted items).</li>
+<li>Prompts the user for: Title, Description, Thumbnail, Tags (comma-separated), and Scheduled Time.</li>
+<li>Saves progress immediately after each video to prevent loss of inputs.</li>
+<li>Allows skipping a video by leaving title blank or typing <code>s</code>/<code>skip</code>, and global exit by typing <code>q</code>/<code>quit</code>.</li>
+</ul>
 <h3 id="clean_metadatapy"><a href="../shorts/clean_metadata.py">clean_metadata.py</a></h3>
-<p>Utility to remove fully posted items from the database.
-* <strong>CLI Command</strong>: <code>phantom shorts metadata clean</code>
-* <strong>Usage</strong>: <code>python shorts/clean_metadata.py</code>
-* <strong>Key Features</strong>:
-  - Detects items in <code>shorts.json</code> that have been posted to all three platforms (YouTube, Instagram, TikTok).
-  - Backs up the current database to <code>shorts.json.bak</code>.
-  - Clears fully posted entries and saves the remaining ones back.</p>
+<p>Utility to remove fully posted items from the database.</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom shorts metadata clean</code></li>
+<li><strong>Usage</strong>: <code>python shorts/clean_metadata.py</code></li>
+<li><strong>Key Features</strong>:</li>
+<li>Detects items in <code>shorts.json</code> that have been posted to all three platforms (YouTube, Instagram, TikTok).</li>
+<li>Backs up the current database to <code>shorts.json.bak</code>.</li>
+<li>Clears fully posted entries and saves the remaining ones back.</li>
+</ul>
 <h3 id="add_thumbnailpy"><a href="../shorts/add_thumbnail.py">add_thumbnail.py</a></h3>
-<p>Extracts the first frame of a short video, overlays a stylized text box in the center containing the short's title, and prepends this cover frame to the video for a split-second. This ensures that browsers/players display the title cover as the video's default poster frame.
-* <strong>CLI Command</strong>: <code>phantom shorts add-thumbnail [arguments] &lt;video_path&gt;</code>
-* <strong>Usage/Arguments</strong>:
-  - <code>video_path</code>: Path to video file or directory (if recursive).
-  - <code>-R</code>, <code>--recursive</code>: Process a directory recursively, writing files to a parallel <code>thumbnail_prepended/</code> directory.
-  - <code>-o</code>, <code>--output</code>: Output file path (single file mode only).
-  - <code>-t</code>, <code>--title</code>: Override the title text to burn (bypasses <code>shorts.json</code> lookup).
-  - <code>-f</code>, <code>--font-size</code>: Custom font size override.
-  - <code>-d</code>, <code>--duration</code>: Duration in seconds to display the cover frame (default: <code>0.25</code>s).
-* <strong>Key Features</strong>:
-  - Resolves the title by searching <code>shorts.json</code> (matching exact path, filename, or stem); falls back to the video stem if not found.
-  - Overlays the title in a rounded white background box with black uppercase text using Pillow (safely looking up common bold system fonts).
-  - Concatenates the static frame to the video using FFmpeg.
-  - To prevent video-audio de-sync, it automatically shifts/delays the audio stream using FFmpeg's <code>adelay</code> filter graph by the exact duration of the prepended cover.</p>
+<p>Extracts the first frame of a short video, overlays a stylized text box in the center containing the short's title, and prepends this cover frame to the video for a split-second. This ensures that browsers/players display the title cover as the video's default poster frame.</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom shorts add-thumbnail [arguments] &lt;video_path&gt;</code></li>
+<li><strong>Usage/Arguments</strong>:</li>
+<li><code>video_path</code>: Path to video file or directory (if recursive).</li>
+<li><code>-R</code>, <code>--recursive</code>: Process a directory recursively, writing files to a parallel <code>thumbnail_prepended/</code> directory.</li>
+<li><code>-o</code>, <code>--output</code>: Output file path (single file mode only).</li>
+<li><code>-t</code>, <code>--title</code>: Override the title text to burn (bypasses <code>shorts.json</code> lookup).</li>
+<li><code>-f</code>, <code>--font-size</code>: Custom font size override.</li>
+<li><code>-d</code>, <code>--duration</code>: Duration in seconds to display the cover frame (default: <code>0.25</code>s).</li>
+<li><strong>Key Features</strong>:</li>
+<li>Resolves the title by searching <code>shorts.json</code> (matching exact path, filename, or stem); falls back to the video stem if not found.</li>
+<li>Overlays the title in a rounded white background box with black uppercase text using Pillow (safely looking up common bold system fonts).</li>
+<li>Concatenates the static frame to the video using FFmpeg.</li>
+<li>To prevent video-audio de-sync, it automatically shifts/delays the audio stream using FFmpeg's <code>adelay</code> filter graph by the exact duration of the prepended cover.</li>
+</ul>
 <h3 id="auto_trim_shortspy"><a href="../shorts/auto_trim_shorts.py">auto_trim_shorts.py</a></h3>
-<p>Automates cutting long raw video files into individual shorts by matching spoken speech (Whisper transcripts) with scripts outlined in a Google Doc.
-* <strong>CLI Command</strong>: <code>phantom shorts trim [arguments]</code>
-* <strong>Usage/Arguments</strong>:
-  - <code>--video</code>: Path to the raw long-form video file.
-  - <code>--padding</code>: Seconds of pre/post-roll buffer added to each cut (default: <code>0.5</code>s).
-  - <code>--min-confidence</code>: Fuzzy-match confidence score threshold (0-100) (default: <code>70.0</code>).
-  - <code>--override</code>: Bypass detection for a short. Format: <code>slug=START,END</code> (repeatable).
-  - <code>--dry-run</code>: Compute and print the match/cut plan without invoking FFmpeg or writing files.
-  - <code>--manual</code>: Interactive manual mode that prompts the user for start times of each short.
-* <strong>Environment Configuration</strong>:
-  - <code>SHORTS_GOOGLE_DOC_ID</code>: The ID of the Google Doc outlining your short scripts. The document structure should have each short script starting with a <code>HEADING_2</code> title, followed by <code>NORMAL_TEXT</code> paragraphs containing the body/script.
-* <strong>Workflow</strong>:
-  - Fetches the short scripts outline from Google Docs.
-  - Transcribes the video using local Faster Whisper (generating a word-level SRT if it doesn't already exist).
-  - Computes natural silence gaps between speech segments to identify candidate boundaries.
-  - Formulates a bipartite matching problem and solves it using linear sum assignment (via <code>scipy.optimize.linear_sum_assignment</code> and fuzzy ratios from <code>rapidfuzz</code>) to pair scripts to video segments.
-  - Refines start times by scanning for the title's keywords in the candidate speech block.
-  - Flags low confidence matches (or instances where gap detection fails) for manual review.
-  - Invokes FFmpeg to cut the matching video segments into individual files named <code>{slug}.mp4</code>.</p>
+<p>Automates cutting long raw video files into individual shorts by matching spoken speech (Whisper transcripts) with scripts outlined in a Google Doc.</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom shorts trim [arguments]</code></li>
+<li><strong>Usage/Arguments</strong>:</li>
+<li><code>--video</code>: Path to the raw long-form video file.</li>
+<li><code>--padding</code>: Seconds of pre/post-roll buffer added to each cut (default: <code>0.5</code>s).</li>
+<li><code>--min-confidence</code>: Fuzzy-match confidence score threshold (0-100) (default: <code>70.0</code>).</li>
+<li><code>--override</code>: Bypass detection for a short. Format: <code>slug=START,END</code> (repeatable).</li>
+<li><code>--dry-run</code>: Compute and print the match/cut plan without invoking FFmpeg or writing files.</li>
+<li><code>--manual</code>: Interactive manual mode that prompts the user for start times of each short.</li>
+<li><strong>Environment Configuration</strong>:</li>
+<li><code>SHORTS_GOOGLE_DOC_ID</code>: The ID of the Google Doc outlining your short scripts. The document structure should have each short script starting with a <code>HEADING_2</code> title, followed by <code>NORMAL_TEXT</code> paragraphs containing the body/script.</li>
+<li><strong>Workflow</strong>:</li>
+<li>Fetches the short scripts outline from Google Docs.</li>
+<li>Transcribes the video using local Faster Whisper (generating a word-level SRT if it doesn't already exist).</li>
+<li>Computes natural silence gaps between speech segments to identify candidate boundaries.</li>
+<li>Formulates a bipartite matching problem and solves it using linear sum assignment (via <code>scipy.optimize.linear_sum_assignment</code> and fuzzy ratios from <code>rapidfuzz</code>) to pair scripts to video segments.</li>
+<li>Refines start times by scanning for the title's keywords in the candidate speech block.</li>
+<li>Flags low confidence matches (or instances where gap detection fails) for manual review.</li>
+<li>Invokes FFmpeg to cut the matching video segments into individual files named <code>{slug}.mp4</code>.</li>
+</ul>
 
 
 

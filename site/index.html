@@ -288,6 +288,25 @@
   
   
   
+    <li class="md-tabs__item">
+      <a href="review/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video Quality Review
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
     
     
       <li class="md-tabs__item">
@@ -447,6 +466,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#video-quality-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔍 Video Quality Review
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -468,6 +498,17 @@
     <span class="md-ellipsis">
       
         🚀 Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#serving-documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📖 Serving Documentation
       
     </span>
   </a>
@@ -569,6 +610,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video Quality Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -583,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
@@ -604,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -861,6 +929,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#video-quality-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔍 Video Quality Review
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -882,6 +961,17 @@
     <span class="md-ellipsis">
       
         🚀 Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#serving-documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📖 Serving Documentation
       
     </span>
   </a>
@@ -912,14 +1002,23 @@
 <h2 id="modules-scripts">🛠️ Modules &amp; Scripts</h2>
 <p>The project is structured into several modular directories, each responsible for a distinct part of the media creation and distribution lifecycle:</p>
 <h3 id="audio-processing">🎙️ <a href="audio-processing/">Audio Processing</a></h3>
-<p>Tools for extracting, clean-up, and normalizing audio tracks.
-* <strong>Pipeline</strong>: WAV extraction $\rightarrow$ Deep Filter noise reduction $\rightarrow$ <code>loudnorm</code> normalization $\rightarrow$ video track replacement.
-* <strong>Main Script</strong>: <code>process_audio.sh</code></p>
+<p>Tools for extracting, clean-up, and normalizing audio tracks.</p>
+<ul>
+<li><strong>Pipeline</strong>: WAV extraction $\rightarrow$ Deep Filter noise reduction $\rightarrow$ <code>loudnorm</code> normalization $\rightarrow$ video track replacement.</li>
+<li><strong>Main Script</strong>: <code>process_audio.sh</code></li>
+</ul>
 <h3 id="video-editing-automation">🎬 <a href="video-editing/">Video Editing &amp; Automation</a></h3>
-<p>Automation scripts to handle video rendering, splitting, and effects.
-* <strong>Main Scripts</strong>: automated subtitle generation, rendering workflows, and timeline parsing.</p>
+<p>Automation scripts to handle video rendering, splitting, and effects.</p>
+<ul>
+<li><strong>Main Scripts</strong>: automated subtitle generation, rendering workflows, and timeline parsing.</li>
+</ul>
 <h3 id="filmora-automation">🤖 <a href="filmora-automation/">Filmora Automation</a></h3>
 <p>Automating timeline composition and video editing workflows in Wondershare Filmora.</p>
+<h3 id="video-quality-review">🔍 <a href="review/">Video Quality Review</a></h3>
+<p>Inspect final videos for aspect ratio, resolution, and glitchy frames (black screen and freeze frames) prior to distribution, or automatically detect duplicate takes using LLM-based embeddings.</p>
+<ul>
+<li><strong>Main Scripts</strong>: <a href="file:///home/hassan/programming/phantom-editor/review/video_inspector.py">video_inspector.py</a> and <a href="file:///home/hassan/programming/phantom-editor/review/find_bad_takes.py">find_bad_takes.py</a></li>
+</ul>
 <hr />
 <h2 id="platform-integrations-uploaders">📢 Platform Integrations &amp; Uploaders</h2>
 <p>Automatic publishing and uploading scripts to distribute finalized content across platforms:</p>
@@ -934,6 +1033,12 @@
 <hr />
 <h2 id="getting-started">🚀 Getting Started</h2>
 <p>To read the details about any script, choose a section from the navigation sidebar or tabs at the top. Every document includes usage flags, requirements, and examples.</p>
+<hr />
+<h2 id="serving-documentation">📖 Serving Documentation</h2>
+<p>You can preview the documentation locally using the <code>phantom</code> CLI wrapper:</p>
+<pre><code class="language-bash">phantom docs open
+</code></pre>
+<p>This starts the MkDocs development server (if not already running) at <code>http://127.0.0.1:8000</code> and automatically opens the home page in your web browser. If the server is already active, it will directly open the browser.</p>
 
 
 

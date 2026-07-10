@@ -290,6 +290,25 @@
   
   
   
+    <li class="md-tabs__item">
+      <a href="../review/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video Quality Review
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
     
     
       <li class="md-tabs__item">
@@ -560,6 +579,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video Quality Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -574,10 +620,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
@@ -595,8 +641,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -889,32 +935,44 @@
 <p>This directory contains utility scripts for extracting, cleaning, and normalizing audio streams from video projects.</p>
 <h2 id="scripts">Scripts</h2>
 <h3 id="extract_wav_from_mp4sh"><a href="../audio-processing/extract_wav_from_mp4.sh">extract_wav_from_mp4.sh</a></h3>
-<p>Extracts audio from an MP4 video file to a 16-bit, 48 kHz stereo WAV file using FFmpeg.
-* <strong>Usage</strong>: <code>./extract_wav_from_mp4.sh &lt;input.mp4&gt; [--output-file &lt;output.wav&gt;]</code>
-* <strong>Default Output</strong>: <code>&lt;input_name&gt;.wav</code></p>
+<p>Extracts audio from an MP4 video file to a 16-bit, 48 kHz stereo WAV file using FFmpeg.</p>
+<ul>
+<li><strong>Usage</strong>: <code>./extract_wav_from_mp4.sh &lt;input.mp4&gt; [--output-file &lt;output.wav&gt;]</code></li>
+<li><strong>Default Output</strong>: <code>&lt;input_name&gt;.wav</code></li>
+</ul>
 <h3 id="noise_reductionsh"><a href="../audio-processing/noise_reduction.sh">noise_reduction.sh</a></h3>
-<p>Applies noise reduction to a WAV file using <code>deep-filter</code>.
-* <strong>Usage</strong>: <code>./noise_reduction.sh &lt;input.wav&gt; [--output-file &lt;output.wav&gt; | -o &lt;output.wav&gt;] [-h | --help]</code>
-* <strong>Default Output</strong>: <code>&lt;input_name&gt;_filtered.wav</code></p>
+<p>Applies noise reduction to a WAV file using <code>deep-filter</code>.</p>
+<ul>
+<li><strong>Usage</strong>: <code>./noise_reduction.sh &lt;input.wav&gt; [--output-file &lt;output.wav&gt; | -o &lt;output.wav&gt;] [-h | --help]</code></li>
+<li><strong>Default Output</strong>: <code>&lt;input_name&gt;_filtered.wav</code></li>
+</ul>
 <h3 id="normalize_audiosh"><a href="../audio-processing/normalize_audio.sh">normalize_audio.sh</a></h3>
-<p>Normalizes audio loudness to standard targets using FFmpeg's <code>loudnorm</code> filter (integrated: -16 LUFS, true peak: -1.5 dBTP, LRA: 11).
-* <strong>Usage</strong>: <code>./normalize_audio.sh &lt;input.wav&gt; [--output-file &lt;output.wav&gt; | -o &lt;output.wav&gt;] [-h | --help]</code>
-* <strong>Default Output</strong>: <code>&lt;input_name&gt;_normalized.wav</code></p>
+<p>Normalizes audio loudness to standard targets using FFmpeg's <code>loudnorm</code> filter (integrated: -16 LUFS, true peak: -1.5 dBTP, LRA: 11).</p>
+<ul>
+<li><strong>Usage</strong>: <code>./normalize_audio.sh &lt;input.wav&gt; [--output-file &lt;output.wav&gt; | -o &lt;output.wav&gt;] [-h | --help]</code></li>
+<li><strong>Default Output</strong>: <code>&lt;input_name&gt;_normalized.wav</code></li>
+</ul>
 <h3 id="process_audiosh"><a href="../audio-processing/process_audio.sh">process_audio.sh</a></h3>
-<p>Runs the entire audio processing pipeline (extraction, noise filtering, normalization, and track replacement) for video projects.
-* <strong>Usage</strong>: 
-  - <strong>Single file mode</strong>: <code>./process_audio.sh &lt;path_to_mp4&gt;</code>
-    - <em>Requirement</em>: Input path must reside inside a directory structure containing <code>yt-projects/&lt;project_name&gt;/</code>.
-    - <em>Workflow</em>: Creates a <code>temp/</code> folder in the project directory, extracts/processes audio, saves final WAV to <code>processed-audio.wav</code>, and saves the combined MP4 to <code>after-audio-processing.mp4</code>.
-  - <strong>Recursive mode</strong>: <code>./process_audio.sh -R|--recursive &lt;folder_path&gt;</code>
-    - Processes all video files inside the specified folder.
-    - Uses system temp directory (<code>mktemp -d</code>) for intermediate files.
-    - Saves final video results into a sibling directory named <code>audio-processed/</code> relative to the input folder, preserving original subdirectory structures. Does not require the <code>yt-projects/</code> folder structure.
-* <strong>Pipeline steps</strong>:
-  1. Extracts raw WAV audio.
-  2. Runs noise reduction via <code>deep-filter</code>.
-  3. Runs normalization via FFmpeg.
-  4. Combines the processed audio track back into the video using <code>ffmpeg</code> with copy on the video stream.</p>
+<p>Runs the entire audio processing pipeline (extraction, noise filtering, normalization, and track replacement) for video projects.</p>
+<ul>
+<li><strong>Usage</strong>: </li>
+<li><strong>Single file mode</strong>: <code>./process_audio.sh &lt;path_to_mp4&gt;</code><ul>
+<li><em>Requirement</em>: Input path must reside inside a directory structure containing <code>yt-projects/&lt;project_name&gt;/</code>.</li>
+<li><em>Workflow</em>: Creates a <code>temp/</code> folder in the project directory, extracts/processes audio, saves final WAV to <code>processed-audio.wav</code>, and saves the combined MP4 to <code>after-audio-processing.mp4</code>.</li>
+</ul>
+</li>
+<li><strong>Recursive mode</strong>: <code>./process_audio.sh -R|--recursive &lt;folder_path&gt;</code><ul>
+<li>Processes all video files inside the specified folder.</li>
+<li>Uses system temp directory (<code>mktemp -d</code>) for intermediate files.</li>
+<li>Saves final video results into a sibling directory named <code>audio-processed/</code> relative to the input folder, preserving original subdirectory structures. Does not require the <code>yt-projects/</code> folder structure.</li>
+</ul>
+</li>
+<li><strong>Pipeline steps</strong>:</li>
+<li>Extracts raw WAV audio.</li>
+<li>Runs noise reduction via <code>deep-filter</code>.</li>
+<li>Runs normalization via FFmpeg.</li>
+<li>Combines the processed audio track back into the video using <code>ffmpeg</code> with copy on the video stream.</li>
+</ul>
 
 
 

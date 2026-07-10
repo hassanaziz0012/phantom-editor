@@ -287,6 +287,25 @@
   
   
   
+  
+    <li class="md-tabs__item">
+      <a href="../review/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video Quality Review
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
     
   
   
@@ -450,6 +469,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video Quality Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -471,10 +517,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
             
   
   
@@ -492,8 +538,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1006,33 +1052,45 @@
 <p>Requires <code>YOUTUBE_API_KEY</code> and OAuth client/token JSON files in <code>youtube_api/tokens/</code> (for video uploading).</p>
 <h2 id="scripts">Scripts</h2>
 <h3 id="count_youtube_uploadspy"><a href="../youtube_api/count_youtube_uploads.py">count_youtube_uploads.py</a></h3>
-<p>Calculates and displays a channel's upload counts for today, the last 7 days, 14 days, and 30 days in a formatted ASCII table.
-* <strong>Usage</strong>: <code>python youtube_api/count_youtube_uploads.py [&lt;channel_id_or_handle&gt;] [--fresh]</code> or via <code>phantom yt count-uploads [&lt;channel&gt;] [--fresh]</code></p>
+<p>Calculates and displays a channel's upload counts for today, the last 7 days, 14 days, and 30 days in a formatted ASCII table.</p>
+<ul>
+<li><strong>Usage</strong>: <code>python youtube_api/count_youtube_uploads.py [&lt;channel_id_or_handle&gt;] [--fresh]</code> or via <code>phantom yt count-uploads [&lt;channel&gt;] [--fresh]</code></li>
+</ul>
 <h3 id="create_metadatapy"><a href="../youtube_api/create_metadata.py">create_metadata.py</a></h3>
-<p>Interactively prompts for and creates a <code>metadata.json</code> file used when uploading a video.
-* <strong>Usage</strong>: <code>python youtube_api/create_metadata.py /path/to/video.mp4</code> or via <code>phantom yt create-metadata &lt;video_path&gt;</code></p>
+<p>Interactively prompts for and creates a <code>metadata.json</code> file used when uploading a video.</p>
+<ul>
+<li><strong>Usage</strong>: <code>python youtube_api/create_metadata.py /path/to/video.mp4</code> or via <code>phantom yt create-metadata &lt;video_path&gt;</code></li>
+</ul>
 <h3 id="fetch_videospy"><a href="../youtube_api/fetch_videos.py">fetch_videos.py</a></h3>
-<p>Core retrieval module that handles fetching all videos for a channel and caching them in local JSON files.
-* <strong>Usage</strong>: <code>python youtube_api/fetch_videos.py [&lt;channel_id_or_handle&gt;] [--fresh]</code></p>
+<p>Core retrieval module that handles fetching all videos for a channel and caching them in local JSON files.</p>
+<ul>
+<li><strong>Usage</strong>: <code>python youtube_api/fetch_videos.py [&lt;channel_id_or_handle&gt;] [--fresh]</code></li>
+</ul>
 <h3 id="modelspy"><a href="../youtube_api/models.py">models.py</a></h3>
 <p>Defines shared dataclasses (<code>Video</code>, <code>VideoSeed</code>, <code>RankedVideo</code>) for storing video metadata, stats, and recommendation rankings.</p>
 <h3 id="recommend_related_videospy"><a href="../youtube_api/recommend_related_videos.py">recommend_related_videos.py</a></h3>
-<p>Calculates and lists recommended related videos from the channel inventory using a weighted similarity algorithm.
-* <strong>Usage</strong>: <code>python youtube_api/recommend_related_videos.py (--metadata &lt;path&gt; | --video-id &lt;id&gt;) [--limit &lt;int&gt;] [--json]</code> or via <code>phantom yt recommend-related</code></p>
+<p>Calculates and lists recommended related videos from the channel inventory using a weighted similarity algorithm.</p>
+<ul>
+<li><strong>Usage</strong>: <code>python youtube_api/recommend_related_videos.py (--metadata &lt;path&gt; | --video-id &lt;id&gt;) [--limit &lt;int&gt;] [--json]</code> or via <code>phantom yt recommend-related</code></li>
+</ul>
 <h3 id="upload_videopy"><a href="../youtube_api/upload_video.py">upload_video.py</a></h3>
-<p>Uploads an MP4 video, attaches metadata from a local <code>metadata.json</code>, uploads a custom <code>thumbnail.png</code>, and automatically shares the link on Twitter (X).
-* <strong>Usage</strong>: <code>python youtube_api/upload_video.py /path/to/video.mp4</code> or via <code>phantom yt upload &lt;video_path&gt;</code></p>
+<p>Uploads an MP4 video, attaches metadata from a local <code>metadata.json</code>, uploads a custom <code>thumbnail.png</code>, and automatically shares the link on Twitter (X).</p>
+<ul>
+<li><strong>Usage</strong>: <code>python youtube_api/upload_video.py /path/to/video.mp4</code> or via <code>phantom yt upload &lt;video_path&gt;</code></li>
+</ul>
 <h3 id="utilspy"><a href="../youtube_api/utils.py">utils.py</a></h3>
 <p>Utility functions containing API authentication, channel ID resolution, Jaccard text similarity helpers, and logarithmic scoring algorithms.</p>
 <h3 id="upload_shortpy"><a href="../youtube_api/upload_short.py">upload_short.py</a></h3>
-<p>Uploads a vertical Short video to YouTube. Under the hood, it reuses the authentication and upload helpers from <code>upload_video.py</code>.
-* <strong>Usage</strong>: <code>python youtube_api/upload_short.py /path/to/short_video.mp4</code> or via <code>phantom shorts upload --platform youtube &lt;video_path&gt;</code>
-* <strong>Metadata Lookup</strong>:
-  - Automatically queries the unified database <code>shorts/shorts.json</code> to find matching metadata (matching by exact path, filename, or stem).
-  - Fetches the title, description, and custom thumbnail path.
-* <strong>Key Features</strong>:
-  - Checks the video's posted status first; if it's already marked as posted to YouTube in <code>shorts.json</code>, it skips the upload to avoid duplicates.
-  - Updates the <code>posted.youtube</code> boolean to <code>True</code> in <code>shorts/shorts.json</code> upon a successful upload.</p>
+<p>Uploads a vertical Short video to YouTube. Under the hood, it reuses the authentication and upload helpers from <code>upload_video.py</code>.</p>
+<ul>
+<li><strong>Usage</strong>: <code>python youtube_api/upload_short.py /path/to/short_video.mp4</code> or via <code>phantom shorts upload --platform youtube &lt;video_path&gt;</code></li>
+<li><strong>Metadata Lookup</strong>:</li>
+<li>Automatically queries the unified database <code>shorts/shorts.json</code> to find matching metadata (matching by exact path, filename, or stem).</li>
+<li>Fetches the title, description, and custom thumbnail path.</li>
+<li><strong>Key Features</strong>:</li>
+<li>Checks the video's posted status first; if it's already marked as posted to YouTube in <code>shorts.json</code>, it skips the upload to avoid duplicates.</li>
+<li>Updates the <code>posted.youtube</code> boolean to <code>True</code> in <code>shorts/shorts.json</code> upon a successful upload.</li>
+</ul>
 
 
 

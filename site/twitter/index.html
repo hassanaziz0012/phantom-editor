@@ -287,6 +287,25 @@
   
   
   
+  
+    <li class="md-tabs__item">
+      <a href="../review/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video Quality Review
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
     
   
   
@@ -450,6 +469,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video Quality Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -471,10 +517,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
             
   
   
@@ -492,8 +538,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -872,15 +918,21 @@
 <p>This directory contains automation scripts to sign in and post tweets using Playwright.</p>
 <h2 id="scripts">Scripts</h2>
 <h3 id="loginpy"><a href="../twitter/login.py">login.py</a></h3>
-<p>Launches a non-headless browser session to allow manual login to X.com.
-* <strong>Usage</strong>: <code>uv run twitter/login.py</code>
-* <strong>Output</strong>: Saves authentication state to <code>auth.json</code> (used for subsequent automated actions).</p>
+<p>Launches a non-headless browser session to allow manual login to X.com.</p>
+<ul>
+<li><strong>Usage</strong>: <code>uv run twitter/login.py</code></li>
+<li><strong>Output</strong>: Saves authentication state to <code>auth.json</code> (used for subsequent automated actions).</li>
+</ul>
 <h3 id="post_tweetpy"><a href="../twitter/post_tweet.py">post_tweet.py</a></h3>
-<p>Automates tweeting by launching Playwright with saved credentials from <code>auth.json</code>. Supports attaching an image from the clipboard.
-* <strong>Usage</strong>: <code>uv run twitter/post_tweet.py [--image] "tweet content"</code></p>
+<p>Automates tweeting by launching Playwright with saved credentials from <code>auth.json</code>. Supports attaching an image from the clipboard.</p>
+<ul>
+<li><strong>Usage</strong>: <code>uv run twitter/post_tweet.py [--image] "tweet content"</code></li>
+</ul>
 <h3 id="tweetsh"><a href="../twitter/tweet.sh">tweet.sh</a></h3>
-<p>A shell script wrapper to easily post a tweet using the Python automation script.
-* <strong>Usage</strong>: <code>./twitter/tweet.sh [--image] "tweet content"</code></p>
+<p>A shell script wrapper to easily post a tweet using the Python automation script.</p>
+<ul>
+<li><strong>Usage</strong>: <code>./twitter/tweet.sh [--image] "tweet content"</code></li>
+</ul>
 
 
 

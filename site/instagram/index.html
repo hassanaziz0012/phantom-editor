@@ -287,6 +287,25 @@
   
   
   
+  
+    <li class="md-tabs__item">
+      <a href="../review/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video Quality Review
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
     
   
   
@@ -450,6 +469,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video Quality Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -471,10 +517,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
             
   
   
@@ -492,8 +538,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -849,24 +895,30 @@
 <h1 id="instagram-integration">Instagram Integration</h1>
 <p>This directory contains scripts to automate uploading short-form video content to Instagram as Reels.</p>
 <h2 id="configuration">Configuration</h2>
-<p>Requires the following environment variables to be set in your <code>.env</code> file at the repository root:
-- <code>INSTAGRAM_USERNAME</code>: Your Instagram account username.
-- <code>INSTAGRAM_PASSWORD</code>: Your Instagram account password.</p>
-<p>Other related session files:
-- <code>instagram_session.json</code>: Created automatically at the repository root to cache login sessions and bypass challenge requirements.</p>
+<p>Requires the following environment variables to be set in your <code>.env</code> file at the repository root:</p>
+<ul>
+<li><code>INSTAGRAM_USERNAME</code>: Your Instagram account username.</li>
+<li><code>INSTAGRAM_PASSWORD</code>: Your Instagram account password.</li>
+</ul>
+<p>Other related session files:</p>
+<ul>
+<li><code>instagram_session.json</code>: Created automatically at the repository root to cache login sessions and bypass challenge requirements.</li>
+</ul>
 <h2 id="scripts">Scripts</h2>
 <h3 id="upload_reelpy"><a href="../instagram/upload_reel.py">upload_reel.py</a></h3>
-<p>Authenticates with Instagram and uploads a video as a Reel using <code>instagrapi</code>.
-* <strong>Usage</strong>: <code>python instagram/upload_reel.py &lt;path_to_video.mp4&gt;</code> or via <code>phantom shorts upload --platform instagram &lt;video_path&gt;</code>
-* <strong>Metadata Lookup</strong>:
-  - Automatically queries the unified database <code>shorts/shorts.json</code> to find matching metadata for the video (matching by path).
-  - Uses the description to form the caption (formatted with the global description template defined in <code>config.py</code>).
-  - Uses the custom thumbnail specified in the metadata if available.
-* <strong>Key Features</strong>:
-  - <strong>Session Caching</strong>: Stores the login settings in <code>instagram_session.json</code> to prevent repeated logging in and triggering security checks.
-  - <strong>Auto-generated Thumbnails</strong>: If no thumbnail is specified in the metadata, the script automatically extracts the first frame at <code>00:00:01</code> using <code>ffmpeg</code> and uses it as the cover before cleaning it up.
-  - <strong>Skip Check</strong>: Checks if the Reel is already marked as posted to Instagram in <code>shorts/shorts.json</code> and skips to prevent duplicates.
-  - <strong>Status Update</strong>: Updates the <code>posted.instagram</code> status to <code>True</code> in <code>shorts/shorts.json</code> upon successful upload.</p>
+<p>Authenticates with Instagram and uploads a video as a Reel using <code>instagrapi</code>.</p>
+<ul>
+<li><strong>Usage</strong>: <code>python instagram/upload_reel.py &lt;path_to_video.mp4&gt;</code> or via <code>phantom shorts upload --platform instagram &lt;video_path&gt;</code></li>
+<li><strong>Metadata Lookup</strong>:</li>
+<li>Automatically queries the unified database <code>shorts/shorts.json</code> to find matching metadata for the video (matching by path).</li>
+<li>Uses the description to form the caption (formatted with the global description template defined in <code>config.py</code>).</li>
+<li>Uses the custom thumbnail specified in the metadata if available.</li>
+<li><strong>Key Features</strong>:</li>
+<li><strong>Session Caching</strong>: Stores the login settings in <code>instagram_session.json</code> to prevent repeated logging in and triggering security checks.</li>
+<li><strong>Auto-generated Thumbnails</strong>: If no thumbnail is specified in the metadata, the script automatically extracts the first frame at <code>00:00:01</code> using <code>ffmpeg</code> and uses it as the cover before cleaning it up.</li>
+<li><strong>Skip Check</strong>: Checks if the Reel is already marked as posted to Instagram in <code>shorts/shorts.json</code> and skips to prevent duplicates.</li>
+<li><strong>Status Update</strong>: Updates the <code>posted.instagram</code> status to <code>True</code> in <code>shorts/shorts.json</code> upon successful upload.</li>
+</ul>
 
 
 

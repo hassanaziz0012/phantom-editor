@@ -290,6 +290,25 @@
   
   
   
+    <li class="md-tabs__item">
+      <a href="../review/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video Quality Review
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
     
     
       <li class="md-tabs__item">
@@ -526,6 +545,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#transcribe_cloudpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        transcribe_cloud.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#trim_silencespy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -593,6 +623,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video Quality Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -607,10 +664,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
@@ -628,8 +685,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -908,6 +965,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#transcribe_cloudpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        transcribe_cloud.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#trim_silencespy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -955,96 +1023,125 @@
 <p>This directory contains scripts for automating video editing tasks such as mixing background music and generating/burning auto captions.</p>
 <h2 id="scripts">Scripts</h2>
 <h3 id="add_bgm_to_videosh"><a href="../video-editing/add_bgm_to_video.sh">add_bgm_to_video.sh</a></h3>
-<p>Mixes a background music (BGM) track into a video's audio track. Loops the music if it is shorter than the video, adjusts BGM volume, and outputs a new video file while performing a lossless video stream copy.
-* <strong>Usage</strong>: <code>./video-editing/add_bgm_to_video.sh &lt;path_to_video&gt; &lt;bgm_track&gt; [--volume &lt;percentage&gt;]</code>
-* <strong>Default Output</strong>: <code>&lt;video_name&gt;-bgm.mp4</code> in the same directory as the source video.
-* <strong>BGM Library</strong>: Looks up tracks relative to <code>/mnt/c/Users/hassa/Videos/Asset Library/BGM</code> if a full path is not provided.</p>
+<p>Mixes a background music (BGM) track into a video's audio track. Loops the music if it is shorter than the video, adjusts BGM volume, and outputs a new video file while performing a lossless video stream copy.</p>
+<ul>
+<li><strong>Usage</strong>: <code>./video-editing/add_bgm_to_video.sh &lt;path_to_video&gt; &lt;bgm_track&gt; [--volume &lt;percentage&gt;]</code></li>
+<li><strong>Default Output</strong>: <code>&lt;video_name&gt;-bgm.mp4</code> in the same directory as the source video.</li>
+<li><strong>BGM Library</strong>: Looks up tracks relative to <code>/mnt/c/Users/hassa/Videos/Asset Library/BGM</code> if a full path is not provided.</li>
+</ul>
 <h3 id="auto_captionpy"><a href="../video-editing/auto_caption.py">auto_caption.py</a></h3>
-<p>Transcribes audio from a video using the Faster Whisper model, generates a subtitles <code>.srt</code> file, and burns the captions directly into the video using <code>ffmpeg</code> with custom styling or presets (e.g. for shorts and longs).
-* <strong>CLI Command</strong>: <code>phantom edit caption &lt;video_path&gt; [arguments]</code>
-* <strong>Usage/Arguments</strong>:
-  - <code>-h</code>, <code>--help</code>: Show the help message and exit.
-  - <code>-m MODEL</code>, <code>--model MODEL</code>: Whisper model size/path locally (default: <code>medium</code>, mapped to directories in <code>video-editing/models/</code>).
-  - <code>-w MAX_WORDS</code>, <code>--max-words MAX_WORDS</code>: Maximum words per caption segment.
-  - <code>-v OUTPUT_VIDEO</code>, <code>--output-video OUTPUT_VIDEO</code>: Path to the output video file with burned captions (default: <code>&lt;input_basename&gt;_captioned{ext}</code>). Cannot be specified in directory mode.
-  - <code>--uppercase</code> / <code>--no-uppercase</code>: Convert captions to uppercase (default: <code>False</code>, but <code>True</code> in <code>shorts</code> preset).
-  - <code>--vad-filter</code> / <code>--no-vad-filter</code>: Use VAD (Voice Activity Detection) filter to ignore silences (default: <code>True</code>).
-  - <code>-f FONT_SIZE</code>, <code>--font-size FONT_SIZE</code>: Font size for the burned captions (default: <code>16</code>).
-  - <code>--preview</code>: Only process the first 5 seconds of the video for a fast preview test.
-  - <code>-b BOTTOM_MARGIN</code>, <code>--bottom-margin BOTTOM_MARGIN</code>: Bottom margin for the burned captions in pixels (default: <code>10</code>).
-  - <code>--width WIDTH</code>: Maximum line width in characters for text wrapping (default: <code>20</code>).
-  - <code>--font</code>, <code>--font-name FONT_NAME</code>: Font family name to use for the captions (default: <code>Google Sans</code>).
-  - <code>--animated</code> / <code>--no-animated</code>: Enable or disable bouncy popup animation for captions (default: <code>False</code>, but <code>True</code> in <code>shorts</code> preset).
-  - <code>--preset {shorts, longs}</code>: Apply a predefined set of styling options.
-  - <code>-R</code>, <code>--recursive</code>: Recursively process videos if the input path is a directory.</p>
+<p>Transcribes audio from a video using the Faster Whisper model, generates a subtitles <code>.srt</code> file, and burns the captions directly into the video using <code>ffmpeg</code> with custom styling or presets (e.g. for shorts and longs).</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom edit caption &lt;video_path&gt; [arguments]</code></li>
+<li><strong>Usage/Arguments</strong>:</li>
+<li><code>-h</code>, <code>--help</code>: Show the help message and exit.</li>
+<li><code>-m MODEL</code>, <code>--model MODEL</code>: Whisper model size/path locally (default: <code>medium</code>, mapped to directories in <code>video-editing/models/</code>).</li>
+<li><code>-w MAX_WORDS</code>, <code>--max-words MAX_WORDS</code>: Maximum words per caption segment.</li>
+<li><code>-v OUTPUT_VIDEO</code>, <code>--output-video OUTPUT_VIDEO</code>: Path to the output video file with burned captions (default: <code>&lt;input_basename&gt;_captioned{ext}</code>). Cannot be specified in directory mode.</li>
+<li><code>--uppercase</code> / <code>--no-uppercase</code>: Convert captions to uppercase (default: <code>False</code>, but <code>True</code> in <code>shorts</code> preset).</li>
+<li><code>--vad-filter</code> / <code>--no-vad-filter</code>: Use VAD (Voice Activity Detection) filter to ignore silences (default: <code>True</code>).</li>
+<li><code>-f FONT_SIZE</code>, <code>--font-size FONT_SIZE</code>: Font size for the burned captions (default: <code>16</code>).</li>
+<li><code>--preview</code>: Only process the first 5 seconds of the video for a fast preview test.</li>
+<li><code>-b BOTTOM_MARGIN</code>, <code>--bottom-margin BOTTOM_MARGIN</code>: Bottom margin for the burned captions in pixels (default: <code>10</code>).</li>
+<li><code>--width WIDTH</code>: Maximum line width in characters for text wrapping (default: <code>20</code>).</li>
+<li><code>--font</code>, <code>--font-name FONT_NAME</code>: Font family name to use for the captions (default: <code>Google Sans</code>).</li>
+<li><code>--animated</code> / <code>--no-animated</code>: Enable or disable bouncy popup animation for captions (default: <code>False</code>, but <code>True</code> in <code>shorts</code> preset).</li>
+<li><code>--preset {shorts, longs}</code>: Apply a predefined set of styling options.</li>
+<li><code>-R</code>, <code>--recursive</code>: Recursively process videos if the input path is a directory.</li>
+</ul>
 <h3 id="attach_webcam_maskpy"><a href="../video-editing/attach_webcam_mask.py">attach_webcam_mask.py</a></h3>
-<p>Overlays a webcam video recording in the top-right corner of screen footage with rounded corners.
-* <strong>CLI Command</strong>: <code>phantom edit attach-webcam-mask --screen &lt;screen_video&gt; --webcam &lt;webcam_video&gt; [arguments]</code>
-* <strong>Usage/Arguments</strong>:
-  - <code>--screen</code>: Path to the screen recording video file.
-  - <code>--webcam</code>: Path to the webcam recording video file.
-  - <code>-o</code>, <code>--output</code>: Path to save the output video file (default: <code>[screen_basename]_webcam.mp4</code> in screen folder).
-  - <code>-w</code>, <code>--width</code>: Width of the webcam overlay in pixels (default: <code>400</code>).
-  - <code>-r</code>, <code>--radius</code>: Corner radius for the webcam overlay rounded rectangle in pixels (default: <code>20</code>).
-  - <code>-d</code>, <code>--offset</code>: Margin/offset from the top-right corner in pixels (default: <code>20</code>).
-* <strong>Requirements</strong>: <code>ffmpeg</code> and <code>ffprobe</code> installed on system.
-* <strong>Key Features</strong>:
-  - Automatically pads the screen video using <code>tpad</code> to loop/clone the last frame indefinitely if it is shorter than the webcam recording.
-  - Trims the output video exactly to the duration of the webcam video.
-  - Uses webcam audio track if available; falls back to screen audio track if webcam has no audio; writes a video-only output if neither has audio.
-  - Performs mathematically rounded corner masking on the fly using FFmpeg's <code>split</code>, <code>geq</code>, <code>format=gray</code>, and <code>alphamerge</code> filter graphs.</p>
+<p>Overlays a webcam video recording in the top-right corner of screen footage with rounded corners.</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom edit attach-webcam-mask --screen &lt;screen_video&gt; --webcam &lt;webcam_video&gt; [arguments]</code></li>
+<li><strong>Usage/Arguments</strong>:</li>
+<li><code>--screen</code>: Path to the screen recording video file.</li>
+<li><code>--webcam</code>: Path to the webcam recording video file.</li>
+<li><code>-o</code>, <code>--output</code>: Path to save the output video file (default: <code>[screen_basename]_webcam.mp4</code> in screen folder).</li>
+<li><code>-w</code>, <code>--width</code>: Width of the webcam overlay in pixels (default: <code>400</code>).</li>
+<li><code>-r</code>, <code>--radius</code>: Corner radius for the webcam overlay rounded rectangle in pixels (default: <code>20</code>).</li>
+<li><code>-d</code>, <code>--offset</code>: Margin/offset from the top-right corner in pixels (default: <code>20</code>).</li>
+<li><strong>Requirements</strong>: <code>ffmpeg</code> and <code>ffprobe</code> installed on system.</li>
+<li><strong>Key Features</strong>:</li>
+<li>Automatically pads the screen video using <code>tpad</code> to loop/clone the last frame indefinitely if it is shorter than the webcam recording.</li>
+<li>Trims the output video exactly to the duration of the webcam video.</li>
+<li>Uses webcam audio track if available; falls back to screen audio track if webcam has no audio; writes a video-only output if neither has audio.</li>
+<li>Performs mathematically rounded corner masking on the fly using FFmpeg's <code>split</code>, <code>geq</code>, <code>format=gray</code>, and <code>alphamerge</code> filter graphs.</li>
+</ul>
 <h3 id="auto_attach_webcam_maskpy"><a href="../video-editing/auto_attach_webcam_mask.py">auto_attach_webcam_mask.py</a></h3>
-<p>Overlays a webcam video recording in the top-right corner of screen footage with rounded corners dynamically, toggling the overlay on and off based on voice commands in the audio (<code>webcam start</code>/<code>webcam stop</code>).
-* <strong>CLI Command</strong>: <code>phantom edit auto-attach-webcam --screen &lt;screen_video&gt; --webcam &lt;webcam_video&gt; [arguments]</code>
-* <strong>Usage/Arguments</strong>:
-  - <code>--screen</code>: Path to the screen recording video file.
-  - <code>--webcam</code>: Path to the webcam recording video file.
-  - <code>-o</code>, <code>--output</code>: Path to save the output video file (default: <code>[screen_basename]_auto_webcam.mp4</code> in screen folder).
-  - <code>-w</code>, <code>--width</code>: Width of the webcam overlay in pixels (default: <code>400</code>).
-  - <code>-r</code>, <code>--radius</code>: Corner radius for the webcam overlay rounded rectangle in pixels (default: <code>20</code>).
-  - <code>-d</code>, <code>--offset</code>: Margin/offset from the top-right corner in pixels (default: <code>20</code>).
-  - <code>-m</code>, <code>--model</code>: Whisper model size to use locally for transcription (<code>small</code>, <code>medium</code>, <code>large</code>; default: <code>medium</code>).
-  - <code>--captions</code>: Path to save or reuse the intermediate one-word captions file (default: <code>[webcam_basename]_1word.srt</code>).
-  - <code>--default-overlay</code>: Start the video in overlay mode (default: <code>False</code>, meaning it starts full-screen raw webcam).
-  - <code>--force-reencode</code>: Force re-encoding of all video segments, bypassing stream copy optimization for raw segments.
-* <strong>Requirements</strong>: <code>ffmpeg</code> and <code>ffprobe</code> installed on system.
-* <strong>Key Features</strong>:
-  - Transcribes the webcam audio using Faster Whisper with word-level timestamps (<code>max_words=1</code>).
-  - Parses the SRT file using a state machine to resolve overlay ranges based on voice triggers: "webcam start"/"stop" or "web cam start"/"stop".
-  - Segments the timeline into contiguous blocks (either full-screen raw webcam, or screen footage with webcam overlay).
-  - Optimizes processing by using direct video stream copy (<code>-c:v copy</code>) for raw segments if the webcam resolution and codec match the target screen resolution.
-  - Applies rounded-corner masking on overlay segments using complex FFmpeg filter graphs on the fly.</p>
+<p>Overlays a webcam video recording in the top-right corner of screen footage with rounded corners dynamically, toggling the overlay on and off based on voice commands in the audio (<code>webcam start</code>/<code>webcam stop</code>).</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom edit auto-attach-webcam --screen &lt;screen_video&gt; --webcam &lt;webcam_video&gt; [arguments]</code></li>
+<li><strong>Usage/Arguments</strong>:</li>
+<li><code>--screen</code>: Path to the screen recording video file.</li>
+<li><code>--webcam</code>: Path to the webcam recording video file.</li>
+<li><code>-o</code>, <code>--output</code>: Path to save the output video file (default: <code>[screen_basename]_auto_webcam.mp4</code> in screen folder).</li>
+<li><code>-w</code>, <code>--width</code>: Width of the webcam overlay in pixels (default: <code>400</code>).</li>
+<li><code>-r</code>, <code>--radius</code>: Corner radius for the webcam overlay rounded rectangle in pixels (default: <code>20</code>).</li>
+<li><code>-d</code>, <code>--offset</code>: Margin/offset from the top-right corner in pixels (default: <code>20</code>).</li>
+<li><code>-m</code>, <code>--model</code>: Whisper model size to use locally for transcription (<code>small</code>, <code>medium</code>, <code>large</code>; default: <code>medium</code>).</li>
+<li><code>--captions</code>: Path to save or reuse the intermediate one-word captions file (default: <code>[webcam_basename]_1word.srt</code>).</li>
+<li><code>--default-overlay</code>: Start the video in overlay mode (default: <code>False</code>, meaning it starts full-screen raw webcam).</li>
+<li><code>--force-reencode</code>: Force re-encoding of all video segments, bypassing stream copy optimization for raw segments.</li>
+<li><strong>Requirements</strong>: <code>ffmpeg</code> and <code>ffprobe</code> installed on system.</li>
+<li><strong>Key Features</strong>:</li>
+<li>Transcribes the webcam audio using Faster Whisper with word-level timestamps (<code>max_words=1</code>).</li>
+<li>Parses the SRT file using a state machine to resolve overlay ranges based on voice triggers: "webcam start"/"stop" or "web cam start"/"stop".</li>
+<li>Segments the timeline into contiguous blocks (either full-screen raw webcam, or screen footage with webcam overlay).</li>
+<li>Optimizes processing by using direct video stream copy (<code>-c:v copy</code>) for raw segments if the webcam resolution and codec match the target screen resolution.</li>
+<li>Applies rounded-corner masking on overlay segments using complex FFmpeg filter graphs on the fly.</li>
+</ul>
 <h3 id="transcribepy"><a href="../video-editing/transcribe.py">transcribe.py</a></h3>
-<p>Transcribes audio from a video using local Faster Whisper models and outputs a standardized subtitle <code>.srt</code> file.
-* <strong>CLI Command</strong>: <code>phantom edit transcribe &lt;video_path&gt; [arguments]</code>
-* <strong>Usage/Arguments</strong>:
-  - <code>--model</code>, <code>-m</code>: Whisper model size to use locally: <code>small</code>, <code>medium</code>, or <code>large</code> (default: <code>medium</code>, mapped to directories in <code>video-editing/models/</code>).
-  - <code>--max-words</code>, <code>-w</code>: Maximum words per caption segment (for short-form video formats).
-  - <code>--uppercase</code> / <code>--no-uppercase</code>: Convert captions to uppercase (default: <code>False</code>).
-  - <code>--vad-filter</code> / <code>--no-vad-filter</code>: Use VAD (Voice Activity Detection) filter to ignore silences (default: <code>True</code>).
-  - <code>--preview</code>: Only process the first 5 seconds of the video for a fast preview test.
-  - <code>--output</code>, <code>-o</code>: Path to save the generated subtitles <code>.srt</code> file (default: same folder and basename as input video file with <code>.srt</code> extension).
-* <strong>Key Features</strong>:
-  - Automatically maps standard Whisper model size strings to local directory models under <code>video-editing/models/</code> (e.g. <code>faster-whisper-small.en</code>).
-  - Runs model inference on CPU using <code>int8</code> quantization for optimal execution speed.</p>
+<p>Transcribes audio from a video using local Faster Whisper models and outputs a standardized subtitle <code>.srt</code> file.</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom edit transcribe &lt;video_path&gt; [arguments]</code></li>
+<li><strong>Usage/Arguments</strong>:</li>
+<li><code>--model</code>, <code>-m</code>: Whisper model size to use locally: <code>small</code>, <code>medium</code>, or <code>large</code> (default: <code>medium</code>, mapped to directories in <code>video-editing/models/</code>).</li>
+<li><code>--max-words</code>, <code>-w</code>: Maximum words per caption segment (for short-form video formats).</li>
+<li><code>--uppercase</code> / <code>--no-uppercase</code>: Convert captions to uppercase (default: <code>False</code>).</li>
+<li><code>--vad-filter</code> / <code>--no-vad-filter</code>: Use VAD (Voice Activity Detection) filter to ignore silences (default: <code>True</code>).</li>
+<li><code>--preview</code>: Only process the first 5 seconds of the video for a fast preview test.</li>
+<li><code>--output</code>, <code>-o</code>: Path to save the generated subtitles <code>.srt</code> file (default: same folder and basename as input video file with <code>.srt</code> extension).</li>
+<li><strong>Key Features</strong>:</li>
+<li>Automatically maps standard Whisper model size strings to local directory models under <code>video-editing/models/</code> (e.g. <code>faster-whisper-small.en</code>).</li>
+<li>Runs model inference on CPU using <code>int8</code> quantization for optimal execution speed.</li>
+</ul>
+<h3 id="transcribe_cloudpy"><a href="../video-editing/transcribe_cloud.py">transcribe_cloud.py</a></h3>
+<p>Transcribes audio from a video using Groq Cloud's Whisper API and outputs a standardized subtitle <code>.srt</code> file.</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom edit transcribe-cloud &lt;video_path&gt; [arguments]</code></li>
+<li><strong>Usage/Arguments</strong>:</li>
+<li><code>--model</code>, <code>-m</code>: Whisper model to use on Groq Cloud: <code>whisper-large-v3</code> or <code>whisper-large-v3-turbo</code> (default: <code>whisper-large-v3</code>).</li>
+<li><code>--max-words</code>, <code>-w</code>: Maximum words per caption segment (for short-form video formats).</li>
+<li><code>--uppercase</code> / <code>--no-uppercase</code>: Convert captions to uppercase (default: <code>False</code>).</li>
+<li><code>--preview</code>: Only process the first 5 seconds of the video for a fast preview test.</li>
+<li><code>--output</code>, <code>-o</code>: Path to save the generated subtitles <code>.srt</code> file (default: same folder and basename as input video file with <code>.srt</code> extension).</li>
+<li><strong>Key Features</strong>:</li>
+<li>Automatically handles the 25 MB file size limit of Groq Cloud by compressing audio or segmenting/chunking it into 10-minute blocks using <code>ffmpeg</code>.</li>
+<li>Runs transcription in the cloud for near-instant speeds compared to local execution.</li>
+<li>Processes word-level timestamps returned from Groq's top-level <code>"words"</code> response array and always saves a companion 1-word-per-timestamp subtitle file named <code>{output_file}-1word.srt</code> in the same directory.</li>
+</ul>
 <h3 id="trim_silencespy"><a href="../video-editing/trim_silences.py">trim_silences.py</a></h3>
-<p>Trims silences from a video using speech/caption intervals generated via Whisper.
-* <strong>CLI Command</strong>: <code>phantom edit trim-silences &lt;video_path&gt; [arguments]</code>
-* <strong>Usage/Arguments</strong>:
-  - <code>-o</code>, <code>--output</code>: Path to save the trimmed output video (default: <code>trimmed_output.mp4</code> in input video's directory). Cannot be used with <code>--recursive</code>.
-  - <code>-R</code>, <code>--recursive</code>: Process a folder recursively, searching for and trimming all videos (outputs saved to a parallel <code>trimmed/</code> directory in the parent folder).
-  - <code>-m</code>, <code>--model</code>: Whisper model size to use locally: <code>small</code>, <code>medium</code>, or <code>large</code> (default: <code>medium</code>).
-  - <code>--padding</code>: Padding in seconds to add to the start and end of each speech interval to keep transitions natural (default: <code>0.15</code>s).
-  - <code>--min-silence</code>: Minimum silence duration in seconds to split segments. Gaps smaller than this are merged to maintain flow (default: <code>0.4</code>s).
-* <strong>Key Features</strong>:
-  - If a word-level subtitle file (<code>&lt;video_name&gt;-1word.srt</code>) does not exist, it automatically invokes <code>transcribe_video</code> with <code>max_words=1</code> to generate it.
-  - Merges close speech blocks and cuts the video in a single-pass using FFmpeg's <code>select</code>/<code>aselect</code> filtergraph, ensuring audio-video sync is preserved.</p>
+<p>Trims silences from a video using speech/caption intervals generated via Whisper.</p>
+<ul>
+<li><strong>CLI Command</strong>: <code>phantom edit trim-silences &lt;video_path&gt; [arguments]</code></li>
+<li><strong>Usage/Arguments</strong>:</li>
+<li><code>-o</code>, <code>--output</code>: Path to save the trimmed output video (default: <code>trimmed_output.mp4</code> in input video's directory). Cannot be used with <code>--recursive</code>.</li>
+<li><code>-R</code>, <code>--recursive</code>: Process a folder recursively, searching for and trimming all videos (outputs saved to a parallel <code>trimmed/</code> directory in the parent folder).</li>
+<li><code>-m</code>, <code>--model</code>: Whisper model size to use locally: <code>small</code>, <code>medium</code>, or <code>large</code> (default: <code>medium</code>).</li>
+<li><code>--padding</code>: Padding in seconds to add to the start and end of each speech interval to keep transitions natural (default: <code>0.15</code>s).</li>
+<li><code>--min-silence</code>: Minimum silence duration in seconds to split segments. Gaps smaller than this are merged to maintain flow (default: <code>0.4</code>s).</li>
+<li><strong>Key Features</strong>:</li>
+<li>If a word-level subtitle file (<code>&lt;video_name&gt;-1word.srt</code>) does not exist, it automatically invokes <code>transcribe_video</code> with <code>max_words=1</code> to generate it.</li>
+<li>Merges close speech blocks and cuts the video in a single-pass using FFmpeg's <code>select</code>/<code>aselect</code> filtergraph, ensuring audio-video sync is preserved.</li>
+</ul>
 <h3 id="utilspy"><a href="../video-editing/utils.py">utils.py</a></h3>
-<p>A shared utility module containing helper functions for timestamp parsing/formatting, slug generation, and Google Docs retrieval:
-- <code>format_srt_time(seconds)</code>: Converts float seconds to <code>HH:MM:SS,mmm</code> string format.
-- <code>parse_timestamp(val)</code>: Parses float seconds or <code>HH:MM:SS,mmm</code> strings into float seconds.
-- <code>slugify(text)</code>: Converts arbitrary text to a lowercase hyphenated filename-safe slug.
-- <code>get_google_doc_shorts(...)</code>: Connects to the Google Docs API using OAuth2 and parses headers (as titles) and normal text paragraphs (as bodies) for script metadata.</p>
+<p>A shared utility module containing helper functions for timestamp parsing/formatting, slug generation, and Google Docs retrieval:</p>
+<ul>
+<li><code>format_srt_time(seconds)</code>: Converts float seconds to <code>HH:MM:SS,mmm</code> string format.</li>
+<li><code>parse_timestamp(val)</code>: Parses float seconds or <code>HH:MM:SS,mmm</code> strings into float seconds.</li>
+<li><code>slugify(text)</code>: Converts arbitrary text to a lowercase hyphenated filename-safe slug.</li>
+<li><code>get_google_doc_shorts(...)</code>: Connects to the Google Docs API using OAuth2 and parses headers (as titles) and normal text paragraphs (as bodies) for script metadata.</li>
+</ul>
 
 
 

@@ -287,6 +287,25 @@
   
   
   
+  
+    <li class="md-tabs__item">
+      <a href="../review/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Video Quality Review
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
     
   
   
@@ -450,6 +469,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Video Quality Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -471,10 +517,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
             
   
   
@@ -492,8 +538,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -849,28 +895,32 @@
 <h1 id="tiktok-integration">TikTok Integration</h1>
 <p>This directory contains scripts to automate uploading short-form video content to TikTok.</p>
 <h2 id="configuration">Configuration</h2>
-<p>Authentication with TikTok is performed through multiple fallback methods in the following order of priority:
-1. <strong>Cookies Files</strong>:
-   - <code>tiktok_cookies.txt</code> or <code>cookies.txt</code> at the repository root. If either file exists, the browser will use these cookies to authenticate directly. You can export cookies from your browser session using standard Netscape cookies format extensions.
-2. <strong>Session ID</strong>:
-   - <code>TIKTOK_SESSIONID</code> or <code>TIKTOK_SESSION_ID</code> environment variables.
-3. <strong>Environment Credentials</strong>:
-   - <code>TIKTOK_USERNAME</code> and <code>TIKTOK_PASSWORD</code> environment variables.</p>
+<p>Authentication with TikTok is performed through multiple fallback methods in the following order of priority:</p>
+<ol>
+<li><strong>Cookies Files</strong>:</li>
+<li><code>tiktok_cookies.txt</code> or <code>cookies.txt</code> at the repository root. If either file exists, the browser will use these cookies to authenticate directly. You can export cookies from your browser session using standard Netscape cookies format extensions.</li>
+<li><strong>Session ID</strong>:</li>
+<li><code>TIKTOK_SESSIONID</code> or <code>TIKTOK_SESSION_ID</code> environment variables.</li>
+<li><strong>Environment Credentials</strong>:</li>
+<li><code>TIKTOK_USERNAME</code> and <code>TIKTOK_PASSWORD</code> environment variables.</li>
+</ol>
 <blockquote>
 <p>[!NOTE]
 If using environment credentials directly, the script automatically defaults to headed mode (visible browser window) to allow you to solve any CAPTCHAs, verification puzzles, or 2FA prompts that appear during the login flow.</p>
 </blockquote>
 <h2 id="scripts">Scripts</h2>
 <h3 id="upload_tiktokpy"><a href="../tiktok/upload_tiktok.py">upload_tiktok.py</a></h3>
-<p>Launches Playwright underneath using the <code>tiktok-uploader</code> library to upload a video to TikTok.
-* <strong>Usage</strong>: <code>python tiktok/upload_tiktok.py &lt;path_to_video.mp4&gt; [--headed]</code> or via <code>phantom shorts upload --platform tiktok &lt;video_path&gt;</code>
-* <strong>Metadata Lookup</strong>:
-  - Automatically queries the unified database <code>shorts/shorts.json</code> to find matching metadata for the video (matching by path, filename, or stem).
-  - Forms the caption using the title, description (formatted with the description template defined in <code>config.py</code>), and tags formatted as hashtags.
-* <strong>Key Features</strong>:
-  - <strong>Browser Mode</strong>: Runs browser in headless mode by default (except when using username/password without cookies). Pass <code>--headed</code> to run in a visible browser.
-  - <strong>Skip Check</strong>: Checks if the TikTok video is already marked as posted in <code>shorts/shorts.json</code> and skips to prevent duplicates.
-  - <strong>Status Update</strong>: Updates the <code>posted.tiktok</code> status to <code>True</code> in <code>shorts/shorts.json</code> upon successful upload.</p>
+<p>Launches Playwright underneath using the <code>tiktok-uploader</code> library to upload a video to TikTok.</p>
+<ul>
+<li><strong>Usage</strong>: <code>python tiktok/upload_tiktok.py &lt;path_to_video.mp4&gt; [--headed]</code> or via <code>phantom shorts upload --platform tiktok &lt;video_path&gt;</code></li>
+<li><strong>Metadata Lookup</strong>:</li>
+<li>Automatically queries the unified database <code>shorts/shorts.json</code> to find matching metadata for the video (matching by path, filename, or stem).</li>
+<li>Forms the caption using the title, description (formatted with the description template defined in <code>config.py</code>), and tags formatted as hashtags.</li>
+<li><strong>Key Features</strong>:</li>
+<li><strong>Browser Mode</strong>: Runs browser in headless mode by default (except when using username/password without cookies). Pass <code>--headed</code> to run in a visible browser.</li>
+<li><strong>Skip Check</strong>: Checks if the TikTok video is already marked as posted in <code>shorts/shorts.json</code> and skips to prevent duplicates.</li>
+<li><strong>Status Update</strong>: Updates the <code>posted.tiktok</code> status to <code>True</code> in <code>shorts/shorts.json</code> upon successful upload.</li>
+</ul>
 
 
 
