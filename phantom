@@ -26,6 +26,7 @@ show_usage() {
     echo "  shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
     echo "  shorts add-thumbnail [arguments] <video_path>"
     echo "  shorts trim [arguments]"
+    echo "  docs open"
 }
 
 if [ $# -eq 0 ]; then
@@ -174,6 +175,51 @@ case "$COMMAND" in
             echo "       phantom shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
             echo "       phantom shorts add-thumbnail [arguments] <video_path>"
             echo "       phantom shorts trim [arguments]"
+            exit 1
+        fi
+        ;;
+    docs)
+        SUBCOMMAND="$1"
+        shift
+        
+        open_url() {
+            local url="$1"
+            if command -v explorer.exe >/dev/null 2>&1; then
+                explorer.exe "$url" >/dev/null 2>&1 || true
+            elif command -v xdg-open >/dev/null 2>&1; then
+                xdg-open "$url" >/dev/null 2>&1 || true
+            else
+                python3 -m webbrowser "$url" >/dev/null 2>&1 || true
+            fi
+        }
+
+        if [ "$SUBCOMMAND" = "open" ]; then
+            # Check if port 8000 is already in use
+            if python3 -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(1); s.connect(('127.0.0.1', 8000))" 2>/dev/null; then
+                echo "Docs server is already running on http://127.0.0.1:8000"
+                echo "Opening browser..."
+                open_url "http://127.0.0.1:8000"
+                exit 0
+            else
+                echo "Starting docs server on http://127.0.0.1:8000..."
+                uv run --project "$BASE_DIR" mkdocs serve &
+                SERVER_PID=$!
+                
+                # Set trap to ensure server is cleaned up when script exits
+                trap 'kill $SERVER_PID 2>/dev/null' EXIT INT TERM
+                
+                # Wait 2 seconds for server to start
+                sleep 2
+                
+                echo "Opening browser..."
+                open_url "http://127.0.0.1:8000"
+                
+                # Keep script running to show server output
+                wait $SERVER_PID
+            fi
+        else
+            echo "Unknown docs subcommand: $SUBCOMMAND"
+            echo "Usage: phantom docs open"
             exit 1
         fi
         ;;
