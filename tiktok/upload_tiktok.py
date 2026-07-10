@@ -19,6 +19,7 @@ repo_root = Path(__file__).resolve().parent.parent
 if str(repo_root) not in sys.path:
     sys.path.append(str(repo_root))
 
+from shorts.metadata_utils import load_shorts_json, find_metadata_entry, update_posted_status
 import config
 
 # Load environment variables from .env in the project root
@@ -49,36 +50,8 @@ def main():
         sys.exit(1)
 
     # Load metadata from shorts.json
-    metadata = None
-    try:
-        with open(shorts_json_path, "r", encoding="utf-8") as f:
-            shorts_data = json.load(f)
-            if isinstance(shorts_data, list):
-                # 1. Match by exact resolved path
-                for entry in shorts_data:
-                    if isinstance(entry, dict) and "video_path" in entry:
-                        if Path(entry["video_path"]).resolve() == video_path:
-                            metadata = entry
-                            break
-                
-                # 2. Match by filename
-                if not metadata:
-                    for entry in shorts_data:
-                        if isinstance(entry, dict) and "video_path" in entry:
-                            if Path(entry["video_path"]).name == video_name:
-                                metadata = entry
-                                break
-
-                # 3. Match by stem (video ID/title)
-                if not metadata:
-                    for entry in shorts_data:
-                        if isinstance(entry, dict) and "video_path" in entry:
-                            if Path(entry["video_path"]).stem == video_stem:
-                                metadata = entry
-                                break
-    except Exception as e:
-        print(f"Error reading shorts.json: {e}", file=sys.stderr)
-        sys.exit(1)
+    shorts_data = load_shorts_json(str(shorts_json_path))
+    metadata = find_metadata_entry(shorts_data, video_path)
 
     if not metadata:
         print(f"Error: Metadata for video '{video_path}' not found in shorts.json", file=sys.stderr)
@@ -173,27 +146,11 @@ def main():
     # Update posted.tiktok to True in shorts.json
     print("Updating posted status in shorts.json...")
     try:
-        with open(shorts_json_path, "r+", encoding="utf-8") as f:
-            shorts_data = json.load(f)
-            updated = False
-            if isinstance(shorts_data, list):
-                for entry in shorts_data:
-                    if isinstance(entry, dict) and "video_path" in entry:
-                        entry_path = Path(entry["video_path"])
-                        # Match the same logic
-                        if entry_path.resolve() == video_path or entry_path.name == video_name or entry_path.stem == video_stem:
-                            if "posted" not in entry or not isinstance(entry["posted"], dict):
-                                entry["posted"] = {"youtube": False, "instagram": False, "tiktok": False}
-                            entry["posted"]["tiktok"] = True
-                            updated = True
-                            break
-            if updated:
-                f.seek(0)
-                json.dump(shorts_data, f, indent=2, ensure_ascii=False)
-                f.truncate()
-                print("Successfully updated posted.tiktok to true in shorts.json.")
-            else:
-                print("Warning: Could not find video entry in shorts.json to update posted status.", file=sys.stderr)
+        updated = update_posted_status(shorts_json_path, video_path, "tiktok", True)
+        if updated:
+            print("Successfully updated posted.tiktok to true in shorts.json.")
+        else:
+            print("Warning: Could not find video entry in shorts.json to update posted status.", file=sys.stderr)
     except Exception as update_err:
         print(f"Warning: Failed to update shorts.json: {update_err}", file=sys.stderr)
 
