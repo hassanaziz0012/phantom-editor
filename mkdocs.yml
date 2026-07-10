@@ -1,0 +1,51 @@
+site_name: "Phantom Editor Docs"
+site_description: "Documentation for Phantom Editor script collection"
+site_author: "Hassan"
+
+theme:
+  name: material
+  palette:
+    # Scheme toggle: dark/light
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search
+
+validation:
+  links:
+    not_found: ignore
+
+dev_addr: 127.0.0.1:8000
+
+nav:
+  - Home: index.md
+  - Audio Processing: audio-processing.md
+  - Video Editing: video-editing.md
+  - Filmora Automation: filmora-automation.md
+  - Platform Integrations:
+    - Shorts Workflow: shorts.md
+    - YouTube API: youtube-api.md
+    - Instagram: instagram.md
+    - TikTok: tiktok.md
+    - Twitter: twitter.md
+    - LinkedIn: linkedin.md
