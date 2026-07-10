@@ -168,8 +168,7 @@ def main():
         "-pix_fmt", "yuv420p",
         "-preset", "medium",
         "-crf", "18",
-        "-c:a", "aac",
-        "-b:a", "192k",
+        "-c:a", "copy",
         str(output_path)
     ]
 
