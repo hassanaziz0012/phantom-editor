@@ -7,32 +7,13 @@ import json
 import datetime
 from pathlib import Path
 
-def find_metadata_entry(data, path_resolved, name, stem):
-    # 1. Match by exact resolved path
-    for entry in data:
-        if isinstance(entry, dict) and "video_path" in entry:
-            try:
-                if Path(entry["video_path"]).resolve() == path_resolved:
-                    return entry
-            except Exception:
-                pass
-    # 2. Match by filename
-    for entry in data:
-        if isinstance(entry, dict) and "video_path" in entry:
-            try:
-                if Path(entry["video_path"]).name == name:
-                    return entry
-            except Exception:
-                pass
-    # 3. Match by stem
-    for entry in data:
-        if isinstance(entry, dict) and "video_path" in entry:
-            try:
-                if Path(entry["video_path"]).stem == stem:
-                    return entry
-            except Exception:
-                pass
-    return None
+from metadata_utils import (
+    load_shorts_json,
+    save_shorts_json,
+    find_metadata_entry,
+    get_interactive_metadata,
+)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Upload a short video to YouTube, Instagram, TikTok, or all of them.")
@@ -60,22 +41,13 @@ def main():
     shorts_json_path = repo_root / "shorts" / "shorts.json"
 
     # Load existing metadata from shorts.json
-    shorts_data = []
-    if shorts_json_path.exists():
-        try:
-            with open(shorts_json_path, "r", encoding="utf-8") as f:
-                shorts_data = json.load(f)
-                if not isinstance(shorts_data, list):
-                    shorts_data = []
-        except Exception as e:
-            print(f"Warning: Failed to load existing shorts.json: {e}", file=sys.stderr)
-            shorts_data = []
+    shorts_data = load_shorts_json(str(shorts_json_path))
 
     video_path_resolved = video_path.resolve()
     video_name = video_path.name
     video_stem = video_path.stem
 
-    entry = find_metadata_entry(shorts_data, video_path_resolved, video_name, video_stem)
+    entry = find_metadata_entry(shorts_data, video_path)
 
     is_new_short = False
     title = ""
@@ -97,18 +69,12 @@ def main():
             sys.exit(0)
 
         is_new_short = True
-        print("\nPlease specify the metadata fields manually:")
-        default_title = video_stem.replace("-", " ").replace("_", " ").title()
-        try:
-            title = input(f"Title [{default_title}]: ").strip() or default_title
-            description = input("Description: ").strip()
-            tags_input = input("Tags (comma-separated): ").strip()
-            tags = [t.strip() for t in tags_input.split(",") if t.strip()] if tags_input else []
-            thumbnail = input("Thumbnail path (optional): ").strip()
-            scheduled_time = input("Scheduled time (YYYY-MM-DDTHH:MM:SS, optional): ").strip()
-        except KeyboardInterrupt:
-            print("\nAborted.")
-            sys.exit(1)
+        metadata_fields = get_interactive_metadata(video_path)
+        title = metadata_fields["title"]
+        description = metadata_fields["description"]
+        tags = metadata_fields["tags"]
+        thumbnail = metadata_fields["thumbnail"]
+        scheduled_time = metadata_fields["scheduled_time"]
 
         # Write this entry with posted values as False first so subprocesses find it
         new_entry = {
@@ -127,8 +93,7 @@ def main():
         }
         shorts_data.append(new_entry)
         try:
-            with open(shorts_json_path, "w", encoding="utf-8") as f:
-                json.dump(shorts_data, f, indent=2, ensure_ascii=False)
+            save_shorts_json(str(shorts_json_path), shorts_data)
             print("Temporary metadata saved to shorts.json.")
         except Exception as e:
             print(f"Error saving to shorts.json: {e}", file=sys.stderr)
@@ -185,16 +150,10 @@ def main():
         print("\nUpdating shorts.json with successful upload status...")
         try:
             # Re-read shorts.json to avoid overwriting changes from other scripts
-            if shorts_json_path.exists():
-                with open(shorts_json_path, "r", encoding="utf-8") as f:
-                    final_data = json.load(f)
-                    if not isinstance(final_data, list):
-                        final_data = []
-            else:
-                final_data = []
+            final_data = load_shorts_json(str(shorts_json_path))
 
             # Find our entry again
-            final_entry = find_metadata_entry(final_data, video_path_resolved, video_name, video_stem)
+            final_entry = find_metadata_entry(final_data, video_path)
             if final_entry:
                 final_entry["title"] = title
                 final_entry["description"] = description
@@ -225,8 +184,7 @@ def main():
                     final_entry["posted"][plat] = True
                 final_data.append(final_entry)
 
-            with open(shorts_json_path, "w", encoding="utf-8") as f:
-                json.dump(final_data, f, indent=2, ensure_ascii=False)
+            save_shorts_json(str(shorts_json_path), final_data)
             print("Successfully updated shorts.json with new Short metadata and upload status.")
         except Exception as e:
             print(f"Warning: Failed to update shorts.json: {e}", file=sys.stderr)

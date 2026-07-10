@@ -59,40 +59,13 @@ def get_audio_info(video_path):
         pass
     return False, 0
 
+from metadata_utils import load_shorts_json, find_metadata_entry
+
 def find_metadata_for_video(video_path, shorts_json_path):
     """Looks up video metadata in shorts.json using exact path, filename, or stem matching."""
-    if not shorts_json_path.exists():
-        return None
-    try:
-        with open(shorts_json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if not isinstance(data, list):
-                return None
-            
-            video_path_obj = Path(video_path).resolve()
-            
-            # 1. Match exact resolved path
-            for entry in data:
-                if isinstance(entry, dict) and "video_path" in entry:
-                    if Path(entry["video_path"]).resolve() == video_path_obj:
-                        return entry
-            
-            # 2. Match filename
-            for entry in data:
-                if isinstance(entry, dict) and "video_path" in entry:
-                    if Path(entry["video_path"]).name == video_path_obj.name:
-                        return entry
-                        
-            # 3. Match stem
-            for entry in data:
-                if isinstance(entry, dict) and "video_path" in entry:
-                    if Path(entry["video_path"]).dir == video_path_obj.parent and Path(entry["video_path"]).stem == video_path_obj.stem:
-                        return entry
-                    elif Path(entry["video_path"]).stem == video_path_obj.stem:
-                        return entry
-    except Exception as e:
-        print(f"Warning: Error reading shorts.json: {e}", file=sys.stderr)
-    return None
+    shorts_data = load_shorts_json(str(shorts_json_path))
+    return find_metadata_entry(shorts_data, video_path)
+
 
 def extract_first_frame(video_path, output_image_path):
     """Extracts the first frame (at 0.0s) of a video file using FFmpeg."""

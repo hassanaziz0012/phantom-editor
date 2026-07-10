@@ -13,36 +13,7 @@ except ImportError:
         sys.path.insert(0, script_dir)
     from clean_metadata import clean_metadata
 
-def load_shorts_json(json_path):
-    """Loads metadata from shorts.json. Returns a list of dicts."""
-    if not os.path.exists(json_path):
-        return []
-    try:
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if not isinstance(data, list):
-                print(f"Warning: {json_path} does not contain a list. Initializing as empty list.", file=sys.stderr)
-                return []
-            return data
-    except json.JSONDecodeError as e:
-        print(f"Error parsing {json_path}: {e}", file=sys.stderr)
-        backup_path = f"{json_path}.bak"
-        try:
-            import shutil
-            shutil.copy2(json_path, backup_path)
-            print(f"Backed up corrupted JSON to {backup_path}", file=sys.stderr)
-        except Exception as backup_err:
-            print(f"Failed to create backup: {backup_err}", file=sys.stderr)
-        return []
-
-def save_shorts_json(json_path, data):
-    """Saves metadata to shorts.json, ensuring the directory exists."""
-    # Ensure parent directory exists
-    dir_name = os.path.dirname(os.path.abspath(json_path))
-    if dir_name:
-        os.makedirs(dir_name, exist_ok=True)
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+from metadata_utils import load_shorts_json, save_shorts_json
 
 def get_input(prompt, allow_skip=False, allow_empty=True):
     """Wrapper around input() to support quit ('q'/'quit') and skip ('s'/'skip') flags."""

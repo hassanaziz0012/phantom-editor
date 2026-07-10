@@ -5,33 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
-def load_shorts_json(json_path):
-    """Loads metadata from shorts.json. Returns a list of dicts."""
-    if not os.path.exists(json_path):
-        print(f"Error: {json_path} does not exist.", file=sys.stderr)
-        return []
-    try:
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if not isinstance(data, list):
-                print(f"Error: {json_path} does not contain a list.", file=sys.stderr)
-                return []
-            return data
-    except json.JSONDecodeError as e:
-        print(f"Error parsing {json_path}: {e}", file=sys.stderr)
-        # Create a backup of the corrupted file
-        backup_path = f"{json_path}.bak"
-        try:
-            shutil.copy2(json_path, backup_path)
-            print(f"Backed up corrupted JSON to {backup_path}", file=sys.stderr)
-        except Exception as backup_err:
-            print(f"Failed to create backup: {backup_err}", file=sys.stderr)
-        return []
-
-def save_shorts_json(json_path, data):
-    """Saves metadata to shorts.json."""
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+from metadata_utils import load_shorts_json, save_shorts_json
 
 def is_fully_posted(entry):
     """Returns True if the entry has been posted to all platforms."""
