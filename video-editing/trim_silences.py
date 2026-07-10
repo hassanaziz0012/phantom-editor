@@ -57,19 +57,23 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
         print("No active speech intervals found to keep.")
         return
 
-    # Build the complex filtergraph rules
-    v_filter = ""
-    a_filter = ""
-    for start, end in intervals:
-        v_filter += f"between(t,{start:.3f},{end:.3f})+"
-        a_filter += f"between(t,{start:.3f},{end:.3f})+"
-    
-    v_filter = v_filter.rstrip("+")
-    a_filter = a_filter.rstrip("+")
+    # Build the filter expression as a balanced binary tree to avoid
+    # deep recursion limits (Cannot allocate memory) in FFmpeg's expression parser.
+    terms = [f"between(t,{start:.3f},{end:.3f})" for start, end in intervals]
+
+    def build_tree(left_idx, right_idx):
+        if left_idx == right_idx:
+            return terms[left_idx]
+        mid = (left_idx + right_idx) // 2
+        left_expr = build_tree(left_idx, mid)
+        right_expr = build_tree(mid + 1, right_idx)
+        return f"({left_expr})+({right_expr})"
+
+    expr_tree = build_tree(0, len(terms) - 1)
 
     # Select frames and reset presentation timestamps (PTS) to maintain audio/video sync
-    v_script = f"select='{v_filter}',setpts=N/FRAME_RATE/TB"
-    a_script = f"aselect='{a_filter}',asetpts=N/SR/TB"
+    v_script = f"select='{expr_tree}',setpts=N/FRAME_RATE/TB"
+    a_script = f"aselect='{expr_tree}',asetpts=N/SR/TB"
 
     cmd = [
         'ffmpeg', '-y',
