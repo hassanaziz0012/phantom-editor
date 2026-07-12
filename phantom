@@ -29,6 +29,8 @@ show_usage() {
     echo "  shorts trim [arguments]"
     echo "  review inspect <video_path> [arguments]"
     echo "  review find-bad-takes <transcript_path> [arguments]"
+    echo "  record start"
+    echo "  record stop"
     echo "  docs open"
 }
 
@@ -252,6 +254,19 @@ case "$COMMAND" in
             echo "Unknown review subcommand: $SUBCOMMAND"
             echo "Usage: phantom review inspect <video_path> [arguments]"
             echo "       phantom review find-bad-takes <transcript_path> [arguments]"
+            exit 1
+        fi
+        ;;
+    record)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "start" ] || [ "$SUBCOMMAND" = "stop" ]; then
+            SCRIPT_PATH=$(wslpath -w "$BASE_DIR/recording/record_in_sync.py")
+            python.exe "$SCRIPT_PATH" "$SUBCOMMAND" "$@"
+        else
+            echo "Unknown record subcommand: $SUBCOMMAND"
+            echo "Usage: phantom record start"
+            echo "       phantom record stop"
             exit 1
         fi
         ;;
