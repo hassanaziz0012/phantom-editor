@@ -397,7 +397,7 @@ def main():
         screen_w, screen_h = screen_props["width"], screen_props["height"]
     print(f"🖥️  Screen properties: {screen_w}x{screen_h}")
 
-    # Determine webcam properties for stream copy decision
+    # Determine webcam properties
     webcam_props = get_video_properties(webcam_path)
     if webcam_props is None:
         print("Error: Could not retrieve webcam properties.", file=sys.stderr)
@@ -405,21 +405,6 @@ def main():
 
     webcam_w = webcam_props["width"]
     webcam_h = webcam_props["height"]
-    webcam_codec = webcam_props["codec"]
-    webcam_pix_fmt = webcam_props["pix_fmt"]
-
-    can_copy_raw_video = (
-        not args.force_reencode and
-        webcam_w == screen_w and
-        webcam_h == screen_h and
-        webcam_codec in ("h264", "avc1") and
-        webcam_pix_fmt == "yuv420p"
-    )
-
-    if can_copy_raw_video:
-        print("🚀 Webcam matches screen resolution and codec. Raw segments will use video stream copy!")
-    else:
-        print("ℹ️ Raw segments will be scaled and re-encoded to match the screen/output configuration.")
 
     # Resolve output path
     if args.output:
@@ -433,130 +418,95 @@ def main():
     for idx, seg in enumerate(segments):
         print(f"   Segment {idx}: {seg['type']} from {seg['start']:.3f}s to {seg['end']:.3f}s (duration: {seg['end']-seg['start']:.3f}s)")
 
-    temp_dir = output_path.parent / f"_tmp_{output_path.stem}_segments"
+    temp_dir = output_path.parent / f"_tmp_{output_path.stem}_mask"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    segment_files = []
+    # Pre-generate the static rounded corner mask to avoid using the extremely slow geq filter on every frame
+    mask_path = temp_dir / "webcam_mask.png"
+    w = args.width
+    r = args.radius
+    scaled_h = int(round((w * webcam_h / webcam_w) / 2) * 2)
+    geq_expr = (
+        f"if((lt(X,{r})+gt(X,W-{r}))*(lt(Y,{r})+gt(Y,H-{r})),"
+        f"if(gt(sqrt(pow(X-if(lt(X,{r}),{r},W-{r}),2)+pow(Y-if(lt(Y,{r}),{r},H-{r}),2)),{r}),0,255),255)"
+    )
+    mask_cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", f"color=c=white:s={w}x{scaled_h}:d=1",
+        "-vf", f"format=gray,geq=lum='{geq_expr}'",
+        "-frames:v", "1",
+        str(mask_path)
+    ]
+    print(f"\n🖼️ Generating static rounded corner mask ({w}x{scaled_h})...")
+    print(f"   Executing: {' '.join(mask_cmd)}")
+    subprocess.run(mask_cmd, check=True)
+
     try:
-        for idx, seg in enumerate(segments):
-            start = seg["start"]
-            end = seg["end"]
-            seg_type = seg["type"]
-            duration = end - start
+        # Build conditions for raw and overlay modes based on segments
+        raw_conditions = []
+        overlay_conditions = []
+        for seg in segments:
+            if seg["type"] == "raw":
+                raw_conditions.append(f"between(t,{seg['start']:.3f},{seg['end']:.3f})")
+            elif seg["type"] == "overlay":
+                overlay_conditions.append(f"between(t,{seg['start']:.3f},{seg['end']:.3f})")
 
-            segment_path = temp_dir / f"seg_{idx:04d}.mp4"
-            segment_files.append(segment_path)
+        raw_enable_expr = "+".join(raw_conditions) if raw_conditions else "0"
+        overlay_enable_expr = "+".join(overlay_conditions) if overlay_conditions else "0"
 
-            print(f"\n🎥 Processing segment {idx} ({seg_type}): {start:.3f}s -> {end:.3f}s (duration: {duration:.3f}s)...")
+        # Build the dynamic single-pass FFmpeg command using filter complex
+        # 1. Pad screen background indefinitely so it won't end before the webcam video.
+        # 2. Split webcam video into raw and overlay paths.
+        # 3. Scale raw webcam path to full screen, cropping to match aspect ratio.
+        # 4. Scale overlay webcam path to corner size, apply mask.
+        # 5. Overlay corner webcam onto padded screen (active during overlay segments).
+        # 6. Overlay full webcam onto the result (active during raw segments).
+        offset = args.offset
+        filter_complex = (
+            f"[0:v]tpad=stop_mode=clone:stop=-1[bg];"
+            f"[1:v]split[webcam_full_src][webcam_small_src];"
+            f"[webcam_full_src]scale=w={screen_w}:h={screen_h}:force_original_aspect_ratio=increase,crop={screen_w}:{screen_h}[webcam_full];"
+            f"[webcam_small_src]scale=w={w}:h={scaled_h},format=rgba[scaled_webcam];"
+            f"[scaled_webcam][2:v]alphamerge[masked_webcam];"
+            f"[bg][masked_webcam]overlay=x=W-w-{offset}:y={offset}:enable='{overlay_enable_expr}':eof_action=pass[screen_with_overlay];"
+            f"[screen_with_overlay][webcam_full]overlay=x=0:y=0:enable='{raw_enable_expr}':eof_action=pass[out_v]"
+        )
 
-            if seg_type == "raw":
-                # For raw segments, video is from webcam. Audio is mapped based on availability.
-                inputs = ["-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(webcam_path)]
-                
-                audio_opts = []
-                if has_webcam_audio:
-                    audio_opts = ["-map", "0:a", "-c:a", "copy"]
-                elif has_screen_audio:
-                    inputs += ["-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(screen_path)]
-                    audio_opts = ["-map", "1:a", "-c:a", "copy"]
-                else:
-                    audio_opts = ["-an"]
+        audio_opts = []
+        if has_webcam_audio:
+            audio_opts = ["-map", "1:a", "-c:a", "copy"]
+        elif has_screen_audio:
+            audio_opts = ["-map", "0:a", "-c:a", "copy"]
 
-                if can_copy_raw_video:
-                    cmd_v = ["-c:v", "copy"]
-                else:
-                    cmd_v = [
-                        "-vf", f"scale=w={screen_w}:h={screen_h}:force_original_aspect_ratio=increase,crop={screen_w}:{screen_h}",
-                        "-c:v", "libx264",
-                        "-pix_fmt", "yuv420p",
-                        "-preset", "medium",
-                        "-crf", "18"
-                    ]
-
-                cmd = [
-                    "ffmpeg", "-y"
-                ] + inputs + [
-                    "-map", "0:v"
-                ] + audio_opts + cmd_v + [
-                    str(segment_path)
-                ]
-
-            else:
-                # For overlay segments, background is screen (0), webcam is overlay (1).
-                inputs = [
-                    "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(screen_path),
-                    "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(webcam_path)
-                ]
-
-                audio_opts = []
-                if has_webcam_audio:
-                    audio_opts = ["-map", "1:a", "-c:a", "copy"]
-                elif has_screen_audio:
-                    audio_opts = ["-map", "0:a", "-c:a", "copy"]
-                else:
-                    audio_opts = ["-an"]
-
-                r = args.radius
-                w = args.width
-                offset = args.offset
-
-                geq_expr = (
-                    f"if((lt(X,{r})+gt(X,W-{r}))*(lt(Y,{r})+gt(Y,H-{r})),"
-                    f"if(gt(sqrt(pow(X-if(lt(X,{r}),{r},W-{r}),2)+pow(Y-if(lt(Y,{r}),{r},H-{r}),2)),{r}),0,255),255)"
-                )
-
-                filter_complex = (
-                    f"[0:v]tpad=stop_mode=clone:stop=-1[bg];"
-                    f"[1:v]scale=w={w}:h=-2,format=rgba[scaled_webcam];"
-                    f"[scaled_webcam]split[w1][w2];"
-                    f"[w2]format=gray,geq=lum='{geq_expr}'[mask];"
-                    f"[w1][mask]alphamerge[masked_webcam];"
-                    f"[bg][masked_webcam]overlay=x=W-w-{offset}:y={offset}:eof_action=pass[out_v]"
-                )
-
-                cmd = [
-                    "ffmpeg", "-y"
-                ] + inputs + [
-                    "-filter_complex", filter_complex,
-                    "-map", "[out_v]"
-                ] + audio_opts + [
-                    "-c:v", "libx264",
-                    "-pix_fmt", "yuv420p",
-                    "-preset", "medium",
-                    "-crf", "18",
-                    str(segment_path)
-                ]
-
-            print(f"   Executing: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
-
-        # Write concat list file
-        concat_txt_path = temp_dir / "concat.txt"
-        with open(concat_txt_path, "w", encoding="utf-8") as f:
-            for seg_file in segment_files:
-                f.write(f"file '{seg_file.name}'\n")
-
-        # Run concat command
-        print(f"\n🔗 Concatenating segments to {output_path}...")
-        concat_cmd = [
+        cmd = [
             "ffmpeg", "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(concat_txt_path),
-            "-c", "copy",
+            "-i", str(screen_path),
+            "-i", str(webcam_path),
+            "-loop", "1", "-i", str(mask_path),
+            "-filter_complex", filter_complex,
+            "-map", "[out_v]"
+        ] + audio_opts + [
+            "-t", f"{webcam_duration:.3f}",
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-preset", "medium",
+            "-crf", "18",
             str(output_path)
         ]
-        print(f"   Executing: {' '.join(concat_cmd)}")
-        subprocess.run(concat_cmd, check=True)
+
+        print(f"\n🚀 Processing video using single-pass FFmpeg...")
+        print(f"   Executing: {' '.join(cmd)}")
+        subprocess.run(cmd, check=True)
         print(f"\n🎉 Success! Output video saved to: {output_path}")
 
     except subprocess.CalledProcessError as e:
         print(f"\n❌ FFmpeg command failed with exit code {e.returncode}.", file=sys.stderr)
         sys.exit(e.returncode)
     finally:
-        # Clean up temporary segments directory
+        # Clean up temporary mask directory
         if temp_dir.exists():
-            print(f"\n🧹 Cleaning up temporary segment files...")
+            print(f"\n🧹 Cleaning up temporary files...")
             try:
                 shutil.rmtree(temp_dir)
                 print("   Temporary files cleaned up successfully.")
