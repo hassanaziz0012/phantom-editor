@@ -7,9 +7,12 @@ This directory contains scripts for automating video editing tasks such as mixin
 ### [add_bgm_to_video.sh](../video-editing/add_bgm_to_video.sh)
 Mixes a background music (BGM) track into a video's audio track. Loops the music if it is shorter than the video, adjusts BGM volume, and outputs a new video file while performing a lossless video stream copy.
 
-* **Usage**: `./video-editing/add_bgm_to_video.sh <path_to_video> <bgm_track> [--volume <percentage>]`
-* **Default Output**: `<video_name>-bgm.mp4` in the same directory as the source video.
+* **Usage**: `./video-editing/add_bgm_to_video.sh <path_to_video_or_folder> <bgm_track> [--volume <percentage>] [-R|--recursive]`
+* **Default Output**: `<video_name>-bgm.mp4` in the same directory as the source video for single file mode. For directory mode, outputs are saved under a parallel `added_bgm/` directory next to the folder's parent directory, preserving the original folder structure.
 * **BGM Library**: Looks up tracks relative to `/mnt/c/Users/hassa/Videos/Asset Library/BGM` if a full path is not provided.
+* **Usage/Arguments**:
+  - `--volume <percentage>`: Set the BGM volume (1-100). Default is `10`%.
+  - `-R`, `--recursive`: Recursively process videos if the input path is a folder. If not specified, folder mode only processes top-level videos.
 
 ### [auto_caption.py](../video-editing/auto_caption.py)
 Transcribes audio from a video using the Faster Whisper model, generates a subtitles `.srt` file, and burns the captions directly into the video using `ffmpeg` with custom styling or presets (e.g. for shorts and longs).
@@ -63,14 +66,15 @@ Overlays a webcam video recording in the top-right corner of screen footage with
   - `-m`, `--model`: Whisper model size to use locally for transcription (`small`, `medium`, `large`; default: `medium`).
   - `--captions`: Path to save or reuse the intermediate one-word captions file (default: `[webcam_basename]_1word.srt`).
   - `--default-overlay`: Start the video in overlay mode (default: `False`, meaning it starts full-screen raw webcam).
-  - `--force-reencode`: Force re-encoding of all video segments, bypassing stream copy optimization for raw segments.
+  - `--force-reencode`: (Deprecated) Force re-encoding of all video segments. Transcoding is now always performed in a single pass.
 * **Requirements**: `ffmpeg` and `ffprobe` installed on system.
 * **Key Features**:
   - Transcribes the webcam audio using Faster Whisper with word-level timestamps (`max_words=1`).
   - Parses the SRT file using a state machine to resolve overlay ranges based on voice triggers: "webcam start"/"stop" or "web cam start"/"stop".
-  - Segments the timeline into contiguous blocks (either full-screen raw webcam, or screen footage with webcam overlay).
-  - Optimizes processing by using direct video stream copy (`-c:v copy`) for raw segments if the webcam resolution and codec match the target screen resolution.
-  - Applies rounded-corner masking on overlay segments using complex FFmpeg filter graphs on the fly.
+  - Generates the overlay timeline and constructs a dynamic, single-pass FFmpeg filter complex.
+  - Switches between full-screen webcam and corner-overlay webcam seamlessly on a single video timeline without splitting or concatenating files.
+  - Pre-generates a static rounded corner mask image using FFmpeg to avoid running the slow `geq` filter per-frame, substantially optimizing render times.
+  - Applies this static mask to the corner-overlay webcam segments on the fly.
 
 ### [transcribe.py](../video-editing/transcribe.py)
 Transcribes audio from a video using local Faster Whisper models and outputs a standardized subtitle `.srt` file.
@@ -112,8 +116,9 @@ Trims silences from a video using speech/caption intervals generated via Whisper
   - `-m`, `--model`: Whisper model size to use locally: `small`, `medium`, or `large` (default: `medium`).
   - `--padding`: Padding in seconds to add to the start and end of each speech interval to keep transitions natural (default: `0.15`s).
   - `--min-silence`: Minimum silence duration in seconds to split segments. Gaps smaller than this are merged to maintain flow (default: `0.4`s).
+  - `-c`, `--captions`: Path to a custom SRT captions file. A 1-word timestamp caption file format is REQUIRED. If not specified, the script looks for or generates a local 1-word SRT file. Cannot be used with `--recursive`.
 * **Key Features**:
-  - If a word-level subtitle file (`<video_name>-1word.srt`) does not exist, it automatically invokes `transcribe_video` with `max_words=1` to generate it.
+  - If a custom captions file is not provided via `--captions` and a word-level subtitle file (`<video_name>-1word.srt` or legacy `captions_1word.srt`) does not exist, it automatically invokes `transcribe_video` with `max_words=1` to generate it.
   - Merges close speech blocks and cuts the video in a single-pass using FFmpeg's `select`/`aselect` filtergraph, ensuring audio-video sync is preserved.
 
 ### [utils.py](../video-editing/utils.py)
