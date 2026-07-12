@@ -24,6 +24,9 @@ Automation scripts to handle video rendering, splitting, and effects.
 ### 🤖 [Filmora Automation](filmora-automation.md)
 Automating timeline composition and video editing workflows in Wondershare Filmora.
 
+### 📹 [Recording Synchronization](recording.md)
+Synchronize screen recording with Wondershare Filmora and external Pixel Camera app using hotkeys and ADB commands.
+
 ### 🔍 [Video Quality Review](review.md)
 Inspect final videos for aspect ratio, resolution, and glitchy frames (black screen and freeze frames) prior to distribution, or automatically detect duplicate takes using LLM-based embeddings.
 
