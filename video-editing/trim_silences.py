@@ -86,19 +86,23 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
     print(f"Executing single-pass jump-cuts into {output_video}...")
     subprocess.run(cmd, check=True)
 
-def process_video(video_path, output_path, model, padding, min_silence, is_recursive=False):
+def process_video(video_path, output_path, model, padding, min_silence, is_recursive=False, captions_path=None):
     video_dir = os.path.dirname(os.path.abspath(video_path))
     video_name = os.path.splitext(os.path.basename(video_path))[0]
 
-    # Resolve SRT path: use video-specific name to avoid collisions
-    srt_path = os.path.join(video_dir, f"{video_name}-1word.srt")
-    
-    # In single-file mode, check if captions_1word.srt exists in the directory.
-    # If so, use it for backward compatibility.
-    if not is_recursive:
-        legacy_srt_path = os.path.join(video_dir, "captions_1word.srt")
-        if not os.path.exists(srt_path) and os.path.exists(legacy_srt_path):
-            srt_path = legacy_srt_path
+    # Resolve SRT path
+    if captions_path:
+        srt_path = captions_path
+    else:
+        # Use video-specific name to avoid collisions
+        srt_path = os.path.join(video_dir, f"{video_name}-1word.srt")
+        
+        # In single-file mode, check if captions_1word.srt exists in the directory.
+        # If so, use it for backward compatibility.
+        if not is_recursive:
+            legacy_srt_path = os.path.join(video_dir, "captions_1word.srt")
+            if not os.path.exists(srt_path) and os.path.exists(legacy_srt_path):
+                srt_path = legacy_srt_path
 
     # Generate captions if they do not exist
     if os.path.exists(srt_path):
@@ -153,6 +157,11 @@ if __name__ == "__main__":
         default=0.4,
         help="Minimum silence duration in seconds to split segments (default: 0.4)."
     )
+    parser.add_argument(
+        "--captions", "-c",
+        default=None,
+        help="Path to a custom SRT captions file. A 1-word timestamp caption file format is REQUIRED. If not specified, the script looks for or generates a local 1-word SRT file."
+    )
 
     args = parser.parse_args()
 
@@ -164,6 +173,9 @@ if __name__ == "__main__":
             sys.exit(1)
         if args.output:
             print("Error: --output option cannot be used when --recursive is specified.", file=sys.stderr)
+            sys.exit(1)
+        if args.captions:
+            print("Error: --captions option cannot be used when --recursive is specified.", file=sys.stderr)
             sys.exit(1)
 
         input_dir = os.path.abspath(args.video_path)
@@ -201,7 +213,8 @@ if __name__ == "__main__":
                     model=args.model,
                     padding=args.padding,
                     min_silence=args.min_silence,
-                    is_recursive=True
+                    is_recursive=True,
+                    captions_path=None
                 )
             except Exception as e:
                 print(f"❌ Error processing '{video_file}': {e}", file=sys.stderr)
@@ -210,6 +223,9 @@ if __name__ == "__main__":
     else:
         if not os.path.isfile(args.video_path):
             print(f"Error: Video file does not exist at '{args.video_path}'. If you meant to process a directory, please use -R/--recursive.", file=sys.stderr)
+            sys.exit(1)
+        if args.captions and not os.path.isfile(args.captions):
+            print(f"Error: The captions file specified does not exist at '{args.captions}'. Ensure it is a 1-word timestamp caption file.", file=sys.stderr)
             sys.exit(1)
 
         video_dir = os.path.dirname(os.path.abspath(args.video_path))
@@ -224,6 +240,7 @@ if __name__ == "__main__":
             model=args.model,
             padding=args.padding,
             min_silence=args.min_silence,
-            is_recursive=False
+            is_recursive=False,
+            captions_path=args.captions
         )
         print("\n🎉 Trim silences complete!")
