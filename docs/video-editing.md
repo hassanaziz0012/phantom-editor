@@ -23,6 +23,7 @@ Transcribes audio from a video using the Faster Whisper model, generates a subti
   - `-m MODEL`, `--model MODEL`: Whisper model size/path locally (default: `medium`, mapped to directories in `video-editing/models/`).
   - `-w MAX_WORDS`, `--max-words MAX_WORDS`: Maximum words per caption segment.
   - `-v OUTPUT_VIDEO`, `--output-video OUTPUT_VIDEO`: Path to the output video file with burned captions (default: `<input_basename>_captioned{ext}`). Cannot be specified in directory mode.
+  - `-c CAPTIONS`, `--captions CAPTIONS`: Path to an existing SRT captions file to use instead of generating them. Cannot be specified in directory mode.
   - `--uppercase` / `--no-uppercase`: Convert captions to uppercase (default: `False`, but `True` in `shorts` preset).
   - `--vad-filter` / `--no-vad-filter`: Use VAD (Voice Activity Detection) filter to ignore silences (default: `True`).
   - `-f FONT_SIZE`, `--font-size FONT_SIZE`: Font size for the burned captions (default: `16`).
@@ -120,6 +121,21 @@ Trims silences from a video using speech/caption intervals generated via Whisper
 * **Key Features**:
   - If a custom captions file is not provided via `--captions` and a word-level subtitle file (`<video_name>-1word.srt` or legacy `captions_1word.srt`) does not exist, it automatically invokes `transcribe_video` with `max_words=1` to generate it.
   - Merges close speech blocks and cuts the video in a single-pass using FFmpeg's `select`/`aselect` filtergraph, ensuring audio-video sync is preserved.
+
+### [trim_silences_silero.py](../video-editing/trim_silences_silero.py)
+Trims silences from a video using Silero VAD (Voice Activity Detection) via `faster_whisper.vad` to detect speech.
+
+* **CLI Command**: `phantom edit trim-silences-silero <video_path> [arguments]`
+* **Usage/Arguments**:
+  - `-o`, `--output`: Path to save the trimmed output video (default: `trimmed_output.mp4` in input video's directory). Cannot be used with --recursive.
+  - `-R`, `--recursive`: Process a folder recursively, searching for and trimming all videos (outputs saved to a parallel `trimmed/` directory in the parent folder).
+  - `--padding`: Padding in seconds to add to the start and end of each speech interval to keep transitions natural (default: `0.15`s).
+  - `--min-silence`: Minimum silence duration in seconds to split segments. Gaps smaller than this are merged to maintain flow (default: `0.4`s).
+  - `--threshold`: Speech threshold. Probabilities above this value are considered speech (default: `0.5`).
+* **Key Features**:
+  - Decodes mono audio at 16kHz directly from the video without transcribing to text first.
+  - Automatically loads and runs the pre-trained Silero VAD ONNX model using ONNX Runtime.
+  - Applies a single-pass jump-cut trim using FFmpeg's `select`/`aselect` filtergraph, ensuring high performance and audio-video sync preservation.
 
 ### [utils.py](../video-editing/utils.py)
 A shared utility module containing helper functions for timestamp parsing/formatting, slug generation, and Google Docs retrieval:
