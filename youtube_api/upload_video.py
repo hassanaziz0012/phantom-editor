@@ -38,7 +38,7 @@ CLIENT_SECRETS_FILE = Path(__file__).parent / "tokens/client_secret.json"
 TOKEN_FILE = Path(__file__).parent / "tokens/token.json"
 YOUTUBE_API_SERVICE = "youtube"
 YOUTUBE_API_VERSION = "v3"
-CHUNK_SIZE = 256 * 1024  # 256 KB — controls progress-bar granularity
+CHUNK_SIZE = 25 * 1024 * 1024  # 25 MB — balances throughput with progress granularity
 
 
 
