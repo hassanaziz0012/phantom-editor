@@ -22,7 +22,7 @@ class CaptionPreset:
 
 PRESETS = {
     "shorts": CaptionPreset(max_words=3, font_size=24, bottom_margin=25, uppercase=True, width=14, font_name="League Spartan SemiBold", animated=True),
-    "longs": CaptionPreset(max_words=12, font_size=10, bottom_margin=20, uppercase=False, width=60, font_name="Google Sans", animated=False)
+    "longs": CaptionPreset(max_words=12, font_size=16, bottom_margin=20, uppercase=False, width=70, font_name="Google Sans", animated=False)
 }
 
 _WARNED_FONTS = set()
@@ -191,7 +191,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             f.write(line + '\n')
 
 
-def generate_captions(video_path, model_path_or_size="medium", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True, width=20, font_name="Google Sans", animated=False):
+def generate_captions(video_path, model_path_or_size="medium", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True, width=20, font_name="Google Sans", animated=False, captions_path=None):
     # Verify font availability and prompt user if fallback will be used
     is_available, fallback = verify_font(font_name)
     if not is_available and font_name not in _WARNED_FONTS:
@@ -206,10 +206,15 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
         else:
             print("Non-interactive terminal detected. Proceeding automatically.")
 
-    # Determine the directory of the input video first to save SRT file in the same folder
-    video_dir = os.path.dirname(os.path.abspath(video_path))
-    video_name_without_ext, _ = os.path.splitext(os.path.basename(video_path))
-    output_srt_path = os.path.join(video_dir, f"{video_name_without_ext}.srt")
+    if captions_path:
+        if not os.path.exists(captions_path):
+            raise FileNotFoundError(f"Provided captions file does not exist: {captions_path}")
+        output_srt_path = captions_path
+    else:
+        # Determine the directory of the input video first to save SRT file in the same folder
+        video_dir = os.path.dirname(os.path.abspath(video_path))
+        video_name_without_ext, _ = os.path.splitext(os.path.basename(video_path))
+        output_srt_path = os.path.join(video_dir, f"{video_name_without_ext}.srt")
 
     # Determine the final output video path based on the original video path if not explicitly provided
     if not output_video_path:
@@ -342,6 +347,11 @@ if __name__ == "__main__":
         help="Path to the output video file with burned captions. If not specified, defaults to <input_basename>_captioned{ext}."
     )
     parser.add_argument(
+        "--captions", "-c",
+        default=None,
+        help="Path to an existing SRT captions file to use instead of generating them."
+    )
+    parser.add_argument(
         "--uppercase",
         action="store_true",
         default=None,
@@ -468,6 +478,8 @@ if __name__ == "__main__":
     if os.path.isdir(args.video_path):
         if args.output_video is not None:
             parser.error("Cannot specify --output-video when the input is a directory.")
+        if args.captions is not None:
+            parser.error("Cannot specify --captions when the input is a directory.")
 
         input_dir = os.path.abspath(args.video_path)
         parent_dir = os.path.dirname(input_dir)
@@ -531,5 +543,6 @@ if __name__ == "__main__":
             vad_filter=vad_filter,
             width=width,
             font_name=font_name,
-            animated=animated
+            animated=animated,
+            captions_path=args.captions
         )
