@@ -40,7 +40,7 @@ def parse_speech_intervals_from_srt(srt_path, padding=0.15, min_silence=0.4):
     for next_start, next_end in raw_intervals[1:]:
         # If gap between words is smaller than our minimum silence threshold, merge them
         if next_start - current_end < min_silence:
-            current_end = next_end
+            current_end = max(current_end, next_end)
         else:
             # Apply padding to the finalized speech block boundaries
             padded_start = max(0, current_start - padding)
@@ -57,29 +57,70 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
         print("No active speech intervals found to keep.")
         return
 
-    # Build the filter expression as a balanced binary tree to avoid
-    # deep recursion limits (Cannot allocate memory) in FFmpeg's expression parser.
-    terms = [f"between(t,{start:.3f},{end:.3f})" for start, end in intervals]
+    # Calculate gaps/silences to shift timestamps and maintain perfect audio/video sync
+    # without relying on constant frame rate assumptions.
+    gaps = []
+    shift_points = []
+    for i in range(len(intervals)):
+        if i == 0:
+            gaps.append(intervals[0][0])
+        else:
+            gaps.append(intervals[i][0] - intervals[i-1][1])
+            # Use the midpoint of the silence gap as the trigger point.
+            # This provides a safety margin (at least 200ms) to prevent boundary frames
+            # from triggering the next shift early due to floating-point precision,
+            # which would cause out-of-order timestamps and buffer queuing.
+            midpoint = (intervals[i-1][1] + intervals[i][0]) / 2.0
+            shift_points.append(midpoint)
 
-    def build_tree(left_idx, right_idx):
+    # Build balanced binary tree for shift expression to avoid FFmpeg recursion limit
+    shift_terms = [f"gt(T,{shift_points[i]:.3f})*{gaps[i+1]:.3f}" for i in range(len(shift_points))]
+
+    def build_shift_tree(left_idx, right_idx):
         if left_idx == right_idx:
-            return terms[left_idx]
+            return shift_terms[left_idx]
         mid = (left_idx + right_idx) // 2
-        left_expr = build_tree(left_idx, mid)
-        right_expr = build_tree(mid + 1, right_idx)
+        left_expr = build_shift_tree(left_idx, mid)
+        right_expr = build_shift_tree(mid + 1, right_idx)
         return f"({left_expr})+({right_expr})"
 
-    expr_tree = build_tree(0, len(terms) - 1)
+    if shift_terms:
+        shift_expr = f"{gaps[0]:.3f}+{build_shift_tree(0, len(shift_terms) - 1)}"
+    else:
+        shift_expr = f"{gaps[0]:.3f}"
 
-    # Select frames and reset presentation timestamps (PTS) to maintain audio/video sync
-    v_script = f"select='{expr_tree}',setpts=N/FRAME_RATE/TB"
-    a_script = f"aselect='{expr_tree}',asetpts=N/SR/TB"
+    # Build select expression as a balanced binary tree to avoid
+    # deep recursion limits (Cannot allocate memory) in FFmpeg's expression parser.
+    select_terms = [f"between(t,{start:.3f},{end:.3f})" for start, end in intervals]
+
+    def build_select_tree(left_idx, right_idx):
+        if left_idx == right_idx:
+            return select_terms[left_idx]
+        mid = (left_idx + right_idx) // 2
+        left_expr = build_select_tree(left_idx, mid)
+        right_expr = build_select_tree(mid + 1, right_idx)
+        return f"({left_expr})+({right_expr})"
+
+    select_expr = build_select_tree(0, len(select_terms) - 1)
+
+    # Use the exact same shift expression for both video and audio
+    # to guarantee identical output durations and keep streams in sync.
+    # We append the 'fps' filter to force a Constant Frame Rate (CFR),
+    # which is required by video editors to prevent A/V desync on import.
+    v_script = f"select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30"
+    a_script = f"aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB'"
+
+    # Calculate the total duration of the selected speech intervals
+    # to truncate the output video and prevent trailing dead video/audio (frozen frame/silence).
+    total_duration = sum(end - start for start, end in intervals)
 
     cmd = [
         'ffmpeg', '-y',
         '-i', input_video,
         '-vf', v_script,
         '-af', a_script,
+        '-fps_mode', 'cfr',
+        '-t', f"{total_duration:.3f}",
         output_video
     ]
 
