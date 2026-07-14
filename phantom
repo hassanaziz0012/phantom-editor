@@ -16,6 +16,7 @@ show_usage() {
     echo "  edit transcribe <video_path> [arguments]"
     echo "  edit transcribe-cloud <video_path> [arguments]"
     echo "  edit trim-silences <video_path> [arguments]"
+    echo "  edit trim-silences-silero <video_path> [arguments]"
     echo "  filmora detect-silence <path_to_mp4>"
     echo "  tweet [--image] <tweet_content>"
     echo "  yt upload <video_path>"
@@ -99,6 +100,12 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/trim_silences.py" "$@"
+        elif [ "$SUBCOMMAND" = "trim-silences-silero" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom edit trim-silences-silero <video_path> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/trim_silences_silero.py" "$@"
         else
             echo "Unknown edit subcommand: $SUBCOMMAND"
             echo "Usage: phantom edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
@@ -108,6 +115,7 @@ case "$COMMAND" in
             echo "       phantom edit transcribe <video_path> [arguments]"
             echo "       phantom edit transcribe-cloud <video_path> [arguments]"
             echo "       phantom edit trim-silences <video_path> [arguments]"
+            echo "       phantom edit trim-silences-silero <video_path> [arguments]"
             exit 1
         fi
         ;;
