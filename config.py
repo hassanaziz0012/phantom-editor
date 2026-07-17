@@ -14,4 +14,4 @@ Website: https://www.hassandev.me
 Portfolio: https://www.hassandev.me/work
 YouTube: https://www.youtube.com/@itshassanaziz?sub_confirmation=1
 My Book: https://www.hassandev.me/designing-websites
-X / Twitter: https://x.com/nothassanaziz"""
+X / Twitter: https://x.com/intent/user?screen_name=nothassanaziz"""
