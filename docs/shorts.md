@@ -35,7 +35,7 @@ Unified Shorts Production Pipeline. It orchestrates the entire flow from a raw v
   - `--bgm-volume`: Volume percentage (1-100) for BGM (default: `10`).
   - `--output-dir`, `-O`: Custom workspace path. Defaults to a folder named after the video stem under the video's parent.
   - `--skip-silence`: Skip silence-trimming (Step 1).
-  - `--silence-model`: Whisper model size for silence detection (`small`, `medium`, `large`; default: `medium`).
+  - `--silence-threshold`: Speech threshold for Silero VAD (default: `0.5`).
   - `--silence-padding`: Padding in seconds for speech intervals (default: `0.15`s).
   - `--silence-min`: Minimum silence duration to split segments (default: `0.4`s).
   - `--trim-padding`: Pre/post-roll buffer for cut clips (default: `0.5`s).

@@ -1,46 +1,56 @@
 import os
+import re
 import sys
 import argparse
 import subprocess
-import gc
-import numpy as np
 
-# Ensure the directory containing this script is in sys.path to resolve local imports
+# Ensure the directory containing this script is in sys.path to resolve local imports like transcribe
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from transcribe import transcribe_video
 from utils import parse_timestamp
 
-# Import faster-whisper VAD tools
-from faster_whisper.vad import get_speech_timestamps, VadOptions
+# (srt_time_to_seconds is replaced by parse_timestamp imported from utils.py)
 
-def load_audio_with_ffmpeg(file_path, sampling_rate=16000):
+def parse_speech_intervals_from_srt(srt_path, padding=0.15, min_silence=0.4):
     """
-    Decodes the audio from a file using an ffmpeg subprocess.
-    This is extremely robust against codec and packet errors compared to PyAV.
+    Parses word-level SRT file to isolate true speech blocks.
+    Merges segments if the silence between them is less than min_silence.
     """
-    cmd = [
-        "ffmpeg",
-        "-nostdin",
-        "-threads",
-        "0",
-        "-i",
-        file_path,
-        "-f",
-        "s16le",
-        "-ac",
-        "1",
-        "-acodec",
-        "pcm_s16le",
-        "-ar",
-        str(sampling_rate),
-        "-"
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, check=True)
-        out = result.stdout
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to load audio: {e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e)}") from e
+    with open(srt_path, 'r', encoding='utf-8') as f:
+        content = f.read()
 
-    return np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
+    # Regex to find SRT time blocks
+    time_blocks = re.findall(r'(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})', content)
+    if not time_blocks:
+        return []
+
+    raw_intervals = []
+    for start_str, end_str in time_blocks:
+        start = parse_timestamp(start_str)
+        end = parse_timestamp(end_str)
+        raw_intervals.append((start, end))
+
+    # Sort intervals just in case
+    raw_intervals.sort(key=lambda x: x[0])
+
+    # Merge intervals that are close together to keep speech pacing natural
+    merged_intervals = []
+    current_start, current_end = raw_intervals[0]
+
+    for next_start, next_end in raw_intervals[1:]:
+        # If gap between words is smaller than our minimum silence threshold, merge them
+        if next_start - current_end < min_silence:
+            current_end = max(current_end, next_end)
+        else:
+            # Apply padding to the finalized speech block boundaries
+            padded_start = max(0, current_start - padding)
+            padded_end = current_end + padding
+            merged_intervals.append((padded_start, padded_end))
+            current_start, current_end = next_start, next_end
+
+    # Append the last block
+    merged_intervals.append((max(0, current_start - padding), current_end + padding))
+    return merged_intervals
 
 def cut_video_with_ffmpeg(input_video, output_video, intervals):
     if not intervals:
@@ -79,7 +89,8 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
     else:
         shift_expr = f"{gaps[0]:.3f}"
 
-    # Build select expression as a balanced binary tree
+    # Build select expression as a balanced binary tree to avoid
+    # deep recursion limits (Cannot allocate memory) in FFmpeg's expression parser.
     select_terms = [f"between(t,{start:.3f},{end:.3f})" for start, end in intervals]
 
     def build_select_tree(left_idx, right_idx):
@@ -116,44 +127,51 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
     print(f"Executing single-pass jump-cuts into {output_video}...")
     subprocess.run(cmd, check=True)
 
-def process_video(video_path, output_path, padding, min_silence, threshold, is_recursive=False):
-    print(f"\nDecoding audio from {video_path}...")
-    # Decode audio to 16000Hz mono numpy float32 array using ffmpeg subprocess
-    try:
-        audio = load_audio_with_ffmpeg(video_path, sampling_rate=16000)
-    except Exception as e:
-        print(f"Error decoding audio from video: {e}")
-        raise
+def process_video(video_path, output_path, model, padding, min_silence, is_recursive=False, captions_path=None):
+    video_dir = os.path.dirname(os.path.abspath(video_path))
+    video_name = os.path.splitext(os.path.basename(video_path))[0]
 
-    print(f"Running voice activity detection on decoded audio...")
-    # Setup VAD options
-    # padding: in seconds -> convert to ms
-    # min_silence: in seconds -> convert to ms
-    vad_options = VadOptions(
-        threshold=threshold,
-        min_silence_duration_ms=int(min_silence * 1000),
-        speech_pad_ms=int(padding * 1000)
-    )
+    # Resolve SRT path
+    if captions_path:
+        srt_path = captions_path
+    else:
+        # Use video-specific name to avoid collisions
+        srt_path = os.path.join(video_dir, f"{video_name}-1word.srt")
+        
+        # In single-file mode, check if captions_1word.srt exists in the directory.
+        # If so, use it for backward compatibility.
+        if not is_recursive:
+            legacy_srt_path = os.path.join(video_dir, "captions_1word.srt")
+            if not os.path.exists(srt_path) and os.path.exists(legacy_srt_path):
+                srt_path = legacy_srt_path
 
-    speech_timestamps = get_speech_timestamps(audio, vad_options, sampling_rate=16000)
+    # Generate captions if they do not exist
+    if os.path.exists(srt_path):
+        print(f"Captions file already exists: {srt_path}. Skipping transcription.")
+    else:
+        print(f"Generating captions using transcribe_video with max_words=1 for {video_path}...")
+        transcribe_video(
+            video_path=video_path,
+            model_path_or_size=model,
+            output_srt_path=srt_path,
+            max_words=1,
+            uppercase=False,
+            preview=False,
+            vad_filter=True
+        )
 
-    # Convert speech timestamps from sample indices to seconds
-    intervals = []
-    for item in speech_timestamps:
-        start_sec = item['start'] / 16000.0
-        end_sec = item['end'] / 16000.0
-        intervals.append((start_sec, end_sec))
-
-    print(f"Detected {len(intervals)} speech intervals.")
-    if not intervals:
-        print("No active speech intervals found to keep. Skipping trimming.")
-        return
+    print(f"Parsing speech intervals from: {srt_path} (padding={padding}, min_silence={min_silence})")
+    speech_blocks = parse_speech_intervals_from_srt(srt_path, padding=padding, min_silence=min_silence)
 
     print(f"Trimming silences in video: {video_path}...")
-    cut_video_with_ffmpeg(video_path, output_path, intervals)
+    cut_video_with_ffmpeg(video_path, output_path, speech_blocks)
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Trim silences from a video using Silero VAD to detect speech.")
+    print("WARNING: trim_silences_whisper.py (Whisper-based trimmer) is deprecated and will be removed in a future release.", file=sys.stderr)
+    print("Please use trim_silences.py (Silero VAD-based trimmer) instead.\n", file=sys.stderr)
+
+    parser = argparse.ArgumentParser(description="[DEPRECATED] Trim silences from a video using speech/caption intervals generated via Whisper.")
     parser.add_argument("video_path", help="Path to the input video file (or folder path if -R/--recursive is used).")
     parser.add_argument(
         "--output", "-o",
@@ -164,6 +182,12 @@ if __name__ == "__main__":
         "--recursive", "-R",
         action="store_true",
         help="Process a folder instead of a single video file, searching recursively for videos."
+    )
+    parser.add_argument(
+        "--model", "-m",
+        choices=["small", "medium", "large"],
+        default="medium",
+        help="Whisper model size to use locally: small, medium, or large (default: medium)."
     )
     parser.add_argument(
         "--padding",
@@ -178,10 +202,9 @@ if __name__ == "__main__":
         help="Minimum silence duration in seconds to split segments (default: 0.4)."
     )
     parser.add_argument(
-        "--threshold",
-        type=float,
-        default=0.5,
-        help="Speech threshold. Probabilities above this value are considered speech (default: 0.5)."
+        "--captions", "-c",
+        default=None,
+        help="Path to a custom SRT captions file. A 1-word timestamp caption file format is REQUIRED. If not specified, the script looks for or generates a local 1-word SRT file."
     )
 
     args = parser.parse_args()
@@ -194,6 +217,9 @@ if __name__ == "__main__":
             sys.exit(1)
         if args.output:
             print("Error: --output option cannot be used when --recursive is specified.", file=sys.stderr)
+            sys.exit(1)
+        if args.captions:
+            print("Error: --captions option cannot be used when --recursive is specified.", file=sys.stderr)
             sys.exit(1)
 
         input_dir = os.path.abspath(args.video_path)
@@ -228,10 +254,11 @@ if __name__ == "__main__":
                 process_video(
                     video_path=video_file,
                     output_path=output_video,
+                    model=args.model,
                     padding=args.padding,
                     min_silence=args.min_silence,
-                    threshold=args.threshold,
-                    is_recursive=True
+                    is_recursive=True,
+                    captions_path=None
                 )
             except Exception as e:
                 print(f"❌ Error processing '{video_file}': {e}", file=sys.stderr)
@@ -240,6 +267,9 @@ if __name__ == "__main__":
     else:
         if not os.path.isfile(args.video_path):
             print(f"Error: Video file does not exist at '{args.video_path}'. If you meant to process a directory, please use -R/--recursive.", file=sys.stderr)
+            sys.exit(1)
+        if args.captions and not os.path.isfile(args.captions):
+            print(f"Error: The captions file specified does not exist at '{args.captions}'. Ensure it is a 1-word timestamp caption file.", file=sys.stderr)
             sys.exit(1)
 
         video_dir = os.path.dirname(os.path.abspath(args.video_path))
@@ -251,9 +281,10 @@ if __name__ == "__main__":
         process_video(
             video_path=args.video_path,
             output_path=output_video,
+            model=args.model,
             padding=args.padding,
             min_silence=args.min_silence,
-            threshold=args.threshold,
-            is_recursive=False
+            is_recursive=False,
+            captions_path=args.captions
         )
         print("\n🎉 Trim silences complete!")

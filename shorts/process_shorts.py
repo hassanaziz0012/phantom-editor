@@ -66,10 +66,10 @@ def main():
     # Silence trimming options
     silence_group = parser.add_argument_group("Silence Trimming Options (Step 1)")
     silence_group.add_argument(
-        "--silence-model",
-        choices=["small", "medium", "large"],
-        default="medium",
-        help="Whisper model size to use locally for silence detection (default: medium)."
+        "--silence-threshold",
+        type=float,
+        default=0.5,
+        help="Speech threshold for Silero VAD. Probabilities above this value are considered speech (default: 0.5)."
     )
     silence_group.add_argument(
         "--silence-padding",
@@ -263,7 +263,7 @@ def main():
             str(trim_silences_script),
             str(raw_video_path),
             "-o", str(silence_trimmed_video),
-            "--model", args.silence_model,
+            "--threshold", str(args.silence_threshold),
             "--padding", str(args.silence_padding),
             "--min-silence", str(args.silence_min)
         ]
