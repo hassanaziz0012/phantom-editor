@@ -10,8 +10,7 @@ try:
     import pyautogui
 except ImportError:
     print("Error: PyAutoGUI is not installed in this Python environment.")
-    print("If you are running from WSL, make sure to execute the script using 'python.exe' (Windows Python).")
-    print("Otherwise, please install it via: pip install pyautogui")
+    print("Please install it via: pip install pyautogui")
     sys.exit(1)
 
 def validate_and_parse_ip_port(user_input):
@@ -115,10 +114,14 @@ def ensure_pixel_connection(adb_device):
         print(f"Error trying to connect to Pixel phone: {e}")
         return False
 
-def press_f9():
-    """Presses the F9 hotkey using PyAutoGUI."""
-    print("Pressing F9 hotkey...")
-    pyautogui.press('f9')
+def perform_mouse_click_with_countdown(seconds=3):
+    """Gives time to position mouse over record button, then performs a mouse click."""
+    print(f"\nYou have {seconds} seconds to position your mouse cursor...")
+    for i in range(seconds, 0, -1):
+        print(f"Action in {i}...", flush=True)
+        time.sleep(1)
+    print("Clicking mouse!")
+    pyautogui.click()
 
 def send_volume_up(adb_device):
     """Sends volume up keyevent to the Pixel camera app via ADB."""
@@ -161,8 +164,7 @@ def main():
     if command == "start":
         # Print prerequisites
         print("\n=== Prerequisites ===")
-        print("1. Wondershare Filmora must be open, the screen recorder must be active,")
-        print("   and it must be responsive to the F9 hotkey.")
+        print("1. Position your screen recorder window so the record button is accessible.")
         print("2. The Pixel camera app must be open on your phone.")
         print("=====================\n")
 
@@ -172,10 +174,10 @@ def main():
             print("Aborting recording start.")
             sys.exit(0)
 
-        print("\nStarting synchronized recording...")
+        print("\nPreparing to start synchronized recording...")
         
-        # 1. Press F9
-        press_f9()
+        # 1. Mouse click with 3s countdown
+        perform_mouse_click_with_countdown(3)
 
         # 2. Send volume up
         send_volume_up(adb_device)
@@ -183,10 +185,10 @@ def main():
         print("\nSynchronized recording started!")
 
     elif command == "stop":
-        print("\nStopping synchronized recording...")
+        print("\nPreparing to stop synchronized recording...")
 
-        # 1. Press F9
-        press_f9()
+        # 1. Mouse click with 3s countdown
+        perform_mouse_click_with_countdown(3)
 
         # 2. Send volume up
         send_volume_up(adb_device)
