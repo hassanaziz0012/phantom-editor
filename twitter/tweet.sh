@@ -7,5 +7,6 @@ if [ $# -eq 0 ]; then
 fi
 
 # Run the python script using uv from the correct project directory
-# "$@" passes all arguments exactly as provided, preserving quoting and flags
-uv run --project /home/hassan/programming/phantom-editor python /home/hassan/programming/phantom-editor/twitter/post_tweet.py "$@"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+BASE_DIR="$( cd "$SCRIPT_DIR/.." &> /dev/null && pwd )"
+uv run --project "$BASE_DIR" python "$BASE_DIR/twitter/post_tweet.py" "$@"

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BGM_DIR="/mnt/c/Users/hassa/Videos/Asset Library/BGM"
+BGM_DIR="${BGM_DIR:-$HOME/Videos/Asset Library/BGM}"
 
 show_usage() {
     echo "Usage: $0 <path_to_video_or_folder> <bgm_track> [--volume <percentage>] [-R|--recursive]"
