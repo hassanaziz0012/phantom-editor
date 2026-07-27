@@ -81,27 +81,17 @@ process_video() {
         rm -rf "$TEMP_DIR"
     else
         # Single-file mode
-        # Extract project name
-        local PROJECT_NAME
-        PROJECT_NAME=$(echo "$INPUT_MP4" | awk -F'yt-projects/' '{print $2}' | cut -d'/' -f1)
+        local FILE_DIR
+        FILE_DIR="$(dirname "$INPUT_MP4")"
         
-        if [[ -z "$PROJECT_NAME" ]]; then
-            echo "Error: Could not extract project name from path '$INPUT_MP4'."
-            echo "The path must contain 'yt-projects/<project_name>/'."
-            return 1
-        fi
+        echo "Target Directory: $FILE_DIR"
         
-        local PROJECT_DIR="${INPUT_MP4%yt-projects/*}yt-projects/$PROJECT_NAME"
-        
-        echo "Project Name: $PROJECT_NAME"
-        echo "Project Dir: $PROJECT_DIR"
-        
-        local TEMP_DIR="$PROJECT_DIR/temp"
+        local TEMP_DIR="$FILE_DIR/temp"
         local RAW_WAV="$TEMP_DIR/raw-audio.wav"
         local NOISE_REDUCED_WAV="$TEMP_DIR/noise-reduced.wav"
         local NORMALIZED_WAV="$TEMP_DIR/normalized.wav"
-        local PROCESSED_WAV="$PROJECT_DIR/processed-audio.wav"
-        local FINAL_MP4="$PROJECT_DIR/after-audio-processing.mp4"
+        local PROCESSED_WAV="$FILE_DIR/processed-audio.wav"
+        local FINAL_MP4="$FILE_DIR/after-audio-processing.mp4"
         
         echo "--- Step 1: Creating temp directory ---"
         mkdir -p "$TEMP_DIR"
