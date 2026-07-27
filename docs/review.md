@@ -55,7 +55,7 @@ When you run `phantom review inspect video.mp4`, you will receive a terminal rep
 ================================================================================
 VIDEO QUALITY CONTROL INSPECTION REPORT
 ================================================================================
-File Path:       /home/hassan/programming/phantom-editor/review/video.mp4
+File Path:       /home/hassan/Desktop/programming/phantom-editor/review/video.mp4
 Resolution:      1920x1080 (1080p Full HD)
 Aspect Ratio:    16:9 [Ratio: 1.78]
 Pixel Aspect:    1:1

@@ -9,7 +9,7 @@ Mixes a background music (BGM) track into a video's audio track. Loops the music
 
 * **Usage**: `./video-editing/add_bgm_to_video.sh <path_to_video_or_folder> <bgm_track> [--volume <percentage>] [-R|--recursive]`
 * **Default Output**: `<video_name>-bgm.mp4` in the same directory as the source video for single file mode. For directory mode, outputs are saved under a parallel `added_bgm/` directory next to the folder's parent directory, preserving the original folder structure.
-* **BGM Library**: Looks up tracks relative to `/mnt/c/Users/hassa/Videos/Asset Library/BGM` if a full path is not provided.
+* **BGM Library**: Looks up tracks relative to `~/Videos/Asset Library/BGM` if a full path is not provided.
 * **Usage/Arguments**:
   - `--volume <percentage>`: Set the BGM volume (1-100). Default is `10`%.
   - `-R`, `--recursive`: Recursively process videos if the input path is a folder. If not specified, folder mode only processes top-level videos.
@@ -61,12 +61,14 @@ Overlays a webcam video recording in the top-right corner of screen footage with
   - `--screen`: Path to the screen recording video file.
   - `--webcam`: Path to the webcam recording video file.
   - `-o`, `--output`: Path to save the output video file (default: `[screen_basename]_auto_webcam.mp4` in screen folder).
-  - `-w`, `--width`: Width of the webcam overlay in pixels (default: `400`).
+  - `--preset`: Preset orientation for overlay: `portrait` (default, 270px width) or `landscape` (400px width).
+  - `-w`, `--width`: Width of the webcam overlay in pixels (default: `270` for portrait preset, `400` for landscape preset).
   - `-r`, `--radius`: Corner radius for the webcam overlay rounded rectangle in pixels (default: `20`).
   - `-d`, `--offset`: Margin/offset from the top-right corner in pixels (default: `20`).
   - `-m`, `--model`: Whisper model size to use locally for transcription (`small`, `medium`, `large`; default: `medium`).
   - `--captions`: Path to save or reuse the intermediate one-word captions file (default: `[webcam_basename]_1word.srt`).
   - `--default-overlay`: Start the video in overlay mode (default: `False`, meaning it starts full-screen raw webcam).
+  - `-a`, `--all`: Attach webcam mask throughout the entire video, skipping audio transcription and segment detection.
   - `--force-reencode`: (Deprecated) Force re-encoding of all video segments. Transcoding is now always performed in a single pass.
 * **Requirements**: `ffmpeg` and `ffprobe` installed on system.
 * **Key Features**:

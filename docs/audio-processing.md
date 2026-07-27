@@ -27,8 +27,7 @@ Runs the entire audio processing pipeline (extraction, noise filtering, normaliz
 
 * **Usage**: 
   - **Single file mode**: `./process_audio.sh <path_to_mp4>`
-    - *Requirement*: Input path must reside inside a directory structure containing `yt-projects/<project_name>/`.
-    - *Workflow*: Creates a `temp/` folder in the project directory, extracts/processes audio, saves final WAV to `processed-audio.wav`, and saves the combined MP4 to `after-audio-processing.mp4`.
+    - *Workflow*: Creates a `temp/` folder inside the input file's directory, extracts/processes audio, saves final WAV to `processed-audio.wav`, and saves the combined MP4 to `after-audio-processing.mp4` within that directory.
   - **Recursive mode**: `./process_audio.sh -R|--recursive <folder_path>`
     - Processes all video files inside the specified folder.
     - Uses system temp directory (`mktemp -d`) for intermediate files.
