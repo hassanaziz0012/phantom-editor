@@ -58,12 +58,12 @@ def has_audio_stream(video_path):
         return False
 
 def get_video_properties(video_path):
-    """Determine resolution, video codec, and pixel format of a video file using ffprobe."""
+    """Determine resolution, video codec, pixel format, and frame rate of a video file using ffprobe."""
     try:
         cmd = [
             "ffprobe", "-v", "error",
             "-select_streams", "v:0",
-            "-show_entries", "stream=width,height,codec_name,pix_fmt",
+            "-show_entries", "stream=width,height,codec_name,pix_fmt,r_frame_rate,avg_frame_rate",
             "-of", "json",
             str(video_path)
         ]
@@ -71,11 +71,25 @@ def get_video_properties(video_path):
         data = json.loads(result.stdout)
         if "streams" in data and len(data["streams"]) > 0:
             stream = data["streams"][0]
+            fps = 30.0
+            for fps_key in ["r_frame_rate", "avg_frame_rate"]:
+                val = stream.get(fps_key, "")
+                if val and "/" in val:
+                    try:
+                        num, den = val.split("/")
+                        if float(den) > 0:
+                            parsed = float(num) / float(den)
+                            if 5 <= parsed <= 120:
+                                fps = parsed
+                                break
+                    except (ValueError, ZeroDivisionError):
+                        pass
             return {
                 "width": int(stream.get("width", 0)),
                 "height": int(stream.get("height", 0)),
                 "codec": stream.get("codec_name", ""),
-                "pix_fmt": stream.get("pix_fmt", "")
+                "pix_fmt": stream.get("pix_fmt", ""),
+                "fps": fps
             }
         return None
     except Exception as e:
@@ -267,10 +281,17 @@ def main():
         help="Path to save the output video file (default: [screen_basename]_auto_webcam.mp4)."
     )
     parser.add_argument(
+        "--preset",
+        type=str,
+        choices=["portrait", "landscape"],
+        default="portrait",
+        help="Preset orientation for webcam overlay: 'portrait' (default, 270px width) or 'landscape' (400px width)."
+    )
+    parser.add_argument(
         "--width", "-w",
         type=int,
-        default=400,
-        help="Width of the webcam overlay in pixels (default: 400)."
+        default=None,
+        help="Width of the webcam overlay in pixels (default: 270 for portrait, 400 for landscape)."
     )
     parser.add_argument(
         "--radius", "-r",
@@ -306,8 +327,17 @@ def main():
         action="store_true",
         help="Force re-encoding of all video segments, bypassing stream copy optimization for raw segments."
     )
+    parser.add_argument(
+        "--all", "-a",
+        action="store_true",
+        help="Attach webcam mask throughout the entire video, skipping audio transcription and segment detection."
+    )
 
     args = parser.parse_args()
+
+    # Determine default overlay width based on chosen preset if --width wasn't explicitly set
+    if args.width is None:
+        args.width = 270 if args.preset == "portrait" else 400
 
     screen_path = Path(args.screen).resolve()
     webcam_path = Path(args.webcam).resolve()
@@ -335,45 +365,49 @@ def main():
         sys.exit(1)
     print(f"🎬 Webcam duration: {webcam_duration:.3f} seconds.")
 
-    # 1. Generate/reuse captions
-    if not captions_path.is_file():
-        print(f"📝 Auto-transcribing webcam file '{webcam_path}' using Whisper '{args.model}' model...")
-        try:
-            transcribe_video(
-                video_path=str(webcam_path),
-                model_path_or_size=args.model,
-                output_srt_path=str(captions_path),
-                max_words=1,
-                uppercase=False,
-                preview=False,
-                vad_filter=True
-            )
-        except Exception as e:
-            print(f"❌ Error during auto-transcription: {e}", file=sys.stderr)
-            sys.exit(1)
+    if args.all:
+        print("⏩ '--all' flag set: Skipping transcription and segment detection. Attaching webcam mask to entire video.")
+        overlay_ranges = [(0.0, webcam_duration)]
     else:
-        print(f"📖 Using existing captions file at '{captions_path}'")
-
-    # 2. Parse captions and detect commands
-    try:
-        captions = parse_srt(captions_path)
-    except Exception as e:
-        print(f"❌ Error parsing SRT file: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"💬 Parsed {len(captions)} caption intervals from SRT.")
-    if not captions:
-        print("⚠️ Captions file contains no valid subtitle intervals. Defaulting to empty overlay ranges.")
-        if args.default_overlay:
-            overlay_ranges = [(0.0, webcam_duration)]
+        # 1. Generate/reuse captions
+        if not captions_path.is_file():
+            print(f"📝 Auto-transcribing webcam file '{webcam_path}' using Whisper '{args.model}' model...")
+            try:
+                transcribe_video(
+                    video_path=str(webcam_path),
+                    model_path_or_size=args.model,
+                    output_srt_path=str(captions_path),
+                    max_words=1,
+                    uppercase=False,
+                    preview=False,
+                    vad_filter=True
+                )
+            except Exception as e:
+                print(f"❌ Error during auto-transcription: {e}", file=sys.stderr)
+                sys.exit(1)
         else:
-            overlay_ranges = []
-    else:
-        overlay_ranges = detect_overlay_ranges(
-            captions,
-            default_overlay=args.default_overlay,
-            total_duration=webcam_duration
-        )
+            print(f"📖 Using existing captions file at '{captions_path}'")
+
+        # 2. Parse captions and detect commands
+        try:
+            captions = parse_srt(captions_path)
+        except Exception as e:
+            print(f"❌ Error parsing SRT file: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"💬 Parsed {len(captions)} caption intervals from SRT.")
+        if not captions:
+            print("⚠️ Captions file contains no valid subtitle intervals. Defaulting to empty overlay ranges.")
+            if args.default_overlay:
+                overlay_ranges = [(0.0, webcam_duration)]
+            else:
+                overlay_ranges = []
+        else:
+            overlay_ranges = detect_overlay_ranges(
+                captions,
+                default_overlay=args.default_overlay,
+                total_duration=webcam_duration
+            )
 
     print(f"⏰ Overlay timelines: {overlay_ranges}")
 
@@ -406,6 +440,13 @@ def main():
     webcam_w = webcam_props["width"]
     webcam_h = webcam_props["height"]
 
+    # Target frame rate for smooth overlay output (default to webcam FPS, clamped between 24 and 60)
+    webcam_fps = webcam_props.get("fps", 30.0)
+    screen_fps = screen_props.get("fps", 30.0) if screen_props else 30.0
+    target_fps = int(round(max(webcam_fps, screen_fps)))
+    target_fps = max(24, min(60, target_fps))
+    print(f"🎞️  Target output frame rate: {target_fps} FPS")
+
     # Resolve output path
     if args.output:
         output_path = Path(args.output).resolve()
@@ -431,7 +472,7 @@ def main():
         f"if(gt(sqrt(pow(X-if(lt(X,{r}),{r},W-{r}),2)+pow(Y-if(lt(Y,{r}),{r},H-{r}),2)),{r}),0,255),255)"
     )
     mask_cmd = [
-        "ffmpeg", "-y",
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "lavfi",
         "-i", f"color=c=white:s={w}x{scaled_h}:d=1",
         "-vf", f"format=gray,geq=lum='{geq_expr}'",
@@ -456,16 +497,18 @@ def main():
         overlay_enable_expr = "+".join(overlay_conditions) if overlay_conditions else "0"
 
         # Build the dynamic single-pass FFmpeg command using filter complex
-        # 1. Pad screen background indefinitely so it won't end before the webcam video.
-        # 2. Split webcam video into raw and overlay paths.
-        # 3. Scale raw webcam path to full screen, cropping to match aspect ratio.
-        # 4. Scale overlay webcam path to corner size, apply mask.
-        # 5. Overlay corner webcam onto padded screen (active during overlay segments).
-        # 6. Overlay full webcam onto the result (active during raw segments).
+        # 1. Reset PTS and set constant target frame rate for screen recording, padding indefinitely.
+        # 2. Reset PTS and set constant target frame rate for webcam video.
+        # 3. Split webcam video into raw and overlay paths.
+        # 4. Scale raw webcam path to full screen, cropping to match aspect ratio.
+        # 5. Scale overlay webcam path to corner size, apply mask.
+        # 6. Overlay corner webcam onto padded screen (active during overlay segments).
+        # 7. Overlay full webcam onto the result (active during raw segments).
         offset = args.offset
         filter_complex = (
-            f"[0:v]tpad=stop_mode=clone:stop=-1[bg];"
-            f"[1:v]split[webcam_full_src][webcam_small_src];"
+            f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps},tpad=stop_mode=clone:stop=-1[bg];"
+            f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps}[webcam_src];"
+            f"[webcam_src]split[webcam_full_src][webcam_small_src];"
             f"[webcam_full_src]scale=w={screen_w}:h={screen_h}:force_original_aspect_ratio=increase,crop={screen_w}:{screen_h}[webcam_full];"
             f"[webcam_small_src]scale=w={w}:h={scaled_h},format=rgba[scaled_webcam];"
             f"[scaled_webcam][2:v]alphamerge[masked_webcam];"
@@ -480,7 +523,7 @@ def main():
             audio_opts = ["-map", "0:a", "-c:a", "copy"]
 
         cmd = [
-            "ffmpeg", "-y",
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
             "-i", str(screen_path),
             "-i", str(webcam_path),
             "-loop", "1", "-i", str(mask_path),
@@ -492,6 +535,7 @@ def main():
             "-pix_fmt", "yuv420p",
             "-preset", "medium",
             "-crf", "18",
+            "-movflags", "+faststart",
             str(output_path)
         ]
 

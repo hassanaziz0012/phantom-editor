@@ -44,6 +44,32 @@ def has_audio_stream(video_path):
         print(f"Warning: Could not check audio streams for '{video_path}': {e}", file=sys.stderr)
         return False
 
+def get_video_fps(video_path):
+    """Determine the frame rate of a video file using ffprobe."""
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=r_frame_rate,avg_frame_rate",
+            "-of", "json",
+            str(video_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        if "streams" in data and len(data["streams"]) > 0:
+            stream = data["streams"][0]
+            for fps_key in ["r_frame_rate", "avg_frame_rate"]:
+                val = stream.get(fps_key, "")
+                if val and "/" in val:
+                    num, den = val.split("/")
+                    if float(den) > 0:
+                        parsed = float(num) / float(den)
+                        if 5 <= parsed <= 120:
+                            return parsed
+        return 30.0
+    except Exception:
+        return 30.0
+
 def main():
     parser = argparse.ArgumentParser(
         description="Overlay webcam video in the top-right corner of screen footage with rounded corners."
@@ -114,6 +140,13 @@ def main():
         sys.exit(1)
     print(f"🎬 Webcam duration: {webcam_duration:.3f} seconds.")
 
+    # Target frame rate for smooth overlay output
+    webcam_fps = get_video_fps(webcam_path)
+    screen_fps = get_video_fps(screen_path)
+    target_fps = int(round(max(webcam_fps, screen_fps)))
+    target_fps = max(24, min(60, target_fps))
+    print(f"🎞️  Target output frame rate: {target_fps} FPS")
+
     # Determine audio streams
     has_webcam_audio = has_audio_stream(webcam_path)
     has_screen_audio = has_audio_stream(screen_path)
@@ -129,26 +162,23 @@ def main():
         print("ℹ️ Neither webcam nor screen video contains audio. Output will be video-only.")
 
     # Build the complex filtergraph
-    # 1. Pad screen background indefinitely using tpad (cloning the last frame)
-    # 2. Scale webcam video to target width (even height) and format to RGBA
-    # 3. Split the webcam video to generate an alpha mask via geq filter on grayscale
+    # 1. Reset PTS and set target constant frame rate for screen background, padding indefinitely using tpad
+    # 2. Reset PTS, set target constant frame rate for webcam, and scale to target width (even height)
+    # 3. Split webcam video to generate alpha mask via geq filter on grayscale
     # 4. Merge color and mask using alphamerge
     # 5. Overlay on background at top-right corner with offset
     r = args.radius
     w = args.width
     offset = args.offset
 
-    # Mathematically round corners using geq filter on a grayscale split of scaled webcam
-    # Formula determines if pixel is in corner zones, calculates distance from rounded circle center,
-    # and sets opacity to 0 (transparent) if distance exceeds corner radius.
     geq_expr = (
         f"if((lt(X,{r})+gt(X,W-{r}))*(lt(Y,{r})+gt(Y,H-{r})),"
         f"if(gt(sqrt(pow(X-if(lt(X,{r}),{r},W-{r}),2)+pow(Y-if(lt(Y,{r}),{r},H-{r}),2)),{r}),0,255),255)"
     )
 
     filter_complex = (
-        f"[0:v]tpad=stop_mode=clone:stop=-1[bg];"
-        f"[1:v]scale=w={w}:h=-2,format=rgba[scaled_webcam];"
+        f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps},tpad=stop_mode=clone:stop=-1[bg];"
+        f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps},scale=w={w}:h=-2,format=rgba[scaled_webcam];"
         f"[scaled_webcam]split[w1][w2];"
         f"[w2]format=gray,geq=lum='{geq_expr}'[mask];"
         f"[w1][mask]alphamerge[masked_webcam];"
@@ -168,6 +198,7 @@ def main():
         "-pix_fmt", "yuv420p",
         "-preset", "medium",
         "-crf", "18",
+        "-movflags", "+faststart",
         "-c:a", "copy",
         str(output_path)
     ]

@@ -19,6 +19,9 @@ def load_audio_with_ffmpeg(file_path, sampling_rate=16000):
     """
     cmd = [
         "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
         "-nostdin",
         "-threads",
         "0",
@@ -104,7 +107,7 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
     total_duration = sum(end - start for start, end in intervals)
 
     cmd = [
-        'ffmpeg', '-y',
+        'ffmpeg', '-hide_banner', '-loglevel', 'error', '-stats', '-y',
         '-i', input_video,
         '-vf', v_script,
         '-af', a_script,
