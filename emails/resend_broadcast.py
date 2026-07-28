@@ -124,13 +124,13 @@ def send_broadcast(
 ):
     """Send a broadcast using the official Resend Python SDK."""
     api_key = api_key or os.getenv("RESEND_API_KEY")
-    segment_id = segment_id or os.getenv("RESEND_SEGMENT_ID") or os.getenv("RESEND_AUDIENCE_ID")
+    segment_id = segment_id or os.getenv("RESEND_GENERAL_AUDIENCE_ID")
     from_email = from_email or os.getenv("RESEND_FROM_EMAIL")
 
     if not api_key:
         raise ValueError("Missing RESEND_API_KEY environment variable.")
     if not segment_id:
-        print("RESEND_SEGMENT_ID not specified in .env. Automatically fetching default segment from Resend...")
+        print("RESEND_GENERAL_AUDIENCE_ID not specified in .env. Automatically fetching default segment from Resend...")
         segment_id = get_default_segment_id(api_key)
         print(f"Using Segment ID: {segment_id}")
     if not from_email:
@@ -196,7 +196,7 @@ def main():
         dest="segment_id",
         type=str,
         default=None,
-        help="Optional Resend segment ID (defaults to RESEND_SEGMENT_ID env var or default segment)",
+        help="Optional Resend segment ID (defaults to RESEND_GENERAL_AUDIENCE_ID env var or default segment)",
     )
     parser.add_argument(
         "--test",
