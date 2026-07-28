@@ -20,6 +20,7 @@ show_usage() {
     echo "  edit transcribe-cloud <video_path> [arguments]"
     echo "  edit trim-silences <video_path> [arguments]"
     echo "  edit trim-silences-whisper <video_path> [arguments] (deprecated)"
+    echo "  emails broadcast --title <title> --description <desc> --url <url> [arguments]"
     echo "  filmora detect-silence <path_to_mp4>"
     echo "  tweet [--image] <tweet_content>"
     echo "  yt upload <video_path>"
@@ -126,6 +127,17 @@ case "$COMMAND" in
             echo "       phantom edit transcribe-cloud <video_path> [arguments]"
             echo "       phantom edit trim-silences <video_path> [arguments]"
             echo "       phantom edit trim-silences-whisper <video_path> [arguments] (deprecated)"
+            exit 1
+        fi
+        ;;
+    emails)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "broadcast" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/emails/resend_broadcast.py" "$@"
+        else
+            echo "Unknown emails subcommand: $SUBCOMMAND"
+            echo "Usage: phantom emails broadcast [arguments]"
             exit 1
         fi
         ;;
