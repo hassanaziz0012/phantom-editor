@@ -1,12 +1,16 @@
 """
 Runs once to log in and save the auth state.
-Creates auth.json in the same directory.
+Creates twitter/data/auth.json.
 
 usage: uv run twitter/login.py
 """
 
 import asyncio
+import os
 from playwright.async_api import async_playwright
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+AUTH_FILE_PATH = os.path.join(SCRIPT_DIR, "data", "auth.json")
 
 async def run():
     async with async_playwright() as p:
@@ -15,16 +19,14 @@ async def run():
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
-                "--disable-web-security",
                 "--disable-infobars",
-                "--disable-extensions",
                 "--window-size=1280,720"
             ]
         )
         
-        # Consistent User Agent to match your Windows 10 environment
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 720}
         )
         
         page = await context.new_page()
@@ -42,8 +44,9 @@ async def run():
             print("Timeout or manual window closure. Attempting to save current state regardless...")
 
         # Save the authenticated state
-        await context.storage_state(path="auth.json")
-        print("Successfully saved auth.json. You can now use this with your agent.")
+        os.makedirs(os.path.dirname(AUTH_FILE_PATH), exist_ok=True)
+        await context.storage_state(path=AUTH_FILE_PATH)
+        print(f"Successfully saved auth state to {AUTH_FILE_PATH}.")
         
         await browser.close()
 
