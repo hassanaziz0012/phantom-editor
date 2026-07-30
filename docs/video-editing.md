@@ -79,6 +79,16 @@ Overlays a webcam video recording in the top-right corner of screen footage with
   - Pre-generates a static rounded corner mask image using FFmpeg to avoid running the slow `geq` filter per-frame, substantially optimizing render times.
   - Applies this static mask to the corner-overlay webcam segments on the fly.
 
+### [downscale.py](../video-editing/downscale.py)
+Downscales a video to 1080p resolution using FFmpeg with lanczos scaling.
+
+* **CLI Command**: `phantom edit downscale <video_path> [arguments]`
+* **Usage/Arguments**:
+  - `video_path`: Path to the input video file.
+  - `-o`, `--output`: Path to save the downscaled output video (default: `<input_basename>-1080.<ext>` in the input file's directory).
+* **Key Features**:
+  - Uses FFmpeg's `scale=1920:1080:flags=lanczos` filter along with `libx264` (`-preset veryfast`, `-crf 12`) and copies audio without re-encoding (`-c:a copy`).
+
 ### [transcribe.py](../video-editing/transcribe.py)
 Transcribes audio from a video using local Faster Whisper models and outputs a standardized subtitle `.srt` file.
 
