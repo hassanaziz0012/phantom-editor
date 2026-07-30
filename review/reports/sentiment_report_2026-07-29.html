@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Executive Sentiment Dashboard - 2026-07-29</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-pos: #10b981;
+      --accent-neu: #f59e0b;
+      --accent-neg: #ef4444;
+      --border: #334155;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+    h1 { margin: 0; font-size: 1.8rem; font-weight: 700; }
+    .date-badge { background: var(--border); padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.85rem; color: var(--text-muted); }
+    
+    .grid-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    .stat-title { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-value { font-size: 2.2rem; font-weight: 700; margin-top: 0.5rem; }
+
+    .section-title { font-size: 1.3rem; font-weight: 600; margin-top: 2.5rem; margin-bottom: 1rem; color: #e2e8f0; }
+
+    .grid-two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+    @media (max-width: 768px) { .grid-two { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-pos { background: rgba(16, 185, 129, 0.2); color: var(--accent-pos); }
+    .badge-neg { background: rgba(239, 68, 68, 0.2); color: var(--accent-neg); }
+    .badge-neu { background: rgba(245, 158, 11, 0.2); color: var(--accent-neu); }
+
+    blockquote {
+      margin: 0.5rem 0 1rem 0;
+      padding-left: 1rem;
+      border-left: 3px solid var(--border);
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th { background: rgba(255,255,255,0.02); color: var(--text-muted); font-size: 0.85rem; }
+
+    .rec-item {
+      background: var(--card-bg);
+      border-left: 4px solid var(--accent-pos);
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+      border-radius: 0 8px 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Customer Sentiment Dashboard</h1>
+        <div style="color: var(--text-muted); margin-top: 0.25rem;">Generally positive customer sentiment regarding product quality & support, but delivery delays and app stability are critical friction points.</div>
+      </div>
+      <div class="date-badge">Generated: 2026-07-29</div>
+    </header>
+
+    <div class="grid-stats">
+      <div class="stat-card">
+        <div class="stat-title">Net Sentiment Score</div>
+        <div class="stat-value" style="color: #10b981">33 <span style="font-size: 1rem;">/ 100</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">Positive Rate</div>
+        <div class="stat-value" style="color: var(--accent-pos)">50.0%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">Neutral Rate</div>
+        <div class="stat-value" style="color: var(--accent-neu)">16.7%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">Negative Rate</div>
+        <div class="stat-value" style="color: var(--accent-neg)">33.3%</div>
+      </div>
+    </div>
+
+    <div class="grid-two">
+      <div class="card">
+        <h2 style="margin-top:0; font-size:1.1rem; color:var(--accent-pos)">Top Praise Points</h2>
+
+        <div>
+          <span class="badge badge-pos">Exceptional Support Staff</span>
+          <span style="font-size:0.8rem; color:var(--text-muted); float:right;">1 mentions</span>
+          <blockquote>"Loved the customer service! Sarah was super helpful and resolved my issue in under 5 minutes."</blockquote>
+        </div>
+        
+        <div>
+          <span class="badge badge-pos">High Product Value</span>
+          <span style="font-size:0.8rem; color:var(--text-muted); float:right;">2 mentions</span>
+          <blockquote>"Best purchase I made all year! 10/10 recommend."</blockquote>
+        </div>
+        
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0; font-size:1.1rem; color:var(--accent-neg)">Top Pain Points</h2>
+
+        <div>
+          <span class="badge badge-neg">High - Slow Delivery & Shipping Delays</span>
+          <span style="font-size:0.8rem; color:var(--text-muted); float:right;">1 mentions</span>
+          <blockquote>"Delivery took 10 days instead of the promised 2 days. Very frustrating."</blockquote>
+        </div>
+        
+        <div>
+          <span class="badge badge-neg">Critical - Support Ticket Delays & Responsiveness</span>
+          <span style="font-size:0.8rem; color:var(--text-muted); float:right;">1 mentions</span>
+          <blockquote>"Support ticket was ignored for 4 days. Had to post on Twitter to get a response."</blockquote>
+        </div>
+        
+        <div>
+          <span class="badge badge-neg">High - iOS App Crash on Analytics Export</span>
+          <span style="font-size:0.8rem; color:var(--text-muted); float:right;">1 mentions</span>
+          <blockquote>"App keeps crashing every time I try to export my monthly analytics report on iOS."</blockquote>
+        </div>
+        
+      </div>
+    </div>
+
+    <div class="section-title">Category Breakdown</div>
+    <div class="card" style="padding:0;">
+      <table>
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Sentiment</th>
+            <th>Score</th>
+            <th>Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><strong>Customer Support</strong></td>
+            <td><span class="badge badge-neu">Mixed</span></td>
+            <td>60/100</td>
+            <td style="color:var(--text-muted); font-size:0.9rem;">Individual agent responses are praised, but response times on tickets are slow.</td>
+          </tr>
+        
+          <tr>
+            <td><strong>Product Quality & Content</strong></td>
+            <td><span class="badge badge-pos">Positive</span></td>
+            <td>85/100</td>
+            <td style="color:var(--text-muted); font-size:0.9rem;">High user satisfaction with video content and physical product value.</td>
+          </tr>
+        
+          <tr>
+            <td><strong>Logistics & Shipping</strong></td>
+            <td><span class="badge badge-neg">Negative</span></td>
+            <td>30/100</td>
+            <td style="color:var(--text-muted); font-size:0.9rem;">P0 delays on fulfillment causing customer frustration.</td>
+          </tr>
+        
+          <tr>
+            <td><strong>Mobile App Stability</strong></td>
+            <td><span class="badge badge-neg">Negative</span></td>
+            <td>40/100</td>
+            <td style="color:var(--text-muted); font-size:0.9rem;">Crash reported on iOS report exports.</td>
+          </tr>
+        
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section-title">Actionable Recommendations</div>
+
+        <div class="rec-item">
+          <div style="font-weight:600; font-size:0.95rem; margin-bottom:0.25rem;">
+            <span class="badge badge-neu">Immediate Quick Win</span> Implement auto-triage for support tickets waiting over 24 hours.
+          </div>
+          <div style="font-size:0.85rem; color:var(--text-muted);">Expected Impact: Reduce ticket abandon rate on Trustpilot.</div>
+        </div>
+        
+        <div class="rec-item">
+          <div style="font-weight:600; font-size:0.95rem; margin-bottom:0.25rem;">
+            <span class="badge badge-neu">High Impact Strategic</span> Fix iOS export crash in next app update.
+          </div>
+          <div style="font-size:0.85rem; color:var(--text-muted);">Expected Impact: Eliminate critical churn risk for high-value analytics users.</div>
+        </div>
+        
+        <div class="rec-item">
+          <div style="font-weight:600; font-size:0.95rem; margin-bottom:0.25rem;">
+            <span class="badge badge-neu">Process Fix</span> Update shipping SLA estimates on website to set accurate customer expectations.
+          </div>
+          <div style="font-size:0.85rem; color:var(--text-muted);">Expected Impact: Boost logistics sentiment score.</div>
+        </div>
+        
+  </div>
+</body>
+</html>
