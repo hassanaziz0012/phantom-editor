@@ -128,7 +128,11 @@ def main():
     if args.output:
         output_path = Path(args.output).resolve()
     else:
-        output_path = screen_path.parent / f"{screen_path.stem}_webcam{screen_path.suffix}"
+        output_path = screen_path.parent / f"{screen_path.stem}_webcam.mp4"
+
+    if output_path.suffix.lower() == ".webm":
+        print("⚠️ WebM output container is not compatible with H.264 video encoding. Using .mp4 container instead.")
+        output_path = output_path.with_suffix(".mp4")
 
     check_dependencies()
 
@@ -199,7 +203,7 @@ def main():
         "-preset", "medium",
         "-crf", "18",
         "-movflags", "+faststart",
-        "-c:a", "copy",
+        "-c:a", "aac",
         str(output_path)
     ]
 

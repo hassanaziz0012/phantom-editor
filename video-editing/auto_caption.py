@@ -218,8 +218,11 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
 
     # Determine the final output video path based on the original video path if not explicitly provided
     if not output_video_path:
-        base, ext = os.path.splitext(video_path)
-        output_video_path = f"{base}_captioned{ext}"
+        base, _ = os.path.splitext(video_path)
+        output_video_path = f"{base}_captioned.mp4"
+    elif output_video_path.endswith('.webm'):
+        base, _ = os.path.splitext(output_video_path)
+        output_video_path = f"{base}.mp4"
 
     preview_video_path = None
     if preview:
@@ -293,7 +296,7 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
                 "-c:v", "libx264",
                 "-crf", "18",
                 "-preset", "slow",
-                "-c:a", "copy",
+                "-c:a", "aac",
                 output_video_path
             ]
             subprocess.run(cmd, check=True)

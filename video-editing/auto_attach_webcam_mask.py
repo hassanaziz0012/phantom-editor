@@ -451,7 +451,11 @@ def main():
     if args.output:
         output_path = Path(args.output).resolve()
     else:
-        output_path = screen_path.parent / f"{screen_path.stem}_auto_webcam{screen_path.suffix}"
+        output_path = screen_path.parent / f"{screen_path.stem}_auto_webcam.mp4"
+
+    if output_path.suffix.lower() == ".webm":
+        print("⚠️ WebM output container is not compatible with H.264 video encoding. Using .mp4 container instead.")
+        output_path = output_path.with_suffix(".mp4")
 
     # Segment the timeline
     segments = get_timeline_segments(overlay_ranges, webcam_duration)
@@ -518,9 +522,9 @@ def main():
 
         audio_opts = []
         if has_webcam_audio:
-            audio_opts = ["-map", "1:a", "-c:a", "copy"]
+            audio_opts = ["-map", "1:a", "-c:a", "aac"]
         elif has_screen_audio:
-            audio_opts = ["-map", "0:a", "-c:a", "copy"]
+            audio_opts = ["-map", "0:a", "-c:a", "aac"]
 
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
