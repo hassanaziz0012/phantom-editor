@@ -51,12 +51,27 @@ def get_authenticated_service():
     creds = None
 
     if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+        try:
+            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+        except Exception as e:
+            print(f"⚠️ Error reading token file {TOKEN_FILE}: {e}. Re-authenticating...")
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"⚠️ Failed to refresh token: {e}. Re-running auth flow...")
+                creds = None
+
+        if not creds:
+            if not CLIENT_SECRETS_FILE.exists():
+                raise FileNotFoundError(
+                    f"Google client_secret.json credentials file not found at {CLIENT_SECRETS_FILE}.\n"
+                    f"Please verify client_secret.json exists."
+                )
+
+            TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(CLIENT_SECRETS_FILE), SCOPES
             )
