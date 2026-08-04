@@ -31,7 +31,7 @@ Calculates and lists recommended related videos from the channel inventory using
 * **Usage**: `python youtube_api/recommend_related_videos.py (--metadata <path> | --video-id <id>) [--limit <int>] [--json]` or via `phantom yt recommend-related`
 
 ### [upload_video.py](../youtube_api/upload_video.py)
-Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a custom `thumbnail.png`, and automatically shares the link on Twitter (X).
+Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a custom `thumbnail.png`, shares the link on Twitter (X), and sends an email broadcast to subscribers via Resend.
 
 * **Usage**: `python youtube_api/upload_video.py /path/to/video.mp4` or via `phantom yt upload <video_path>`
 
