@@ -217,7 +217,29 @@ def main():
     subprocess.run(["phantom", "tweet", tweet_content], check=True)
     print("✅ Tweet posted!")
 
+    # Send email broadcast
+    title = metadata.get("title", video_path.stem)
+    description = metadata.get("description", "")
+    resend_script = repo_root / "emails" / "resend_broadcast.py"
+
+    print(f"\n📧 Sending email broadcast for '{title}'...")
+    subprocess.run(
+        [
+            sys.executable,
+            str(resend_script),
+            "--title",
+            title,
+            "--description",
+            description,
+            "--url",
+            share_url,
+        ],
+        check=True,
+    )
+    print("✅ Email broadcast sent!")
+
     print("\n🎉 All done!")
+
 
 
 if __name__ == "__main__":
