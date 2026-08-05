@@ -7,49 +7,20 @@ import argparse
 import subprocess
 from pathlib import Path
 
-# Terminal ANSI Color Constants
-COLOR_GREEN = "\033[92m"
-COLOR_RED = "\033[91m"
-COLOR_YELLOW = "\033[93m"
-COLOR_BLUE = "\033[94m"
-COLOR_RESET = "\033[0m"
-COLOR_BOLD = "\033[1m"
+video_editing_dir = Path(__file__).resolve().parent
+if str(video_editing_dir) not in sys.path:
+    sys.path.insert(0, str(video_editing_dir))
 
-def print_info(text: str):
-    print(f"{COLOR_BLUE}{text}{COLOR_RESET}")
-
-def print_success(text: str):
-    print(f"{COLOR_GREEN}{text}{COLOR_RESET}")
-
-def print_warning(text: str):
-    print(f"{COLOR_YELLOW}{text}{COLOR_RESET}")
-
-def print_error(text: str):
-    print(f"{COLOR_RED}{text}{COLOR_RESET}", file=sys.stderr)
-
-def get_video_resolution(video_path: Path):
-    """Determine width and height of a video file using ffprobe."""
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "json",
-            str(video_path)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        data = json.loads(result.stdout)
-        if "streams" in data and len(data["streams"]) > 0:
-            stream = data["streams"][0]
-            return int(stream.get("width", 0)), int(stream.get("height", 0))
-    except Exception as e:
-        print_warning(f"Could not determine video resolution for '{video_path}': {e}")
-    return 0, 0
+from utils import (
+    COLOR_GREEN, COLOR_RED, COLOR_YELLOW, COLOR_BLUE, COLOR_RESET, COLOR_BOLD,
+    print_info, print_success, print_warning, print_error,
+    get_video_info
+)
 
 def is_4k_video(video_path: Path) -> bool:
     """Check if the video resolution is 4K (e.g., width >= 3840 or height >= 2160)."""
-    width, height = get_video_resolution(video_path)
-    return width >= 3840 or height >= 2160 or max(width, height) >= 3840 or min(width, height) >= 2160
+    info = get_video_info(video_path)
+    return info.width >= 3840 or info.height >= 2160 or max(info.width, info.height) >= 3840 or min(info.width, info.height) >= 2160
 
 def is_valid_video_file(video_path: Path) -> bool:
     """Check if a video file exists, is non-empty, and can be read by ffprobe."""

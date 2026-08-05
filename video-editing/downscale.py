@@ -5,6 +5,12 @@ import argparse
 import subprocess
 from pathlib import Path
 
+video_editing_dir = Path(__file__).resolve().parent
+if str(video_editing_dir) not in sys.path:
+    sys.path.insert(0, str(video_editing_dir))
+
+from utils import resolve_output_path
+
 def downscale_video(input_path: Path, output_path: Path):
     if not input_path.is_file():
         print(f"Error: Input video file not found at '{input_path}'", file=sys.stderr)
@@ -49,15 +55,7 @@ def main():
     args = parser.parse_args()
 
     input_path = Path(args.video_path).resolve()
-
-    if args.output:
-        output_path = Path(args.output).resolve()
-    else:
-        output_path = input_path.parent / f"{input_path.stem}-1080.mp4"
-
-    if output_path.suffix.lower() == ".webm":
-        print("⚠️ WebM output container is not compatible with H.264 video encoding. Using .mp4 container instead.")
-        output_path = output_path.with_suffix(".mp4")
+    output_path = resolve_output_path(input_path, args.output, "-1080")
 
     downscale_video(input_path, output_path)
 
