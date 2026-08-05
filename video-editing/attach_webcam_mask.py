@@ -6,69 +6,11 @@ import subprocess
 import shutil
 from pathlib import Path
 
-def check_dependencies():
-    """Verify that ffmpeg and ffprobe are available in the system PATH."""
-    for cmd in ["ffmpeg", "ffprobe"]:
-        if not shutil.which(cmd):
-            print(f"Error: Required tool '{cmd}' is not installed or not in system PATH.", file=sys.stderr)
-            sys.exit(1)
+video_editing_dir = Path(__file__).resolve().parent
+if str(video_editing_dir) not in sys.path:
+    sys.path.insert(0, str(video_editing_dir))
 
-def get_video_duration(video_path):
-    """Determine the duration of a video file in seconds using ffprobe."""
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(video_path)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return float(result.stdout.strip())
-    except Exception as e:
-        print(f"Error: Could not determine video duration for '{video_path}': {e}", file=sys.stderr)
-        return None
-
-def has_audio_stream(video_path):
-    """Check if a video file contains at least one audio stream using ffprobe."""
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "a",
-            "-show_entries", "stream=codec_type",
-            "-of", "csv=p=0",
-            str(video_path)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return "audio" in result.stdout.lower()
-    except Exception as e:
-        print(f"Warning: Could not check audio streams for '{video_path}': {e}", file=sys.stderr)
-        return False
-
-def get_video_fps(video_path):
-    """Determine the frame rate of a video file using ffprobe."""
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=r_frame_rate,avg_frame_rate",
-            "-of", "json",
-            str(video_path)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        data = json.loads(result.stdout)
-        if "streams" in data and len(data["streams"]) > 0:
-            stream = data["streams"][0]
-            for fps_key in ["r_frame_rate", "avg_frame_rate"]:
-                val = stream.get(fps_key, "")
-                if val and "/" in val:
-                    num, den = val.split("/")
-                    if float(den) > 0:
-                        parsed = float(num) / float(den)
-                        if 5 <= parsed <= 120:
-                            return parsed
-        return 30.0
-    except Exception:
-        return 30.0
+from utils import check_dependencies, get_video_info, resolve_output_path
 
 def main():
     parser = argparse.ArgumentParser(
@@ -125,35 +67,31 @@ def main():
         sys.exit(1)
 
     # Resolve output path
-    if args.output:
-        output_path = Path(args.output).resolve()
-    else:
-        output_path = screen_path.parent / f"{screen_path.stem}_webcam.mp4"
-
-    if output_path.suffix.lower() == ".webm":
-        print("⚠️ WebM output container is not compatible with H.264 video encoding. Using .mp4 container instead.")
-        output_path = output_path.with_suffix(".mp4")
+    output_path = resolve_output_path(screen_path, args.output, "_webcam")
 
     check_dependencies()
 
-    # Retrieve webcam duration as the target output duration
+    # Probe webcam and screen video info
     print(f"🔍 Probing webcam video duration...")
-    webcam_duration = get_video_duration(webcam_path)
-    if webcam_duration is None:
+    webcam_info = get_video_info(webcam_path)
+    screen_info = get_video_info(screen_path)
+
+    webcam_duration = webcam_info.duration
+    if not webcam_duration or webcam_duration <= 0:
         print("Error: Could not retrieve webcam duration.", file=sys.stderr)
         sys.exit(1)
     print(f"🎬 Webcam duration: {webcam_duration:.3f} seconds.")
 
     # Target frame rate for smooth overlay output
-    webcam_fps = get_video_fps(webcam_path)
-    screen_fps = get_video_fps(screen_path)
+    webcam_fps = webcam_info.fps
+    screen_fps = screen_info.fps
     target_fps = int(round(max(webcam_fps, screen_fps)))
     target_fps = max(24, min(60, target_fps))
     print(f"🎞️  Target output frame rate: {target_fps} FPS")
 
     # Determine audio streams
-    has_webcam_audio = has_audio_stream(webcam_path)
-    has_screen_audio = has_audio_stream(screen_path)
+    has_webcam_audio = webcam_info.has_audio
+    has_screen_audio = screen_info.has_audio
 
     audio_map = []
     if has_webcam_audio:

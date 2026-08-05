@@ -17,84 +17,7 @@ if str(video_editing_dir) not in sys.path:
     sys.path.insert(0, str(video_editing_dir))
 
 from transcribe import transcribe_video
-from utils import parse_timestamp, format_srt_time
-
-def check_dependencies():
-    """Verify that ffmpeg and ffprobe are available in the system PATH."""
-    for cmd in ["ffmpeg", "ffprobe"]:
-        if not shutil.which(cmd):
-            print(f"Error: Required tool '{cmd}' is not installed or not in system PATH.", file=sys.stderr)
-            sys.exit(1)
-
-def get_video_duration(video_path):
-    """Determine the duration of a video file in seconds using ffprobe."""
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(video_path)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return float(result.stdout.strip())
-    except Exception as e:
-        print(f"Error: Could not determine video duration for '{video_path}': {e}", file=sys.stderr)
-        return None
-
-def has_audio_stream(video_path):
-    """Check if a video file contains at least one audio stream using ffprobe."""
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "a",
-            "-show_entries", "stream=codec_type",
-            "-of", "csv=p=0",
-            str(video_path)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return "audio" in result.stdout.lower()
-    except Exception as e:
-        print(f"Warning: Could not check audio streams for '{video_path}': {e}", file=sys.stderr)
-        return False
-
-def get_video_properties(video_path):
-    """Determine resolution, video codec, pixel format, and frame rate of a video file using ffprobe."""
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height,codec_name,pix_fmt,r_frame_rate,avg_frame_rate",
-            "-of", "json",
-            str(video_path)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        data = json.loads(result.stdout)
-        if "streams" in data and len(data["streams"]) > 0:
-            stream = data["streams"][0]
-            fps = 30.0
-            for fps_key in ["r_frame_rate", "avg_frame_rate"]:
-                val = stream.get(fps_key, "")
-                if val and "/" in val:
-                    try:
-                        num, den = val.split("/")
-                        if float(den) > 0:
-                            parsed = float(num) / float(den)
-                            if 5 <= parsed <= 120:
-                                fps = parsed
-                                break
-                    except (ValueError, ZeroDivisionError):
-                        pass
-            return {
-                "width": int(stream.get("width", 0)),
-                "height": int(stream.get("height", 0)),
-                "codec": stream.get("codec_name", ""),
-                "pix_fmt": stream.get("pix_fmt", ""),
-                "fps": fps
-            }
-        return None
-    except Exception as e:
-        print(f"Error: Could not determine video properties for '{video_path}': {e}", file=sys.stderr)
-        return None
+from utils import parse_timestamp, format_srt_time, check_dependencies, get_video_info, resolve_output_path
 
 def parse_srt(srt_path: Path):
     """Parses SRT captions into a list of (start_time, end_time, text) tuples."""
@@ -357,10 +280,13 @@ def main():
 
     check_dependencies()
 
-    # Determine durations
+    # Determine video info for screen and webcam
     print(f"🔍 Probing webcam video duration...")
-    webcam_duration = get_video_duration(webcam_path)
-    if webcam_duration is None:
+    webcam_info = get_video_info(webcam_path)
+    screen_info = get_video_info(screen_path)
+
+    webcam_duration = webcam_info.duration
+    if not webcam_duration or webcam_duration <= 0:
         print("Error: Could not retrieve webcam duration.", file=sys.stderr)
         sys.exit(1)
     print(f"🎬 Webcam duration: {webcam_duration:.3f} seconds.")
@@ -412,8 +338,8 @@ def main():
     print(f"⏰ Overlay timelines: {overlay_ranges}")
 
     # Determine audio streams
-    has_webcam_audio = has_audio_stream(webcam_path)
-    has_screen_audio = has_audio_stream(screen_path)
+    has_webcam_audio = webcam_info.has_audio
+    has_screen_audio = screen_info.has_audio
 
     if has_webcam_audio:
         print("🎵 Using webcam audio track.")
@@ -423,39 +349,26 @@ def main():
         print("ℹ️ Neither webcam nor screen video contains audio. Output will be video-only.")
 
     # Determine screen resolution
-    screen_props = get_video_properties(screen_path)
-    if screen_props is None:
-        print("Warning: Could not check screen recording resolution. Defaulting to 1920x1080.")
-        screen_w, screen_h = 1920, 1080
-    else:
-        screen_w, screen_h = screen_props["width"], screen_props["height"]
+    screen_w = screen_info.width if screen_info.width > 0 else 1920
+    screen_h = screen_info.height if screen_info.height > 0 else 1080
     print(f"🖥️  Screen properties: {screen_w}x{screen_h}")
 
     # Determine webcam properties
-    webcam_props = get_video_properties(webcam_path)
-    if webcam_props is None:
+    webcam_w = webcam_info.width
+    webcam_h = webcam_info.height
+    if webcam_w == 0 or webcam_h == 0:
         print("Error: Could not retrieve webcam properties.", file=sys.stderr)
         sys.exit(1)
 
-    webcam_w = webcam_props["width"]
-    webcam_h = webcam_props["height"]
-
     # Target frame rate for smooth overlay output (default to webcam FPS, clamped between 24 and 60)
-    webcam_fps = webcam_props.get("fps", 30.0)
-    screen_fps = screen_props.get("fps", 30.0) if screen_props else 30.0
+    webcam_fps = webcam_info.fps
+    screen_fps = screen_info.fps
     target_fps = int(round(max(webcam_fps, screen_fps)))
     target_fps = max(24, min(60, target_fps))
     print(f"🎞️  Target output frame rate: {target_fps} FPS")
 
     # Resolve output path
-    if args.output:
-        output_path = Path(args.output).resolve()
-    else:
-        output_path = screen_path.parent / f"{screen_path.stem}_auto_webcam.mp4"
-
-    if output_path.suffix.lower() == ".webm":
-        print("⚠️ WebM output container is not compatible with H.264 video encoding. Using .mp4 container instead.")
-        output_path = output_path.with_suffix(".mp4")
+    output_path = resolve_output_path(screen_path, args.output, "_auto_webcam")
 
     # Segment the timeline
     segments = get_timeline_segments(overlay_ranges, webcam_duration)
