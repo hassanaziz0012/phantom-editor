@@ -8,7 +8,7 @@ from groq import Groq
 
 # Add the script's directory to the sys.path to guarantee importing from utils
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from utils import format_srt_time
+from utils import format_srt_time, get_video_info
 
 # Limit for Groq API in bytes (25MB)
 GROQ_LIMIT_BYTES = 25 * 1024 * 1024
@@ -52,23 +52,6 @@ def compress_audio(input_audio_path, output_audio_path):
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as e:
         print(f"Error compressing audio: ffmpeg failed with exit code {e.returncode}")
-        raise
-
-def get_audio_duration(file_path):
-    """Gets the duration of the audio file in seconds using ffprobe."""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        file_path
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return float(result.stdout.strip())
-    except Exception as e:
-        print(f"Error getting audio duration with ffprobe: {e}")
-        raise
-
 def transcribe_video_cloud(video_path, model_name, output_srt_path, max_words=None, uppercase=False, preview=False):
     # Ensure input file exists
     if not os.path.exists(video_path):
@@ -113,7 +96,7 @@ def transcribe_video_cloud(video_path, model_name, output_srt_path, max_words=No
         if file_size > GROQ_LIMIT_BYTES:
             print(f"Compressed audio size ({file_size / (1024*1024):.2f} MB) still exceeds the Groq limit of 25 MB.")
             print("Splitting audio into 10-minute (600s) chunks...")
-            total_duration = get_audio_duration(base_audio)
+            total_duration = get_video_info(base_audio).duration
             chunk_size = 600.0
             
             start_time = 0.0

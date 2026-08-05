@@ -3,7 +3,7 @@ import subprocess
 import uuid
 from faster_whisper import WhisperModel
 
-from utils import format_srt_time
+from utils import format_srt_time, create_preview_clip
 
 def transcribe_video(video_path, model_path_or_size, output_srt_path, max_words=None, uppercase=False, preview=False, vad_filter=True):
     model_mapping = {
@@ -20,27 +20,8 @@ def transcribe_video(video_path, model_path_or_size, output_srt_path, max_words=
 
     preview_video_path = None
     if preview:
-        print("Preview mode enabled: extracting first 5 seconds of the video...")
-        preview_video_path = f"temp_preview_{uuid.uuid4().hex[:8]}.mp4"
-        try:
-            # Extract first 5 seconds of input video.
-            # We re-encode to ensure correct timings and format.
-            crop_cmd = [
-                "ffmpeg", "-y",
-                "-i", video_path,
-                "-t", "5",
-                preview_video_path
-            ]
-            subprocess.run(crop_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            video_path = preview_video_path
-        except subprocess.CalledProcessError as e:
-            print(f"Error creating preview video: ffmpeg failed with exit code {e.returncode}")
-            if os.path.exists(preview_video_path):
-                os.remove(preview_video_path)
-            raise
-        except FileNotFoundError:
-            print("Error: ffmpeg is not installed or not found in system PATH. Cannot create preview video.")
-            raise
+        preview_video_path = str(create_preview_clip(video_path, 5.0))
+        video_path = preview_video_path
 
     try:
         print(f"Loading Whisper model from: {model_path_or_size}")

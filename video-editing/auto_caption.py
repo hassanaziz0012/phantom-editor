@@ -7,6 +7,7 @@ import textwrap
 import uuid
 from dataclasses import dataclass
 from transcribe import transcribe_video
+from utils import get_video_info, resolve_output_path, create_preview_clip
 
 DEFAULT_FONT = "Google Sans"
 
@@ -74,23 +75,6 @@ def srt_time_to_ass(srt_time_str):
     h, m, s = h_m_s.split(':')
     return f"{int(h)}:{m}:{s}.{round(int(ms)/10):02d}"
 
-def get_video_resolution(video_path):
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "csv=s=x:p=0",
-            video_path
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        out = result.stdout.strip()
-        if 'x' in out:
-            w, h = out.split('x')
-            return int(w), int(h)
-    except Exception as e:
-        print(f"Warning: Could not determine video resolution using ffprobe: {e}")
-    return 1080, 1920
 
 def convert_srt_to_ass(srt_path, ass_path, video_width, video_height, font_size, bottom_margin, uppercase=False, width=20, font_name="Google Sans", animated=False):
     play_res_y = 384
@@ -216,37 +200,13 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
         video_name_without_ext, _ = os.path.splitext(os.path.basename(video_path))
         output_srt_path = os.path.join(video_dir, f"{video_name_without_ext}.srt")
 
-    # Determine the final output video path based on the original video path if not explicitly provided
-    if not output_video_path:
-        base, _ = os.path.splitext(video_path)
-        output_video_path = f"{base}_captioned.mp4"
-    elif output_video_path.endswith('.webm'):
-        base, _ = os.path.splitext(output_video_path)
-        output_video_path = f"{base}.mp4"
+    # Determine output video path
+    output_video_path = str(resolve_output_path(video_path, output_video_path, "_captioned"))
 
     preview_video_path = None
     if preview:
-        print("Preview mode enabled: extracting first 5 seconds of the video...")
-        preview_video_path = f"temp_preview_{uuid.uuid4().hex[:8]}.mp4"
-        try:
-            # Extract first 5 seconds of input video.
-            # We re-encode to ensure correct timings and format.
-            crop_cmd = [
-                "ffmpeg", "-y",
-                "-i", video_path,
-                "-t", "5",
-                preview_video_path
-            ]
-            subprocess.run(crop_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            video_path = preview_video_path
-        except subprocess.CalledProcessError as e:
-            print(f"Error creating preview video: ffmpeg failed with exit code {e.returncode}")
-            if os.path.exists(preview_video_path):
-                os.remove(preview_video_path)
-            raise
-        except FileNotFoundError:
-            print("Error: ffmpeg is not installed or not found in system PATH. Cannot create preview video.")
-            raise
+        preview_video_path = str(create_preview_clip(video_path, 5.0))
+        video_path = preview_video_path
 
     try:
         if os.path.exists(output_srt_path):
@@ -263,8 +223,6 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
                 vad_filter=vad_filter
             )
 
-
-
         print(f"Burning captions into video and saving to: {output_video_path}")
         
         # Generate temporary ASS file with rounded box formatting
@@ -272,7 +230,9 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
         
         try:
             # Get video width and height to calculate reference canvas
-            v_width, v_height = get_video_resolution(video_path)
+            v_info = get_video_info(video_path)
+            v_width = v_info.width if v_info.width > 0 else 1080
+            v_height = v_info.height if v_info.height > 0 else 1920
             
             # Convert the SRT file to ASS format
             convert_srt_to_ass(
