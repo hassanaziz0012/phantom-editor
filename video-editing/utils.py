@@ -1,11 +1,153 @@
 import re
+import sys
+import shutil
+import subprocess
+import json
+import uuid
 from pathlib import Path
+from dataclasses import dataclass
 
 # Google API client library imports
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+
+# Terminal ANSI Color Constants
+COLOR_GREEN = "\033[92m"
+COLOR_RED = "\033[91m"
+COLOR_YELLOW = "\033[93m"
+COLOR_BLUE = "\033[94m"
+COLOR_RESET = "\033[0m"
+COLOR_BOLD = "\033[1m"
+
+def print_info(text: str):
+    print(f"{COLOR_BLUE}{text}{COLOR_RESET}")
+
+def print_success(text: str):
+    print(f"{COLOR_GREEN}{text}{COLOR_RESET}")
+
+def print_warning(text: str):
+    print(f"{COLOR_YELLOW}{text}{COLOR_RESET}")
+
+def print_error(text: str):
+    print(f"{COLOR_RED}{text}{COLOR_RESET}", file=sys.stderr)
+
+
+def check_dependencies(tools=("ffmpeg", "ffprobe")):
+    """Verify that required external tools are available in system PATH."""
+    for cmd in tools:
+        if not shutil.which(cmd):
+            print_error(f"Error: Required tool '{cmd}' is not installed or not in system PATH.")
+            sys.exit(1)
+
+
+@dataclass
+class VideoInfo:
+    path: Path
+    duration: float = 0.0
+    width: int = 0
+    height: int = 0
+    fps: float = 30.0
+    codec: str = ""
+    pix_fmt: str = ""
+    has_audio: bool = False
+
+
+def get_video_info(video_path: str | Path) -> VideoInfo:
+    """Probes a video file using ffprobe and returns a VideoInfo dataclass."""
+    path = Path(video_path).resolve()
+    info = VideoInfo(path=path)
+    if not path.is_file():
+        return info
+
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration:stream=codec_type,width,height,codec_name,pix_fmt,r_frame_rate,avg_frame_rate",
+            "-of", "json",
+            str(path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        
+        # Duration
+        try:
+            info.duration = float(data.get("format", {}).get("duration", 0.0))
+        except (ValueError, TypeError):
+            info.duration = 0.0
+
+        streams = data.get("streams", [])
+        for stream in streams:
+            codec_type = stream.get("codec_type")
+            if codec_type == "video" and info.width == 0:
+                info.width = int(stream.get("width", 0))
+                info.height = int(stream.get("height", 0))
+                info.codec = stream.get("codec_name", "")
+                info.pix_fmt = stream.get("pix_fmt", "")
+                
+                # FPS calculation
+                for fps_key in ["r_frame_rate", "avg_frame_rate"]:
+                    val = stream.get(fps_key, "")
+                    if val and "/" in val:
+                        try:
+                            num, den = val.split("/")
+                            if float(den) > 0:
+                                parsed = float(num) / float(den)
+                                if 5 <= parsed <= 120:
+                                    info.fps = parsed
+                                    break
+                        except (ValueError, ZeroDivisionError):
+                            pass
+            elif codec_type == "audio":
+                info.has_audio = True
+
+    except Exception as e:
+        print_warning(f"Could not determine full video info for '{path}': {e}")
+
+    return info
+
+
+def resolve_output_path(input_path: str | Path, output_arg: str | Path | None = None, default_suffix: str = "") -> Path:
+    """
+    Resolves output path based on input file and output argument.
+    Enforces .mp4 extension if .webm container is specified (due to H.264 incompatibility).
+    """
+    inp = Path(input_path).resolve()
+    if output_arg:
+        out = Path(output_arg).resolve()
+    else:
+        out = inp.parent / f"{inp.stem}{default_suffix}.mp4"
+
+    if out.suffix.lower() == ".webm":
+        print_warning("⚠️ WebM output container is not compatible with H.264 video encoding. Using .mp4 container instead.")
+        out = out.with_suffix(".mp4")
+
+    return out
+
+
+def create_preview_clip(video_path: str | Path, duration: float = 5.0) -> Path:
+    """Extracts first `duration` seconds of video to a temporary preview MP4 file."""
+    preview_path = Path(f"temp_preview_{uuid.uuid4().hex[:8]}.mp4")
+    print_info(f"Preview mode enabled: extracting first {duration} seconds of the video...")
+    try:
+        crop_cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-t", str(duration),
+            str(preview_path)
+        ]
+        subprocess.run(crop_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return preview_path
+    except subprocess.CalledProcessError as e:
+        print_error(f"Error creating preview video: ffmpeg failed with exit code {e.returncode}")
+        if preview_path.exists():
+            preview_path.unlink()
+        raise
+    except FileNotFoundError:
+        print_error("Error: ffmpeg is not installed or not found in system PATH. Cannot create preview video.")
+        raise
+
 
 SCOPES = ["https://www.googleapis.com/auth/documents.readonly"]
 
