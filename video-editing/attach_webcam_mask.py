@@ -37,8 +37,8 @@ def main():
     parser.add_argument(
         "--width", "-w",
         type=int,
-        default=400,
-        help="Width of the webcam overlay in pixels (default: 400)."
+        default=600,
+        help="Width of the webcam overlay in pixels (default: 600)."
     )
     parser.add_argument(
         "--radius", "-r",
