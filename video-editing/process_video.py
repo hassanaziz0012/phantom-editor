@@ -92,7 +92,7 @@ def main():
         "--width", "-w",
         type=int,
         default=None,
-        help="Width of webcam overlay in pixels for auto-attach webcam mask (default: 270 for portrait, 400 for landscape)."
+        help="Width of webcam overlay in pixels for auto-attach webcam mask (default: 450 for portrait, 600 for landscape)."
     )
     parser.add_argument(
         "--all", "-a",
@@ -179,8 +179,8 @@ def main():
     step1_srt_output = video_dir / f"{eff_webcam_path.stem}.srt"
     step1_1word_srt = video_dir / f"{eff_webcam_path.stem}-1word.srt"
     step2_output = video_dir / "after-webcam-mask.mp4"
-    step3_output = video_dir / "after-audio-processing.mp4"
-    step4_output = video_dir / "after-trim-silences.mp4"
+    step3_output = video_dir / "after-trim-silences.mp4"
+    step4_output = video_dir / "after-audio-processing.mp4"
     step5_needed = bool(args.bgm)
     step5_output = video_dir / "after-trim-silences-bgm.mp4"
     final_output = video_dir / f"to-review{ext}"
@@ -253,8 +253,8 @@ def main():
     print(f" 0. Downscale webcam to 1080p (downscale.py)                 {s0_str}")
     print(f" 1. Transcribe video via Groq cloud (transcribe_cloud.py)    {s1_str}")
     print(f" 2. Auto-attach webcam mask (auto_attach_webcam_mask.py)     {s2_str}")
-    print(f" 3. Process audio via process_audio.sh                       {s3_str}")
-    print(f" 4. Trim silences via Silero VAD (trim_silences.py)          {s4_str}")
+    print(f" 3. Trim silences via Silero VAD (trim_silences.py)          {s3_str}")
+    print(f" 4. Process audio via process_audio.sh                       {s4_str}")
     print(f" 5. Add background music (add_bgm_to_video.sh)               {s5_str}")
     print(f" 6. Rename final video file to 'to-review{ext}'               {s6_str}")
     print_info("============================================================")
@@ -354,6 +354,8 @@ def main():
             cmd_step2.extend(["--width", str(args.width)])
         if args.all:
             cmd_step2.append("--all")
+        if args.yes:
+            cmd_step2.append("--yes")
 
         print(f"Executing: {' '.join(cmd_step2)}")
         try:
@@ -368,14 +370,19 @@ def main():
         print_success(f"[SUCCESS] Step 2 complete: Attached webcam mask -> {step2_output.name}")
         force_run = True
 
-    # --- STEP 3: Process Audio ---
-    print_info("\n--- [Step 3/6] Processing Audio ---")
-    step3_output = video_dir / "after-audio-processing.mp4"
+    # --- STEP 3: Trim Silences ---
+    print_info("\n--- [Step 3/6] Trimming Silences ---")
+    step3_output = video_dir / "after-trim-silences.mp4"
 
     if not force_run and is_valid_file(step3_output):
-        print_success(f"[SKIP] Step 3 complete: Audio processed video file already exists -> {step3_output.name}")
+        print_success(f"[SKIP] Step 3 complete: Trimmed silences video file already exists -> {step3_output.name}")
     else:
-        cmd_step3 = ["bash", str(process_audio_sh), str(step2_output)]
+        cmd_step3 = [
+            sys.executable,
+            str(trim_silences_py),
+            str(step2_output),
+            "--output", str(step3_output)
+        ]
         print(f"Executing: {' '.join(cmd_step3)}")
         try:
             subprocess.run(cmd_step3, check=True)
@@ -386,22 +393,17 @@ def main():
         if not is_valid_file(step3_output):
             print_error(f"[ERROR] Step 3 output file invalid or missing at '{step3_output}'")
             sys.exit(1)
-        print_success(f"[SUCCESS] Step 3 complete: Audio processed -> {step3_output.name}")
+        print_success(f"[SUCCESS] Step 3 complete: Trimmed silences -> {step3_output.name}")
         force_run = True
 
-    # --- STEP 4: Trim Silences ---
-    print_info("\n--- [Step 4/6] Trimming Silences ---")
-    step4_output = video_dir / "after-trim-silences.mp4"
+    # --- STEP 4: Process Audio ---
+    print_info("\n--- [Step 4/6] Processing Audio ---")
+    step4_output = video_dir / "after-audio-processing.mp4"
 
     if not force_run and is_valid_file(step4_output):
-        print_success(f"[SKIP] Step 4 complete: Trimmed silences video file already exists -> {step4_output.name}")
+        print_success(f"[SKIP] Step 4 complete: Audio processed video file already exists -> {step4_output.name}")
     else:
-        cmd_step4 = [
-            sys.executable,
-            str(trim_silences_py),
-            str(step3_output),
-            "--output", str(step4_output)
-        ]
+        cmd_step4 = ["bash", str(process_audio_sh), str(step3_output)]
         print(f"Executing: {' '.join(cmd_step4)}")
         try:
             subprocess.run(cmd_step4, check=True)
@@ -412,7 +414,7 @@ def main():
         if not is_valid_file(step4_output):
             print_error(f"[ERROR] Step 4 output file invalid or missing at '{step4_output}'")
             sys.exit(1)
-        print_success(f"[SUCCESS] Step 4 complete: Trimmed silences -> {step4_output.name}")
+        print_success(f"[SUCCESS] Step 4 complete: Audio processed -> {step4_output.name}")
         force_run = True
 
     # --- STEP 5: Add Background Music ---
