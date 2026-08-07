@@ -54,16 +54,44 @@ def detect_overlay_ranges(captions, default_overlay=False, total_duration=None):
     Resolves them into overlay time ranges using a state machine.
     
     Returns:
-        list of (start_time, end_time) tuples.
+        tuple: (list of (start_time, end_time) tuples, int commands_count)
     """
     overlay_ranges = []
     current_state = "overlay" if default_overlay else "raw"
     current_start = 0.0 if default_overlay else None
+    commands_count = 0
     
     i = 0
     n = len(captions)
     while i < n:
-        # Check Case 1: "webcam start/stop" (single word or hyphenated)
+        # Check Case 0: Single caption entry containing "webcam start/stop" or "web cam start/stop"
+        w1_start, w1_end, w1_text = captions[i]
+        clean_text = re.sub(r'[^\w\s]', ' ', w1_text.lower())
+        clean_text = " ".join(clean_text.split())
+        
+        if re.search(r'\bweb\s*cam\s+start\b', clean_text):
+            print(f"📍 Found 'webcam start' command at {w1_start:.3f}s (words: '{w1_text}')")
+            commands_count += 1
+            if current_state == "raw":
+                current_state = "overlay"
+                current_start = w1_start
+            else:
+                print("   (Already in overlay state, ignoring start command)")
+            i += 1
+            continue
+        elif re.search(r'\bweb\s*cam\s+stop\b', clean_text):
+            print(f"📍 Found 'webcam stop' command at {w1_end:.3f}s (words: '{w1_text}')")
+            commands_count += 1
+            if current_state == "overlay":
+                current_state = "raw"
+                overlay_ranges.append((current_start, w1_end))
+                current_start = None
+            else:
+                print("   (Already in raw state, ignoring stop command)")
+            i += 1
+            continue
+
+        # Check Case 1: "webcam start/stop" (single word or hyphenated across two entries)
         if i + 1 < n:
             w1_start, w1_end, w1_text = captions[i]
             w2_start, w2_end, w2_text = captions[i+1]
@@ -74,6 +102,7 @@ def detect_overlay_ranges(captions, default_overlay=False, total_duration=None):
             if w1_clean == "webcam" and (w2_start - w1_end < 1.5):
                 if w2_clean == "start":
                     print(f"📍 Found 'webcam start' command at {w1_start:.3f}s (words: '{w1_text} {w2_text}')")
+                    commands_count += 1
                     if current_state == "raw":
                         current_state = "overlay"
                         current_start = w1_start
@@ -83,6 +112,7 @@ def detect_overlay_ranges(captions, default_overlay=False, total_duration=None):
                     continue
                 elif w2_clean == "stop":
                     print(f"📍 Found 'webcam stop' command at {w2_end:.3f}s (words: '{w1_text} {w2_text}')")
+                    commands_count += 1
                     if current_state == "overlay":
                         current_state = "raw"
                         overlay_ranges.append((current_start, w2_end))
@@ -105,6 +135,7 @@ def detect_overlay_ranges(captions, default_overlay=False, total_duration=None):
             if w1_clean == "web" and w2_clean == "cam" and (w2_start - w1_end < 1.0) and (w3_start - w2_end < 1.5):
                 if w3_clean == "start":
                     print(f"📍 Found 'web cam start' command at {w1_start:.3f}s (words: '{w1_text} {w2_text} {w3_text}')")
+                    commands_count += 1
                     if current_state == "raw":
                         current_state = "overlay"
                         current_start = w1_start
@@ -114,6 +145,7 @@ def detect_overlay_ranges(captions, default_overlay=False, total_duration=None):
                     continue
                 elif w3_clean == "stop":
                     print(f"📍 Found 'web cam stop' command at {w3_end:.3f}s (words: '{w1_text} {w2_text} {w3_text}')")
+                    commands_count += 1
                     if current_state == "overlay":
                         current_state = "raw"
                         overlay_ranges.append((current_start, w3_end))
@@ -130,7 +162,7 @@ def detect_overlay_ranges(captions, default_overlay=False, total_duration=None):
         end_time = total_duration if total_duration is not None else captions[-1][1]
         overlay_ranges.append((current_start, end_time))
         
-    return overlay_ranges
+    return overlay_ranges, commands_count
 
 def get_timeline_segments(overlay_ranges, total_duration):
     """
@@ -208,13 +240,13 @@ def main():
         type=str,
         choices=["portrait", "landscape"],
         default="portrait",
-        help="Preset orientation for webcam overlay: 'portrait' (default, 270px width) or 'landscape' (400px width)."
+        help="Preset orientation for webcam overlay: 'portrait' (default, 450px width) or 'landscape' (600px width)."
     )
     parser.add_argument(
         "--width", "-w",
         type=int,
         default=None,
-        help="Width of the webcam overlay in pixels (default: 270 for portrait, 400 for landscape)."
+        help="Width of the webcam overlay in pixels (default: 450 for portrait, 600 for landscape)."
     )
     parser.add_argument(
         "--radius", "-r",
@@ -255,12 +287,17 @@ def main():
         action="store_true",
         help="Attach webcam mask throughout the entire video, skipping audio transcription and segment detection."
     )
+    parser.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Skip confirmation prompt when no voice commands are detected (default: --all)."
+    )
 
     args = parser.parse_args()
 
     # Determine default overlay width based on chosen preset if --width wasn't explicitly set
     if args.width is None:
-        args.width = 270 if args.preset == "portrait" else 400
+        args.width = 450 if args.preset == "portrait" else 600
 
     screen_path = Path(args.screen).resolve()
     webcam_path = Path(args.webcam).resolve()
@@ -291,6 +328,7 @@ def main():
         sys.exit(1)
     print(f"🎬 Webcam duration: {webcam_duration:.3f} seconds.")
 
+    skip_overlay = False
     if args.all:
         print("⏩ '--all' flag set: Skipping transcription and segment detection. Attaching webcam mask to entire video.")
         overlay_ranges = [(0.0, webcam_duration)]
@@ -323,17 +361,38 @@ def main():
 
         print(f"💬 Parsed {len(captions)} caption intervals from SRT.")
         if not captions:
-            print("⚠️ Captions file contains no valid subtitle intervals. Defaulting to empty overlay ranges.")
-            if args.default_overlay:
-                overlay_ranges = [(0.0, webcam_duration)]
-            else:
-                overlay_ranges = []
+            print("⚠️ Captions file contains no valid subtitle intervals.")
+            overlay_ranges = [(0.0, webcam_duration)] if args.default_overlay else []
+            commands_count = 0
         else:
-            overlay_ranges = detect_overlay_ranges(
+            overlay_ranges, commands_count = detect_overlay_ranges(
                 captions,
                 default_overlay=args.default_overlay,
                 total_duration=webcam_duration
             )
+
+        if commands_count == 0 and not args.default_overlay:
+            print("\n" + "=" * 60)
+            print("⚠️  No voice commands ('webcam start' / 'webcam stop') detected.")
+            print("=" * 60)
+
+            if args.yes or not sys.stdin.isatty():
+                print("Notice: Non-interactive / --yes mode. Defaulting to '--all' (overlay webcam throughout entire video).")
+                user_input = "y"
+            else:
+                try:
+                    user_input = input("Overlay webcam throughout entire video (--all)? [Y/n]: ").strip()
+                except (KeyboardInterrupt, EOFError):
+                    print("\nProcessing cancelled by user.")
+                    sys.exit(1)
+
+            if not user_input or user_input.lower().startswith("y"):
+                print("⏩ Selected 'Yes': Overlaying webcam throughout the entire video.")
+                overlay_ranges = [(0.0, webcam_duration)]
+                skip_overlay = False
+            else:
+                print("⏩ Selected 'No': Keeping full face video as-is (no screen overlays).")
+                skip_overlay = True
 
     print(f"⏰ Overlay timelines: {overlay_ranges}")
 
@@ -369,6 +428,12 @@ def main():
 
     # Resolve output path
     output_path = resolve_output_path(screen_path, args.output, "_auto_webcam")
+
+    if skip_overlay:
+        print(f"\n🎥 Keeping full face video as-is (saving webcam recording directly to '{output_path.name}')...")
+        shutil.copy2(str(webcam_path), str(output_path))
+        print(f"\n🎉 Success! Output video saved to: {output_path}")
+        sys.exit(0)
 
     # Segment the timeline
     segments = get_timeline_segments(overlay_ranges, webcam_duration)
@@ -422,16 +487,24 @@ def main():
         # 6. Overlay corner webcam onto padded screen (active during overlay segments).
         # 7. Overlay full webcam onto the result (active during raw segments).
         offset = args.offset
-        filter_complex = (
-            f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps},tpad=stop_mode=clone:stop=-1[bg];"
-            f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps}[webcam_src];"
-            f"[webcam_src]split[webcam_full_src][webcam_small_src];"
-            f"[webcam_full_src]scale=w={screen_w}:h={screen_h}:force_original_aspect_ratio=increase,crop={screen_w}:{screen_h}[webcam_full];"
-            f"[webcam_small_src]scale=w={w}:h={scaled_h},format=rgba[scaled_webcam];"
-            f"[scaled_webcam][2:v]alphamerge[masked_webcam];"
-            f"[bg][masked_webcam]overlay=x=W-w-{offset}:y={offset}:enable='{overlay_enable_expr}':eof_action=pass[screen_with_overlay];"
-            f"[screen_with_overlay][webcam_full]overlay=x=0:y=0:enable='{raw_enable_expr}':eof_action=pass[out_v]"
-        )
+        if args.all or not raw_conditions:
+            filter_complex = (
+                f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps},tpad=stop_mode=clone:stop=-1[bg];"
+                f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps},scale=w={w}:h={scaled_h},format=rgba[scaled_webcam];"
+                f"[scaled_webcam][2:v]alphamerge[masked_webcam];"
+                f"[bg][masked_webcam]overlay=x=W-w-{offset}:y={offset}:eof_action=pass[out_v]"
+            )
+        else:
+            filter_complex = (
+                f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps},tpad=stop_mode=clone:stop=-1[bg];"
+                f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps}[webcam_src];"
+                f"[webcam_src]split[webcam_full_src][webcam_small_src];"
+                f"[webcam_full_src]scale=w={screen_w}:h={screen_h}:force_original_aspect_ratio=increase,crop={screen_w}:{screen_h}[webcam_full];"
+                f"[webcam_small_src]scale=w={w}:h={scaled_h},format=rgba[scaled_webcam];"
+                f"[scaled_webcam][2:v]alphamerge[masked_webcam];"
+                f"[bg][masked_webcam]overlay=x=W-w-{offset}:y={offset}:enable='{overlay_enable_expr}':eof_action=pass[screen_with_overlay];"
+                f"[screen_with_overlay][webcam_full]overlay=x=0:y=0:enable='{raw_enable_expr}':eof_action=pass[out_v]"
+            )
 
         audio_opts = []
         if has_webcam_audio:
@@ -450,8 +523,8 @@ def main():
             "-t", f"{webcam_duration:.3f}",
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
-            "-preset", "medium",
-            "-crf", "18",
+            "-preset", "veryfast",
+            "-crf", "20",
             "-movflags", "+faststart",
             str(output_path)
         ]
