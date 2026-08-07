@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import shutil
+import time
 import argparse
 import subprocess
 from pathlib import Path
@@ -16,6 +17,8 @@ from utils import (
     print_info, print_success, print_warning, print_error,
     get_video_info
 )
+from auto_attach_webcam_mask import parse_srt, detect_overlay_ranges, get_timeline_segments, generate_mask_png, build_webcam_mask_filter_string
+from trim_silences import get_speech_intervals, get_silence_trim_expressions
 
 def is_4k_video(video_path: Path) -> bool:
     """Check if the video resolution is 4K (e.g., width >= 3840 or height >= 2160)."""
@@ -52,7 +55,17 @@ def is_valid_file(path: Path) -> bool:
     return True
 
 
-def main():
+def format_duration(seconds: float) -> str:
+    """Format duration in seconds to a human-readable string."""
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+    minutes = int(seconds // 60)
+    rem_seconds = seconds % 60
+    return f"{minutes}m {rem_seconds:.2f}s"
+
+
+def parse_cli_args() -> argparse.Namespace:
+    """Parse and return command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Full video processing pipeline executing Groq cloud transcription, webcam mask auto-attachment, "
                     "audio processing, silence trimming, BGM addition, and final review file renaming."
@@ -124,14 +137,19 @@ def main():
 
     args = parser.parse_args()
 
-    # Resolve input video paths
     webcam_input = args.webcam_flag or args.webcam
-    screen_input = args.screen_flag or args.screen
-
     if not webcam_input:
         print_error("Error: Input video file (webcam video) is required.")
         parser.print_help()
         sys.exit(1)
+
+    return args
+
+
+def validate_pipeline_inputs(args: argparse.Namespace) -> tuple[Path, Path, Path]:
+    """Validate input video files and return resolved paths for (webcam, screen, video_dir)."""
+    webcam_input = args.webcam_flag or args.webcam
+    screen_input = args.screen_flag or args.screen
 
     webcam_path = Path(webcam_input).resolve()
     if not webcam_path.is_file():
@@ -147,81 +165,99 @@ def main():
         screen_path = webcam_path
 
     video_dir = webcam_path.parent
-    ext = webcam_path.suffix or ".mp4"
+    return webcam_path, screen_path, video_dir
 
-    # Locate script dependencies
-    script_dir = Path(__file__).resolve().parent
-    repo_root = script_dir.parent
 
-    downscale_py = script_dir / "downscale.py"
-    auto_attach_webcam_py = script_dir / "auto_attach_webcam_mask.py"
-    process_audio_sh = repo_root / "audio-processing" / "process_audio.sh"
-    transcribe_cloud_py = script_dir / "transcribe_cloud.py"
-    trim_silences_py = script_dir / "trim_silences.py"
-    add_bgm_sh = script_dir / "add_bgm_to_video.sh"
+def verify_script_dependencies(script_dir: Path, repo_root: Path) -> dict[str, Path]:
+    """Verify all required scripts exist and return a dictionary of their paths."""
+    scripts = {
+        "downscale_py": script_dir / "downscale.py",
+        "auto_attach_webcam_py": script_dir / "auto_attach_webcam_mask.py",
+        "process_audio_sh": repo_root / "audio-processing" / "process_audio.sh",
+        "transcribe_cloud_py": script_dir / "transcribe_cloud.py",
+        "trim_silences_py": script_dir / "trim_silences.py",
+        "add_bgm_sh": script_dir / "add_bgm_to_video.sh",
+    }
 
-    # Verify script files exist
-    for required_script in [downscale_py, auto_attach_webcam_py, process_audio_sh, transcribe_cloud_py, trim_silences_py, add_bgm_sh]:
-        if not required_script.is_file():
-            print_error(f"Error: Required pipeline script not found at '{required_script}'")
+    for name, script_path in scripts.items():
+        if not script_path.is_file():
+            print_error(f"Error: Required pipeline script not found at '{script_path}'")
             sys.exit(1)
 
-    downscaled_webcam = video_dir / f"{webcam_path.stem}-1080{webcam_path.suffix}"
-    webcam_is_4k = is_4k_video(webcam_path)
-    step0_needed = webcam_is_4k or is_valid_file(downscaled_webcam)
+    return scripts
 
-    # Determine effective paths after Step 0
-    eff_webcam_path = downscaled_webcam if step0_needed else webcam_path
-    eff_screen_path = downscaled_webcam if (step0_needed and screen_path == webcam_path) else screen_path
 
-    # Step output file definitions
-    step0_output = downscaled_webcam
-    step1_srt_output = video_dir / f"{eff_webcam_path.stem}.srt"
-    step1_1word_srt = video_dir / f"{eff_webcam_path.stem}-1word.srt"
-    step2_output = video_dir / "after-webcam-mask.mp4"
-    step3_output = video_dir / "after-trim-silences.mp4"
-    step4_output = video_dir / "after-audio-processing.mp4"
-    step5_needed = bool(args.bgm)
-    step5_output = video_dir / "after-trim-silences-bgm.mp4"
-    final_output = video_dir / f"to-review{ext}"
+def get_pipeline_outputs(webcam_path: Path, video_dir: Path, bgm: str | None) -> dict:
+    """Compute and return step output file paths given webcam input and options."""
+    ext = webcam_path.suffix or ".mp4"
+    step4_needed = bool(bgm)
+    return {
+        "step1_srt": video_dir / f"{webcam_path.stem}.srt",
+        "step1_1word_srt": video_dir / f"{webcam_path.stem}-1word.srt",
+        "step2_output": video_dir / "after-trim-silences.mp4",
+        "step3_output": video_dir / "after-audio-processing.mp4",
+        "step4_needed": step4_needed,
+        "step4_output": video_dir / "after-audio-processing-bgm.mp4",
+        "final_output": video_dir / f"to-review{ext}",
+    }
 
-    # Determine step completion statuses (ignoring force flag for display logic)
-    step0_complete = is_valid_file(step0_output) if step0_needed else True
-    step1_complete = is_valid_file(step1_1word_srt) and is_valid_file(step1_srt_output)
-    step2_complete = is_valid_file(step2_output)
-    step3_complete = is_valid_file(step3_output)
-    step4_complete = is_valid_file(step4_output)
-    step5_complete = is_valid_file(step5_output) if step5_needed else True
 
-    latest_output = step5_output if step5_needed else step4_output
-    step6_complete = is_valid_file(final_output) and (
-        not is_valid_file(latest_output) or final_output.stat().st_mtime >= latest_output.stat().st_mtime
+def compute_pipeline_status(outputs: dict, force: bool) -> tuple[dict[int, bool], dict[int, bool]]:
+    """Determine step completion statuses and execution plan."""
+    step1_complete = is_valid_file(outputs["step1_1word_srt"]) and is_valid_file(outputs["step1_srt"])
+    step2_complete = is_valid_file(outputs["step2_output"])
+    step3_complete = is_valid_file(outputs["step3_output"])
+    step4_complete = is_valid_file(outputs["step4_output"]) if outputs["step4_needed"] else True
+
+    latest_output = outputs["step4_output"] if outputs["step4_needed"] else outputs["step3_output"]
+    step5_complete = is_valid_file(outputs["final_output"]) and (
+        not is_valid_file(latest_output) or outputs["final_output"].stat().st_mtime >= latest_output.stat().st_mtime
     )
 
-    # Determine expected execution plan (cascading: if step N runs, subsequent steps run)
-    if args.force:
-        run_plan = {0: step0_needed, 1: True, 2: True, 3: True, 4: True, 5: step5_needed, 6: True}
+    statuses = {
+        1: step1_complete,
+        2: step2_complete,
+        3: step3_complete,
+        4: step4_complete,
+        5: step5_complete,
+    }
+
+    if force:
+        run_plan = {1: True, 2: True, 3: True, 4: outputs["step4_needed"], 5: True}
     else:
-        run0 = step0_needed and not step0_complete
-        run1 = run0 or not step1_complete
+        run1 = not step1_complete
         run2 = run1 or not step2_complete
         run3 = run2 or not step3_complete
-        run4 = run3 or not step4_complete
-        run5 = step5_needed and (run4 or not step5_complete)
-        run6 = (run5 if step5_needed else run4) or not step6_complete
-        run_plan = {0: run0, 1: run1, 2: run2, 3: run3, 4: run4, 5: run5, 6: run6}
+        run4 = outputs["step4_needed"] and (run3 or not step4_complete)
+        run5 = (run4 if outputs["step4_needed"] else run3) or not step5_complete
+        run_plan = {1: run1, 2: run2, 3: run3, 4: run4, 5: run5}
 
-    def format_status(needed: bool, will_run: bool, is_complete: bool, skip_reason: str = None) -> str:
-        if not needed:
-            reason = f" ({skip_reason})" if skip_reason else ""
-            return f"{COLOR_BLUE}[SKIPPED{reason}]{COLOR_RESET}"
-        if args.force:
-            return f"{COLOR_YELLOW}[WILL EXECUTE (FORCED)]{COLOR_RESET}"
-        if not will_run and is_complete:
-            return f"{COLOR_GREEN}[ALREADY COMPLETE - SKIPPING]{COLOR_RESET}"
-        return f"{COLOR_YELLOW}[WILL EXECUTE]{COLOR_RESET}"
+    return statuses, run_plan
 
-    # Overview display
+
+def format_status(needed: bool, will_run: bool, is_complete: bool, force: bool, skip_reason: str = None) -> str:
+    """Return color-formatted status string for display in summary."""
+    if not needed:
+        reason = f" ({skip_reason})" if skip_reason else ""
+        return f"{COLOR_BLUE}[SKIPPED{reason}]{COLOR_RESET}"
+    if force:
+        return f"{COLOR_YELLOW}[WILL EXECUTE (FORCED)]{COLOR_RESET}"
+    if not will_run and is_complete:
+        return f"{COLOR_GREEN}[ALREADY COMPLETE - SKIPPING]{COLOR_RESET}"
+    return f"{COLOR_YELLOW}[WILL EXECUTE]{COLOR_RESET}"
+
+
+def print_pipeline_overview(
+    webcam_path: Path,
+    screen_path: Path,
+    video_dir: Path,
+    args: argparse.Namespace,
+    webcam_is_4k: bool,
+    statuses: dict[int, bool],
+    run_plan: dict[int, bool],
+    ext: str,
+) -> None:
+    """Display the pipeline execution overview header and step statuses."""
     print_info("============================================================")
     print_info("            FULL VIDEO PROCESSING PIPELINE")
     print_info("============================================================")
@@ -233,33 +269,32 @@ def main():
     if args.bgm:
         print(f" BGM track:        {args.bgm} (Volume: {args.volume}%)")
     else:
-        print_warning(f" BGM track:        None specified (Step 5 will be skipped)")
+        print_warning(" BGM track:        None specified (Step 4 will be skipped)")
     if webcam_is_4k:
-        print_warning(f" 4K Webcam:        Detected 4K resolution (downscaling to 1080p before processing)")
+        print_warning(" 4K Webcam:        Detected 4K resolution (single-pass downscaled to 1080p during processing)")
     if args.force:
-        print_warning(f" Force re-run:     --force option enabled (re-executing all steps)")
+        print_warning(" Force re-run:     --force option enabled (re-executing all steps)")
 
     print_info("------------------------------------------------------------")
     print_info("Pipeline Steps Overview:")
 
-    s0_str = format_status(step0_needed, run_plan[0], step0_complete, "Not 4K video")
-    s1_str = format_status(True, run_plan[1], step1_complete)
-    s2_str = format_status(True, run_plan[2], step2_complete)
-    s3_str = format_status(True, run_plan[3], step3_complete)
-    s4_str = format_status(True, run_plan[4], step4_complete)
-    s5_str = format_status(step5_needed, run_plan[5], step5_complete, "No BGM specified")
-    s6_str = format_status(True, run_plan[6], step6_complete)
+    s1_str = format_status(True, run_plan[1], statuses[1], args.force)
+    s2_str = format_status(True, run_plan[2], statuses[2], args.force)
+    s3_str = format_status(True, run_plan[3], statuses[3], args.force)
+    s4_str = format_status(bool(args.bgm), run_plan[4], statuses[4], args.force, "No BGM specified")
+    s5_str = format_status(True, run_plan[5], statuses[5], args.force)
 
-    print(f" 0. Downscale webcam to 1080p (downscale.py)                 {s0_str}")
     print(f" 1. Transcribe video via Groq cloud (transcribe_cloud.py)    {s1_str}")
-    print(f" 2. Auto-attach webcam mask (auto_attach_webcam_mask.py)     {s2_str}")
-    print(f" 3. Trim silences via Silero VAD (trim_silences.py)          {s3_str}")
-    print(f" 4. Process audio via process_audio.sh                       {s4_str}")
-    print(f" 5. Add background music (add_bgm_to_video.sh)               {s5_str}")
-    print(f" 6. Rename final video file to 'to-review{ext}'               {s6_str}")
+    print(f" 2. Single-pass Masking & Silence Trimming (FFmpeg combined) {s2_str}")
+    print(f" 3. Process audio via process_audio.sh                       {s3_str}")
+    print(f" 4. Add background music (add_bgm_to_video.sh)               {s4_str}")
+    print(f" 5. Rename final video file to 'to-review{ext}'               {s5_str}")
     print_info("============================================================")
 
-    if not args.yes:
+
+def confirm_execution(skip_confirm: bool) -> None:
+    """Prompt the user for confirmation unless skip_confirm (-y) is set."""
+    if not skip_confirm:
         try:
             user_input = input("Proceed with video processing? [Y/n]: ").strip()
         except (KeyboardInterrupt, EOFError):
@@ -271,191 +306,252 @@ def main():
             print_warning("Processing cancelled by user.")
             sys.exit(0)
 
-    print()
-    print_info("Starting video processing pipeline...")
 
-    force_run = args.force
-
-    # --- STEP 0: Downscale 4K Webcam Video (if applicable) ---
-    if step0_needed:
-        print_info("\n--- [Step 0/6] Downscaling 4K Webcam Video to 1080p ---")
-        if not force_run and is_valid_file(downscaled_webcam):
-            print_success(f"[SKIP] Step 0 complete: Downscaled webcam file already exists -> {downscaled_webcam.name}")
-        else:
-            print_warning(f"Notice: Webcam video '{webcam_path.name}' is 4K resolution. Downscaling to 1080p...")
-            cmd_downscale = [
-                sys.executable,
-                str(downscale_py),
-                str(webcam_path),
-                "--output", str(downscaled_webcam)
-            ]
-            print(f"Executing: {' '.join(cmd_downscale)}")
-            try:
-                subprocess.run(cmd_downscale, check=True)
-            except subprocess.CalledProcessError as e:
-                print_error(f"[ERROR] Step 0 downscaling failed with exit code {e.returncode}")
-                sys.exit(e.returncode)
-
-            if not is_valid_file(downscaled_webcam):
-                print_error(f"[ERROR] Step 0 downscaled output file invalid or missing at '{downscaled_webcam}'")
-                sys.exit(1)
-
-            print_success(f"[SUCCESS] Step 0 complete: Downscaled webcam to 1080p -> {downscaled_webcam.name}")
-            force_run = True
-
-        if screen_path == webcam_path:
-            screen_path = downscaled_webcam
-        webcam_path = downscaled_webcam
-
-    # --- STEP 1: Transcribe Video using Groq Cloud ---
-    print_info("\n--- [Step 1/6] Transcribing Video using Groq Cloud ---")
-    step1_srt_output = video_dir / f"{webcam_path.stem}.srt"
-    step1_1word_srt = video_dir / f"{webcam_path.stem}-1word.srt"
-
+def run_step1_transcription(
+    webcam_path: Path,
+    step1_srt_output: Path,
+    step1_1word_srt: Path,
+    transcribe_cloud_py: Path,
+    force_run: bool
+) -> bool:
+    """Step 1: Transcribe Video using Groq Cloud."""
+    print_info("\n--- [Step 1/5] Transcribing Video using Groq Cloud ---")
     if not force_run and is_valid_file(step1_1word_srt) and is_valid_file(step1_srt_output):
         print_success(f"[SKIP] Step 1 complete: Transcribed SRT file already exists -> {step1_1word_srt.name}")
-    else:
-        cmd_step1 = [
-            sys.executable,
-            str(transcribe_cloud_py),
-            str(webcam_path),
-            "--output", str(step1_srt_output)
-        ]
-        print(f"Executing: {' '.join(cmd_step1)}")
-        try:
-            subprocess.run(cmd_step1, check=True)
-        except subprocess.CalledProcessError as e:
-            print_error(f"[ERROR] Step 1 failed with exit code {e.returncode}")
-            sys.exit(e.returncode)
+        return force_run
 
-        if not is_valid_file(step1_1word_srt):
-            print_error(f"[ERROR] Step 1 output 1word SRT file invalid or missing at '{step1_1word_srt}'")
-            sys.exit(1)
-        print_success(f"[SUCCESS] Step 1 complete: Transcribed video -> {step1_1word_srt.name}")
-        force_run = True
+    cmd_step1 = [
+        sys.executable,
+        str(transcribe_cloud_py),
+        str(webcam_path),
+        "--output", str(step1_srt_output)
+    ]
+    print(f"Executing: {' '.join(cmd_step1)}")
+    try:
+        subprocess.run(cmd_step1, check=True)
+    except subprocess.CalledProcessError as e:
+        print_error(f"[ERROR] Step 1 failed with exit code {e.returncode}")
+        sys.exit(e.returncode)
 
-    # --- STEP 2: Auto-attach Webcam Mask ---
-    print_info("\n--- [Step 2/6] Auto-attaching Webcam Mask ---")
-    step2_output = video_dir / "after-webcam-mask.mp4"
+    if not is_valid_file(step1_1word_srt):
+        print_error(f"[ERROR] Step 1 output 1word SRT file invalid or missing at '{step1_1word_srt}'")
+        sys.exit(1)
+    print_success(f"[SUCCESS] Step 1 complete: Transcribed video -> {step1_1word_srt.name}")
+    return True
 
+
+def run_step2_mask_and_trim(
+    webcam_path: Path,
+    screen_path: Path,
+    step1_1word_srt: Path,
+    step2_output: Path,
+    preset: str,
+    width: int | None,
+    all_overlay: bool,
+    video_dir: Path,
+    force_run: bool
+) -> bool:
+    """Step 2: Single-Pass Video Processing (Masking + Silence Trimming)."""
+    print_info("\n--- [Step 2/5] Single-Pass Video Processing (Masking + Silence Trimming) ---")
     if not force_run and is_valid_file(step2_output):
-        print_success(f"[SKIP] Step 2 complete: Webcam mask video file already exists -> {step2_output.name}")
+        print_success(f"[SKIP] Step 2 complete: Single-pass video file already exists -> {step2_output.name}")
+        return force_run
+
+    print_info("Analyzing audio and subtitle voice commands for single-pass processing...")
+
+    webcam_info = get_video_info(webcam_path)
+    screen_info = get_video_info(screen_path)
+    webcam_duration = webcam_info.duration
+    if not webcam_duration or webcam_duration <= 0:
+        print_error("Error: Could not retrieve webcam duration.")
+        sys.exit(1)
+
+    webcam_w, webcam_h = webcam_info.width, webcam_info.height
+    screen_w = screen_info.width if screen_info.width > 0 else 1920
+    screen_h = screen_info.height if screen_info.height > 0 else 1080
+    target_fps = int(round(max(webcam_info.fps, screen_info.fps)))
+    target_fps = max(24, min(60, target_fps))
+
+    if webcam_info.has_audio:
+        audio_src = "1:a"
+    elif screen_info.has_audio:
+        audio_src = "0:a"
     else:
-        cmd_step2 = [
-            sys.executable,
-            str(auto_attach_webcam_py),
-            "--screen", str(screen_path),
-            "--webcam", str(webcam_path),
-            "--captions", str(step1_1word_srt),
-            "--output", str(step2_output),
-            "--preset", args.preset
-        ]
-        if args.width is not None:
-            cmd_step2.extend(["--width", str(args.width)])
-        if args.all:
-            cmd_step2.append("--all")
-        if args.yes:
-            cmd_step2.append("--yes")
+        audio_src = None
 
-        print(f"Executing: {' '.join(cmd_step2)}")
-        try:
-            subprocess.run(cmd_step2, check=True)
-        except subprocess.CalledProcessError as e:
-            print_error(f"[ERROR] Step 2 failed with exit code {e.returncode}")
-            sys.exit(e.returncode)
+    try:
+        captions = parse_srt(step1_1word_srt)
+    except Exception as e:
+        print_error(f"Error parsing SRT file: {e}")
+        sys.exit(1)
 
-        if not is_valid_file(step2_output):
-            print_error(f"[ERROR] Step 2 output file invalid or missing at '{step2_output}'")
-            sys.exit(1)
-        print_success(f"[SUCCESS] Step 2 complete: Attached webcam mask -> {step2_output.name}")
-        force_run = True
+    if all_overlay:
+        overlay_ranges = [(0.0, webcam_duration)]
+    elif not captions:
+        overlay_ranges = []
+    else:
+        overlay_ranges, _ = detect_overlay_ranges(captions, default_overlay=False, total_duration=webcam_duration)
+        if not overlay_ranges:
+            overlay_ranges = [(0.0, webcam_duration)]
 
-    # --- STEP 3: Trim Silences ---
-    print_info("\n--- [Step 3/6] Trimming Silences ---")
-    step3_output = video_dir / "after-trim-silences.mp4"
+    segments = get_timeline_segments(overlay_ranges, webcam_duration)
 
+    speech_intervals = get_speech_intervals(webcam_path)
+    select_expr, shift_expr, total_speech_duration = get_silence_trim_expressions(speech_intervals)
+
+    overlay_w = width if width is not None else (450 if preset == "portrait" else 600)
+    scaled_h = int(round((overlay_w * webcam_h / webcam_w) / 2) * 2)
+    temp_dir = video_dir / f"_tmp_{webcam_path.stem}_singlepass"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    mask_path = temp_dir / "webcam_mask.png"
+    generate_mask_png(mask_path, overlay_w, scaled_h, r=20)
+
+    mask_filter = build_webcam_mask_filter_string(
+        segments=segments,
+        target_fps=target_fps,
+        w=overlay_w,
+        scaled_h=scaled_h,
+        offset=20,
+        screen_w=screen_w,
+        screen_h=screen_h,
+        is_all=all_overlay,
+        output_label="composite_v"
+    )
+
+    if select_expr and shift_expr:
+        v_trim = f"[composite_v]select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30[out_v]"
+        if audio_src:
+            a_trim = f"[{audio_src}]aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB'[out_a]"
+            filter_complex = f"{mask_filter};{v_trim};{a_trim}"
+            audio_map = ["-map", "[out_a]", "-c:a", "aac", "-b:a", "384k"]
+        else:
+            filter_complex = f"{mask_filter};{v_trim}"
+            audio_map = []
+        final_duration = total_speech_duration
+    else:
+        filter_complex = f"{mask_filter};[composite_v]fps=30[out_v]"
+        if audio_src:
+            audio_map = ["-map", audio_src, "-c:a", "aac"]
+        else:
+            audio_map = []
+        final_duration = webcam_duration
+
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
+        "-threads", "0",
+        "-i", str(screen_path),
+        "-i", str(webcam_path),
+        "-loop", "1", "-i", str(mask_path),
+        "-filter_complex", filter_complex,
+        "-map", "[out_v]"
+    ] + audio_map + [
+        "-fps_mode", "cfr",
+        "-t", f"{final_duration:.3f}",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-movflags", "+faststart",
+        str(step2_output)
+    ]
+
+    print_info("\n🚀 Executing single-pass video encoding (Mask + Silence Trim)...")
+    print(f"Executing: {' '.join(cmd)}")
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print_error(f"[ERROR] Single-pass video encoding failed with exit code {e.returncode}")
+        sys.exit(e.returncode)
+    finally:
+        if temp_dir.exists():
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+
+    if not is_valid_file(step2_output):
+        print_error(f"[ERROR] Single-pass output file invalid or missing at '{step2_output}'")
+        sys.exit(1)
+    print_success(f"[SUCCESS] Step 2 complete: Single-pass video created -> {step2_output.name}")
+    return True
+
+
+def run_step3_process_audio(
+    step2_output: Path,
+    step3_output: Path,
+    process_audio_sh: Path,
+    force_run: bool
+) -> bool:
+    """Step 3: Process Audio."""
+    print_info("\n--- [Step 3/5] Processing Audio ---")
     if not force_run and is_valid_file(step3_output):
-        print_success(f"[SKIP] Step 3 complete: Trimmed silences video file already exists -> {step3_output.name}")
-    else:
-        cmd_step3 = [
-            sys.executable,
-            str(trim_silences_py),
-            str(step2_output),
-            "--output", str(step3_output)
-        ]
-        print(f"Executing: {' '.join(cmd_step3)}")
-        try:
-            subprocess.run(cmd_step3, check=True)
-        except subprocess.CalledProcessError as e:
-            print_error(f"[ERROR] Step 3 failed with exit code {e.returncode}")
-            sys.exit(e.returncode)
+        print_success(f"[SKIP] Step 3 complete: Audio processed video file already exists -> {step3_output.name}")
+        return force_run
 
-        if not is_valid_file(step3_output):
-            print_error(f"[ERROR] Step 3 output file invalid or missing at '{step3_output}'")
-            sys.exit(1)
-        print_success(f"[SUCCESS] Step 3 complete: Trimmed silences -> {step3_output.name}")
-        force_run = True
+    cmd_step3 = ["bash", str(process_audio_sh), str(step2_output)]
+    print(f"Executing: {' '.join(cmd_step3)}")
+    try:
+        subprocess.run(cmd_step3, check=True)
+    except subprocess.CalledProcessError as e:
+        print_error(f"[ERROR] Step 3 failed with exit code {e.returncode}")
+        sys.exit(e.returncode)
 
-    # --- STEP 4: Process Audio ---
-    print_info("\n--- [Step 4/6] Processing Audio ---")
-    step4_output = video_dir / "after-audio-processing.mp4"
+    if not is_valid_file(step3_output):
+        print_error(f"[ERROR] Step 3 output file invalid or missing at '{step3_output}'")
+        sys.exit(1)
+    print_success(f"[SUCCESS] Step 3 complete: Audio processed -> {step3_output.name}")
+    return True
+
+
+def run_step4_add_bgm(
+    step3_output: Path,
+    step4_output: Path,
+    bgm: str | None,
+    volume: int,
+    add_bgm_sh: Path,
+    force_run: bool
+) -> tuple[Path, bool]:
+    """Step 4: Add Background Music."""
+    print_info("\n--- [Step 4/5] Adding Background Music ---")
+    if not bgm:
+        print_warning("[WARNING] Step 4 skipped: No BGM track specified with --bgm.")
+        return step3_output, force_run
 
     if not force_run and is_valid_file(step4_output):
-        print_success(f"[SKIP] Step 4 complete: Audio processed video file already exists -> {step4_output.name}")
-    else:
-        cmd_step4 = ["bash", str(process_audio_sh), str(step3_output)]
-        print(f"Executing: {' '.join(cmd_step4)}")
-        try:
-            subprocess.run(cmd_step4, check=True)
-        except subprocess.CalledProcessError as e:
-            print_error(f"[ERROR] Step 4 failed with exit code {e.returncode}")
-            sys.exit(e.returncode)
+        print_success(f"[SKIP] Step 4 complete: BGM video file already exists -> {step4_output.name}")
+        return step4_output, force_run
 
-        if not is_valid_file(step4_output):
-            print_error(f"[ERROR] Step 4 output file invalid or missing at '{step4_output}'")
-            sys.exit(1)
-        print_success(f"[SUCCESS] Step 4 complete: Audio processed -> {step4_output.name}")
-        force_run = True
+    cmd_step4 = [
+        "bash",
+        str(add_bgm_sh),
+        str(step3_output),
+        bgm,
+        "--volume", str(volume)
+    ]
+    print(f"Executing: {' '.join(cmd_step4)}")
+    try:
+        subprocess.run(cmd_step4, check=True)
+    except subprocess.CalledProcessError as e:
+        print_error(f"[ERROR] Step 4 failed with exit code {e.returncode}")
+        sys.exit(e.returncode)
 
-    # --- STEP 5: Add Background Music ---
-    print_info("\n--- [Step 5/6] Adding Background Music ---")
-    current_latest_video = step4_output
+    if not is_valid_file(step4_output):
+        print_error(f"[ERROR] Step 4 output file invalid or missing at '{step4_output}'")
+        sys.exit(1)
 
-    if args.bgm:
-        step5_output = video_dir / "after-trim-silences-bgm.mp4"
-        if not force_run and is_valid_file(step5_output):
-            print_success(f"[SKIP] Step 5 complete: BGM video file already exists -> {step5_output.name}")
-            current_latest_video = step5_output
-        else:
-            cmd_step5 = [
-                "bash",
-                str(add_bgm_sh),
-                str(step4_output),
-                args.bgm,
-                "--volume", str(args.volume)
-            ]
-            print(f"Executing: {' '.join(cmd_step5)}")
-            try:
-                subprocess.run(cmd_step5, check=True)
-            except subprocess.CalledProcessError as e:
-                print_error(f"[ERROR] Step 5 failed with exit code {e.returncode}")
-                sys.exit(e.returncode)
+    print_success(f"[SUCCESS] Step 4 complete: Added BGM -> {step4_output.name}")
+    return step4_output, True
 
-            if not is_valid_file(step5_output):
-                print_error(f"[ERROR] Step 5 output file invalid or missing at '{step5_output}'")
-                sys.exit(1)
-            current_latest_video = step5_output
-            print_success(f"[SUCCESS] Step 5 complete: Added BGM -> {step5_output.name}")
-            force_run = True
-    else:
-        print_warning("[WARNING] Step 5 skipped: No BGM track specified with --bgm.")
 
-    # --- STEP 6: Finalize Output File Name ---
-    print_info("\n--- [Step 6/6] Finalizing Output File Name ---")
-    final_output = video_dir / f"to-review{ext}"
-
+def run_step5_finalize(
+    current_latest_video: Path,
+    final_output: Path,
+    force_run: bool
+) -> None:
+    """Step 5: Finalize Output File Name."""
+    print_info("\n--- [Step 5/5] Finalizing Output File Name ---")
     if not force_run and is_valid_file(final_output) and (not is_valid_file(current_latest_video) or final_output.stat().st_mtime >= current_latest_video.stat().st_mtime):
-        print_success(f"[SKIP] Step 6 complete: Final review video file already exists -> {final_output.name}")
+        print_success(f"[SKIP] Step 5 complete: Final review video file already exists -> {final_output.name}")
     else:
         if final_output.exists():
             print_warning(f"Overwriting existing output file: {final_output.name}")
@@ -465,13 +561,109 @@ def main():
                 print_error(f"Error removing existing file '{final_output}': {e}")
 
         shutil.copy2(str(current_latest_video), str(final_output))
-        print_success(f"[SUCCESS] Step 6 complete: Copied final video file to -> {final_output.name}")
+        print_success(f"[SUCCESS] Step 5 complete: Copied final video file to -> {final_output.name}")
+
+
+def main():
+    args = parse_cli_args()
+    webcam_path, screen_path, video_dir = validate_pipeline_inputs(args)
+
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    scripts = verify_script_dependencies(script_dir, repo_root)
+
+    webcam_is_4k = is_4k_video(webcam_path)
+    outputs = get_pipeline_outputs(webcam_path, video_dir, args.bgm)
+    statuses, run_plan = compute_pipeline_status(outputs, args.force)
+
+    ext = webcam_path.suffix or ".mp4"
+    print_pipeline_overview(
+        webcam_path, screen_path, video_dir, args, webcam_is_4k, statuses, run_plan, ext
+    )
+
+    confirm_execution(args.yes)
+
+    print()
+    print_info("Starting video processing pipeline...")
+
+    pipeline_start_time = time.perf_counter()
+    force_run = args.force
+
+    # Step 1: Transcribe Video using Groq Cloud
+    step1_start = time.perf_counter()
+    force_run = run_step1_transcription(
+        webcam_path=webcam_path,
+        step1_srt_output=outputs["step1_srt"],
+        step1_1word_srt=outputs["step1_1word_srt"],
+        transcribe_cloud_py=scripts["transcribe_cloud_py"],
+        force_run=force_run
+    )
+    step1_duration = time.perf_counter() - step1_start
+
+    # Step 2: Single-Pass Video Processing (Masking + Silence Trimming)
+    step2_start = time.perf_counter()
+    force_run = run_step2_mask_and_trim(
+        webcam_path=webcam_path,
+        screen_path=screen_path,
+        step1_1word_srt=outputs["step1_1word_srt"],
+        step2_output=outputs["step2_output"],
+        preset=args.preset,
+        width=args.width,
+        all_overlay=args.all,
+        video_dir=video_dir,
+        force_run=force_run
+    )
+    step2_duration = time.perf_counter() - step2_start
+
+    # Step 3: Process Audio
+    step3_start = time.perf_counter()
+    force_run = run_step3_process_audio(
+        step2_output=outputs["step2_output"],
+        step3_output=outputs["step3_output"],
+        process_audio_sh=scripts["process_audio_sh"],
+        force_run=force_run
+    )
+    step3_duration = time.perf_counter() - step3_start
+
+    # Step 4: Add Background Music
+    step4_start = time.perf_counter()
+    current_latest_video, force_run = run_step4_add_bgm(
+        step3_output=outputs["step3_output"],
+        step4_output=outputs["step4_output"],
+        bgm=args.bgm,
+        volume=args.volume,
+        add_bgm_sh=scripts["add_bgm_sh"],
+        force_run=force_run
+    )
+    step4_duration = time.perf_counter() - step4_start
+
+    # Step 5: Finalize Output File Name
+    step5_start = time.perf_counter()
+    run_step5_finalize(
+        current_latest_video=current_latest_video,
+        final_output=outputs["final_output"],
+        force_run=force_run
+    )
+    step5_duration = time.perf_counter() - step5_start
+
+    total_duration = time.perf_counter() - pipeline_start_time
 
     print()
     print_success("============================================================")
     print_success(" 🎉 FULL VIDEO PROCESSING PIPELINE COMPLETED SUCCESSFULLY!")
-    print_success(f" Final review video saved at: {final_output}")
+    print_success(f" Final review video saved at: {outputs['final_output']}")
+    print_info("------------------------------------------------------------")
+    print_info(" Step Execution Timing Summary:")
+    print(f"  Step 1 (Transcription):        {format_duration(step1_duration)}")
+    print(f"  Step 2 (Mask & Silence Trim):   {format_duration(step2_duration)}")
+    print(f"  Step 3 (Audio Processing):      {format_duration(step3_duration)}")
+    print(f"  Step 4 (Background Music):      {format_duration(step4_duration)}")
+    print(f"  Step 5 (Finalize File):         {format_duration(step5_duration)}")
+    print_info("------------------------------------------------------------")
+    print_success(f" Total Execution Time:            {format_duration(total_duration)}")
     print_success("============================================================")
+
 
 if __name__ == "__main__":
     main()
+
