@@ -9,9 +9,6 @@ import numpy as np
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils import parse_timestamp
 
-# Import faster-whisper VAD tools
-from faster_whisper.vad import get_speech_timestamps, VadOptions
-
 def load_audio_with_ffmpeg(file_path, sampling_rate=16000):
     """
     Decodes the audio from a file using an ffmpeg subprocess.
@@ -45,13 +42,37 @@ def load_audio_with_ffmpeg(file_path, sampling_rate=16000):
 
     return np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
 
-def cut_video_with_ffmpeg(input_video, output_video, intervals):
-    if not intervals:
-        print("No active speech intervals found to keep.")
-        return
+def get_speech_intervals(video_path, padding=0.15, min_silence=0.4, threshold=0.5):
+    """
+    Decodes audio from video_path and uses Silero VAD to detect active speech intervals.
+    Returns: list of (start_sec, end_sec) tuples.
+    """
+    from faster_whisper.vad import get_speech_timestamps, VadOptions
+    audio = load_audio_with_ffmpeg(video_path, sampling_rate=16000)
+    vad_options = VadOptions(
+        threshold=threshold,
+        min_silence_duration_ms=int(min_silence * 1000),
+        speech_pad_ms=int(padding * 1000)
+    )
 
-    # Calculate gaps/silences to shift timestamps and maintain perfect audio/video sync
-    # without relying on constant frame rate assumptions.
+    speech_timestamps = get_speech_timestamps(audio, vad_options, sampling_rate=16000)
+
+    intervals = []
+    for item in speech_timestamps:
+        start_sec = item['start'] / 16000.0
+        end_sec = item['end'] / 16000.0
+        intervals.append((start_sec, end_sec))
+
+    return intervals
+
+def get_silence_trim_expressions(intervals):
+    """
+    Calculates select expression, shift expression, and total duration for FFmpeg silence trimming.
+    Returns: tuple (select_expr, shift_expr, total_duration)
+    """
+    if not intervals:
+        return None, None, 0.0
+
     gaps = []
     shift_points = []
     for i in range(len(intervals)):
@@ -59,14 +80,9 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
             gaps.append(intervals[0][0])
         else:
             gaps.append(intervals[i][0] - intervals[i-1][1])
-            # Use the midpoint of the silence gap as the trigger point.
-            # This provides a safety margin (at least 200ms) to prevent boundary frames
-            # from triggering the next shift early due to floating-point precision,
-            # which would cause out-of-order timestamps and buffer queuing.
             midpoint = (intervals[i-1][1] + intervals[i][0]) / 2.0
             shift_points.append(midpoint)
 
-    # Build balanced binary tree for shift expression to avoid FFmpeg recursion limit
     shift_terms = [f"gt(T,{shift_points[i]:.3f})*{gaps[i+1]:.3f}" for i in range(len(shift_points))]
 
     def build_shift_tree(left_idx, right_idx):
@@ -82,7 +98,6 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
     else:
         shift_expr = f"{gaps[0]:.3f}"
 
-    # Build select expression as a balanced binary tree
     select_terms = [f"between(t,{start:.3f},{end:.3f})" for start, end in intervals]
 
     def build_select_tree(left_idx, right_idx):
@@ -94,17 +109,19 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
         return f"({left_expr})+({right_expr})"
 
     select_expr = build_select_tree(0, len(select_terms) - 1)
+    total_duration = sum(end - start for start, end in intervals)
 
-    # Use the exact same shift expression for both video and audio
-    # to guarantee identical output durations and keep streams in sync.
-    # We append the 'fps' filter to force a Constant Frame Rate (CFR),
-    # which is required by video editors to prevent A/V desync on import.
+    return select_expr, shift_expr, total_duration
+
+def cut_video_with_ffmpeg(input_video, output_video, intervals):
+    if not intervals:
+        print("No active speech intervals found to keep.")
+        return
+
+    select_expr, shift_expr, total_duration = get_silence_trim_expressions(intervals)
+
     v_script = f"select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30"
     a_script = f"aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB'"
-
-    # Calculate the total duration of the selected speech intervals
-    # to truncate the output video and prevent trailing dead video/audio (frozen frame/silence).
-    total_duration = sum(end - start for start, end in intervals)
 
     cmd = [
         'ffmpeg', '-hide_banner', '-loglevel', 'error', '-stats', '-y',
@@ -125,19 +142,14 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
     print(f"Executing single-pass jump-cuts into {output_video}...")
     subprocess.run(cmd, check=True)
 
-def process_video(video_path, output_path, padding, min_silence, threshold, is_recursive=False):
-    print(f"\nDecoding audio from {video_path}...")
-    # Decode audio to 16000Hz mono numpy float32 array using ffmpeg subprocess
-    try:
-        audio = load_audio_with_ffmpeg(video_path, sampling_rate=16000)
-    except Exception as e:
-        print(f"Error decoding audio from video: {e}")
-        raise
+def get_speech_intervals(video_path, padding=0.15, min_silence=0.4, threshold=0.5):
+    """
+    Decodes audio from video_path and uses Silero VAD to detect active speech intervals.
+    Returns: list of (start_sec, end_sec) tuples.
+    """
+    from faster_whisper.vad import get_speech_timestamps, VadOptions
 
-    print(f"Running voice activity detection on decoded audio...")
-    # Setup VAD options
-    # padding: in seconds -> convert to ms
-    # min_silence: in seconds -> convert to ms
+    audio = load_audio_with_ffmpeg(video_path, sampling_rate=16000)
     vad_options = VadOptions(
         threshold=threshold,
         min_silence_duration_ms=int(min_silence * 1000),
@@ -146,12 +158,18 @@ def process_video(video_path, output_path, padding, min_silence, threshold, is_r
 
     speech_timestamps = get_speech_timestamps(audio, vad_options, sampling_rate=16000)
 
-    # Convert speech timestamps from sample indices to seconds
     intervals = []
     for item in speech_timestamps:
         start_sec = item['start'] / 16000.0
         end_sec = item['end'] / 16000.0
         intervals.append((start_sec, end_sec))
+
+    return intervals
+
+def process_video(video_path, output_path, padding, min_silence, threshold, is_recursive=False):
+    print(f"\nDecoding audio from {video_path}...")
+    print(f"Running voice activity detection on decoded audio...")
+    intervals = get_speech_intervals(video_path, padding=padding, min_silence=min_silence, threshold=threshold)
 
     print(f"Detected {len(intervals)} speech intervals.")
     if not intervals:
