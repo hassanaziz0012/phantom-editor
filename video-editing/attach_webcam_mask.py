@@ -119,7 +119,7 @@ def main():
     )
 
     filter_complex = (
-        f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps},tpad=stop_mode=clone:stop=-1[bg];"
+        f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps}[bg];"
         f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps},scale=w={w}:h=-2,format=rgba[scaled_webcam];"
         f"[scaled_webcam]split[w1][w2];"
         f"[w2]format=gray,geq=lum='{geq_expr}'[mask];"
@@ -130,6 +130,7 @@ def main():
     # Construct the full FFmpeg command
     cmd = [
         "ffmpeg", "-y",
+        "-threads", "0",
         "-i", str(screen_path),
         "-i", str(webcam_path),
         "-filter_complex", filter_complex,
@@ -138,8 +139,8 @@ def main():
         "-t", f"{webcam_duration:.3f}",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
-        "-preset", "medium",
-        "-crf", "18",
+        "-preset", "veryfast",
+        "-crf", "20",
         "-movflags", "+faststart",
         "-c:a", "aac",
         str(output_path)

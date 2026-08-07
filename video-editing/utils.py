@@ -127,6 +127,7 @@ def create_preview_clip(video_path: str | Path, duration: float = 5.0) -> Path:
     try:
         crop_cmd = [
             "ffmpeg", "-y",
+            "-threads", "0",
             "-i", str(video_path),
             "-t", str(duration),
             str(preview_path)

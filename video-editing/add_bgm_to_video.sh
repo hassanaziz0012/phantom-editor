@@ -117,7 +117,7 @@ process_video() {
     TEMP_PROGRESS_FILE=$(mktemp)
 
     # Start ffmpeg process with progress output redirected to a temporary file
-    ffmpeg -loglevel error -i "$VIDEO_FILE" -stream_loop -1 -i "$BGM_FILE" \
+    ffmpeg -loglevel error -threads 0 -i "$VIDEO_FILE" -stream_loop -1 -i "$BGM_FILE" \
         -filter_complex "[1:a]volume=${VOLUME}/100[music];[0:a][music]amix=inputs=2:duration=first" \
         -c:v copy -c:a aac -b:a 256k \
         -shortest "$OUTPUT_FILE" -progress "$TEMP_PROGRESS_FILE" &

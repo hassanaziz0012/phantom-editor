@@ -27,8 +27,9 @@ def downscale_video(
 
     cmd = [
         "ffmpeg", "-y",
+        "-threads", "0",
         "-i", str(input_path),
-        "-vf", "scale=1920:1080:flags=lanczos",
+        "-vf", "scale=1920:1080:flags=bicubic",
         "-c:v", "libx264",
         "-preset", preset,
         "-crf", str(crf),

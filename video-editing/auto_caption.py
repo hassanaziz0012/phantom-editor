@@ -251,11 +251,12 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
             # FFmpeg command to burn the styled ASS subtitles:
             cmd = [
                 "ffmpeg", "-y",
+                "-threads", "0",
                 "-i", video_path,
                 "-vf", f"subtitles={temp_ass}",
                 "-c:v", "libx264",
-                "-crf", "18",
-                "-preset", "slow",
+                "-crf", "20",
+                "-preset", "veryfast",
                 "-c:a", "aac",
                 output_video_path
             ]
