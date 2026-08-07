@@ -7,12 +7,6 @@ import uuid
 from pathlib import Path
 from dataclasses import dataclass
 
-# Google API client library imports
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-
 # Terminal ANSI Color Constants
 COLOR_GREEN = "\033[92m"
 COLOR_RED = "\033[91m"
@@ -226,6 +220,11 @@ def find_client_secrets():
 
 def get_google_doc_shorts(doc_id: str, credentials_file: Path, token_file: Path):
     """Fetches the Google Doc content and parses it into {title, body} shorts."""
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+
     if not doc_id:
         raise ValueError("Google Doc ID is missing. Set SHORTS_GOOGLE_DOC_ID in your environment or .env file.")
 
