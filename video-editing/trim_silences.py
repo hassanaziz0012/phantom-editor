@@ -108,10 +108,16 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
 
     cmd = [
         'ffmpeg', '-hide_banner', '-loglevel', 'error', '-stats', '-y',
+        '-threads', '0',
         '-i', input_video,
         '-vf', v_script,
         '-af', a_script,
         '-fps_mode', 'cfr',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '20',
+        '-c:a', 'aac',
+        '-b:a', '384k',
         '-t', f"{total_duration:.3f}",
         output_video
     ]
