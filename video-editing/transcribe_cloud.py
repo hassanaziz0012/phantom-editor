@@ -23,6 +23,8 @@ def extract_audio(video_path, output_audio_path, duration=None):
         cmd.extend(["-t", str(duration)])
     cmd.extend([
         "-vn",
+        "-ar", "16000",
+        "-ac", "1",
         "-c:a", "flac",
         output_audio_path
     ])
