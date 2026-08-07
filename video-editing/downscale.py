@@ -11,23 +11,28 @@ if str(video_editing_dir) not in sys.path:
 
 from utils import resolve_output_path
 
-def downscale_video(input_path: Path, output_path: Path):
+def downscale_video(
+    input_path: Path,
+    output_path: Path,
+    crf: str = "20",
+    preset: str = "veryfast"
+):
     if not input_path.is_file():
         print(f"Error: Input video file not found at '{input_path}'", file=sys.stderr)
         sys.exit(1)
 
     print(f"Downscaling video: {input_path}")
     print(f"Output video path: {output_path}")
+    print(f"Using CRF: {crf}, Preset: {preset}")
 
     cmd = [
-        "ffmpeg",
-        "-y",
+        "ffmpeg", "-y",
         "-i", str(input_path),
         "-vf", "scale=1920:1080:flags=lanczos",
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "12",
-        "-c:a", "aac",
+        "-preset", preset,
+        "-crf", str(crf),
+        "-c:a", "copy",
         str(output_path)
     ]
 
@@ -51,13 +56,29 @@ def main():
         default=None,
         help="Path to save the downscaled output video (default: <input_basename>-1080.<ext> in the input file's directory)."
     )
+    parser.add_argument(
+        "--crf",
+        default="20",
+        help="Constant Rate Factor (CRF) for video quality (lower = higher quality, default: 20)."
+    )
+    parser.add_argument(
+        "--preset",
+        default="veryfast",
+        help="FFmpeg H.264 encoding preset (e.g. slower, slow, medium, fast, veryfast, default: veryfast)."
+    )
 
     args = parser.parse_args()
 
     input_path = Path(args.video_path).resolve()
     output_path = resolve_output_path(input_path, args.output, "-1080")
 
-    downscale_video(input_path, output_path)
+    downscale_video(
+        input_path,
+        output_path,
+        crf=args.crf,
+        preset=args.preset
+    )
 
 if __name__ == "__main__":
     main()
+
