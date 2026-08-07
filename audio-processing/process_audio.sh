@@ -66,17 +66,14 @@ process_video() {
         echo "--- Step 2: Extracting RAW audio ---"
         "$SCRIPT_DIR/extract_wav_from_mp4.sh" "$INPUT_MP4" --output-file "$RAW_WAV"
         
-        echo "--- Step 3: Applying noise reduction ---"
+        echo "--- Step 3: Applying noise reduction (DeepFilterNet) ---"
         "$SCRIPT_DIR/noise_reduction.sh" "$RAW_WAV" --output-file "$NOISE_REDUCED_WAV"
         
-        echo "--- Step 4: Applying normalization ---"
-        "$SCRIPT_DIR/normalize_audio.sh" "$NOISE_REDUCED_WAV" --output-file "$NORMALIZED_WAV"
-        
-        echo "--- Step 5: Copying final processed audio ---"
-        cp "$NORMALIZED_WAV" "$PROCESSED_WAV"
-        
-        echo "--- Step 6: Replacing audio in original MP4 ---"
-        ffmpeg -y -i "$INPUT_MP4" -i "$PROCESSED_WAV" -c:v copy -map 0:v:0 -map 1:a:0 -c:a aac -b:a 384k "$OUTPUT_MP4" -hide_banner -loglevel warning
+        echo "--- Step 4: Applying normalization & remuxing into video ---"
+        ffmpeg -y -i "$INPUT_MP4" -i "$NOISE_REDUCED_WAV" \
+            -c:v copy -map 0:v:0 -map 1:a:0 \
+            -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k "$OUTPUT_MP4" \
+            -hide_banner -loglevel warning
         
         rm -rf "$TEMP_DIR"
     else
@@ -89,7 +86,6 @@ process_video() {
         local TEMP_DIR="$FILE_DIR/temp"
         local RAW_WAV="$TEMP_DIR/raw-audio.wav"
         local NOISE_REDUCED_WAV="$TEMP_DIR/noise-reduced.wav"
-        local NORMALIZED_WAV="$TEMP_DIR/normalized.wav"
         local PROCESSED_WAV="$FILE_DIR/processed-audio.wav"
         local FINAL_MP4="$FILE_DIR/after-audio-processing.mp4"
         
@@ -99,17 +95,18 @@ process_video() {
         echo "--- Step 2: Extracting RAW audio ---"
         "$SCRIPT_DIR/extract_wav_from_mp4.sh" "$INPUT_MP4" --output-file "$RAW_WAV"
         
-        echo "--- Step 3: Applying noise reduction ---"
+        echo "--- Step 3: Applying noise reduction (DeepFilterNet) ---"
         "$SCRIPT_DIR/noise_reduction.sh" "$RAW_WAV" --output-file "$NOISE_REDUCED_WAV"
         
-        echo "--- Step 4: Applying normalization ---"
-        "$SCRIPT_DIR/normalize_audio.sh" "$NOISE_REDUCED_WAV" --output-file "$NORMALIZED_WAV"
+        echo "--- Step 4: Applying normalization, exporting processed audio & remuxing video ---"
+        ffmpeg -y -i "$INPUT_MP4" -i "$NOISE_REDUCED_WAV" \
+            -c:v copy -map 0:v:0 -map 1:a:0 \
+            -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k "$FINAL_MP4" \
+            -map 1:a:0 -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s24le -ar 48000 "$PROCESSED_WAV" \
+            -hide_banner -loglevel warning
         
-        echo "--- Step 5: Copying final processed audio ---"
-        cp "$NORMALIZED_WAV" "$PROCESSED_WAV"
-        
-        echo "--- Step 6: Replacing audio in original MP4 ---"
-        ffmpeg -y -i "$INPUT_MP4" -i "$PROCESSED_WAV" -c:v copy -map 0:v:0 -map 1:a:0 -c:a aac -b:a 384k "$FINAL_MP4" -hide_banner -loglevel warning
+        # Clean up temp directory
+        rm -rf "$TEMP_DIR"
         
         echo "Audio processing pipeline complete!"
         echo "Final processed audio is located at: $PROCESSED_WAV"
