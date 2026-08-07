@@ -16,7 +16,6 @@ if str(repo_root) not in sys.path:
 if str(video_editing_dir) not in sys.path:
     sys.path.insert(0, str(video_editing_dir))
 
-from transcribe import transcribe_video
 from utils import parse_timestamp, format_srt_time, check_dependencies, get_video_info, resolve_output_path
 
 def parse_srt(srt_path: Path):
@@ -212,6 +211,55 @@ def get_timeline_segments(overlay_ranges, total_duration):
         
     return segments
 
+def generate_mask_png(mask_path: Path, w: int, scaled_h: int, r: int = 20):
+    """Generates a static rounded corner mask PNG image using FFmpeg geq filter."""
+    geq_expr = (
+        f"if((lt(X,{r})+gt(X,W-{r}))*(lt(Y,{r})+gt(Y,H-{r})),"
+        f"if(gt(sqrt(pow(X-if(lt(X,{r}),{r},W-{r}),2)+pow(Y-if(lt(Y,{r}),{r},H-{r}),2)),{r}),0,255),255)"
+    )
+    mask_cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-threads", "0",
+        "-f", "lavfi",
+        "-i", f"color=c=white:s={w}x{scaled_h}:d=1",
+        "-vf", f"format=gray,geq=lum='{geq_expr}'",
+        "-frames:v", "1",
+        str(mask_path)
+    ]
+    subprocess.run(mask_cmd, check=True)
+
+def build_webcam_mask_filter_string(segments, target_fps, w, scaled_h, offset, screen_w, screen_h, is_all=False, output_label="out_v"):
+    """Builds the FFmpeg filter complex string for webcam overlay masking."""
+    raw_conditions = []
+    overlay_conditions = []
+    for seg in segments:
+        if seg["type"] == "raw":
+            raw_conditions.append(f"between(t,{seg['start']:.3f},{seg['end']:.3f})")
+        elif seg["type"] == "overlay":
+            overlay_conditions.append(f"between(t,{seg['start']:.3f},{seg['end']:.3f})")
+
+    raw_enable_expr = "+".join(raw_conditions) if raw_conditions else "0"
+    overlay_enable_expr = "+".join(overlay_conditions) if overlay_conditions else "0"
+
+    if is_all or not raw_conditions:
+        return (
+            f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps}[bg];"
+            f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps},scale=w={w}:h={scaled_h},format=rgba[scaled_webcam];"
+            f"[scaled_webcam][2:v]alphamerge[masked_webcam];"
+            f"[bg][masked_webcam]overlay=x=W-w-{offset}:y={offset}:eof_action=pass[{output_label}]"
+        )
+    else:
+        return (
+            f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps}[bg];"
+            f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps}[webcam_src];"
+            f"[webcam_src]split[webcam_full_src][webcam_small_src];"
+            f"[webcam_full_src]scale=w={screen_w}:h={screen_h}:force_original_aspect_ratio=increase,crop={screen_w}:{screen_h}[webcam_full];"
+            f"[webcam_small_src]scale=w={w}:h={scaled_h},format=rgba[scaled_webcam];"
+            f"[scaled_webcam][2:v]alphamerge[masked_webcam];"
+            f"[bg][masked_webcam]overlay=x=W-w-{offset}:y={offset}:enable='{overlay_enable_expr}':eof_action=pass[screen_with_overlay];"
+            f"[screen_with_overlay][webcam_full]overlay=x=0:y=0:enable='{raw_enable_expr}':eof_action=pass[{output_label}]"
+        )
+
 def main():
     parser = argparse.ArgumentParser(
         description="Overlay webcam video in the top-right corner of screen footage with rounded corners "
@@ -337,6 +385,7 @@ def main():
         if not captions_path.is_file():
             print(f"📝 Auto-transcribing webcam file '{webcam_path}' using Whisper '{args.model}' model...")
             try:
+                from transcribe import transcribe_video
                 transcribe_video(
                     video_path=str(webcam_path),
                     model_path_or_size=args.model,
@@ -444,67 +493,26 @@ def main():
     temp_dir = output_path.parent / f"_tmp_{output_path.stem}_mask"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Pre-generate the static rounded corner mask to avoid using the extremely slow geq filter on every frame
     mask_path = temp_dir / "webcam_mask.png"
     w = args.width
     r = args.radius
     scaled_h = int(round((w * webcam_h / webcam_w) / 2) * 2)
-    geq_expr = (
-        f"if((lt(X,{r})+gt(X,W-{r}))*(lt(Y,{r})+gt(Y,H-{r})),"
-        f"if(gt(sqrt(pow(X-if(lt(X,{r}),{r},W-{r}),2)+pow(Y-if(lt(Y,{r}),{r},H-{r}),2)),{r}),0,255),255)"
-    )
-    mask_cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "lavfi",
-        "-i", f"color=c=white:s={w}x{scaled_h}:d=1",
-        "-vf", f"format=gray,geq=lum='{geq_expr}'",
-        "-frames:v", "1",
-        str(mask_path)
-    ]
+
     print(f"\n🖼️ Generating static rounded corner mask ({w}x{scaled_h})...")
-    print(f"   Executing: {' '.join(mask_cmd)}")
-    subprocess.run(mask_cmd, check=True)
+    generate_mask_png(mask_path, w, scaled_h, r=r)
 
     try:
-        # Build conditions for raw and overlay modes based on segments
-        raw_conditions = []
-        overlay_conditions = []
-        for seg in segments:
-            if seg["type"] == "raw":
-                raw_conditions.append(f"between(t,{seg['start']:.3f},{seg['end']:.3f})")
-            elif seg["type"] == "overlay":
-                overlay_conditions.append(f"between(t,{seg['start']:.3f},{seg['end']:.3f})")
-
-        raw_enable_expr = "+".join(raw_conditions) if raw_conditions else "0"
-        overlay_enable_expr = "+".join(overlay_conditions) if overlay_conditions else "0"
-
-        # Build the dynamic single-pass FFmpeg command using filter complex
-        # 1. Reset PTS and set constant target frame rate for screen recording, padding indefinitely.
-        # 2. Reset PTS and set constant target frame rate for webcam video.
-        # 3. Split webcam video into raw and overlay paths.
-        # 4. Scale raw webcam path to full screen, cropping to match aspect ratio.
-        # 5. Scale overlay webcam path to corner size, apply mask.
-        # 6. Overlay corner webcam onto padded screen (active during overlay segments).
-        # 7. Overlay full webcam onto the result (active during raw segments).
-        offset = args.offset
-        if args.all or not raw_conditions:
-            filter_complex = (
-                f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps},tpad=stop_mode=clone:stop=-1[bg];"
-                f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps},scale=w={w}:h={scaled_h},format=rgba[scaled_webcam];"
-                f"[scaled_webcam][2:v]alphamerge[masked_webcam];"
-                f"[bg][masked_webcam]overlay=x=W-w-{offset}:y={offset}:eof_action=pass[out_v]"
-            )
-        else:
-            filter_complex = (
-                f"[0:v]setpts=PTS-STARTPTS,fps=fps={target_fps},tpad=stop_mode=clone:stop=-1[bg];"
-                f"[1:v]setpts=PTS-STARTPTS,fps=fps={target_fps}[webcam_src];"
-                f"[webcam_src]split[webcam_full_src][webcam_small_src];"
-                f"[webcam_full_src]scale=w={screen_w}:h={screen_h}:force_original_aspect_ratio=increase,crop={screen_w}:{screen_h}[webcam_full];"
-                f"[webcam_small_src]scale=w={w}:h={scaled_h},format=rgba[scaled_webcam];"
-                f"[scaled_webcam][2:v]alphamerge[masked_webcam];"
-                f"[bg][masked_webcam]overlay=x=W-w-{offset}:y={offset}:enable='{overlay_enable_expr}':eof_action=pass[screen_with_overlay];"
-                f"[screen_with_overlay][webcam_full]overlay=x=0:y=0:enable='{raw_enable_expr}':eof_action=pass[out_v]"
-            )
+        filter_complex = build_webcam_mask_filter_string(
+            segments=segments,
+            target_fps=target_fps,
+            w=w,
+            scaled_h=scaled_h,
+            offset=args.offset,
+            screen_w=screen_w,
+            screen_h=screen_h,
+            is_all=args.all,
+            output_label="out_v"
+        )
 
         audio_opts = []
         if has_webcam_audio:
@@ -514,6 +522,7 @@ def main():
 
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
+            "-threads", "0",
             "-i", str(screen_path),
             "-i", str(webcam_path),
             "-loop", "1", "-i", str(mask_path),
