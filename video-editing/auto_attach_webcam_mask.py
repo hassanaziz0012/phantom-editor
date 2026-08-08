@@ -288,13 +288,13 @@ def main():
         type=str,
         choices=["portrait", "landscape"],
         default="portrait",
-        help="Preset orientation for webcam overlay: 'portrait' (default, 450px width) or 'landscape' (600px width)."
+        help="Preset orientation for webcam overlay: 'portrait' (default, 400px width) or 'landscape' (550px width)."
     )
     parser.add_argument(
         "--width", "-w",
         type=int,
         default=None,
-        help="Width of the webcam overlay in pixels (default: 450 for portrait, 600 for landscape)."
+        help="Width of the webcam overlay in pixels (default: 400 for portrait, 550 for landscape)."
     )
     parser.add_argument(
         "--radius", "-r",
@@ -345,7 +345,7 @@ def main():
 
     # Determine default overlay width based on chosen preset if --width wasn't explicitly set
     if args.width is None:
-        args.width = 450 if args.preset == "portrait" else 600
+        args.width = 400 if args.preset == "portrait" else 550
 
     screen_path = Path(args.screen).resolve()
     webcam_path = Path(args.webcam).resolve()

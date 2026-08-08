@@ -105,7 +105,7 @@ def parse_cli_args() -> argparse.Namespace:
         "--width", "-w",
         type=int,
         default=None,
-        help="Width of webcam overlay in pixels for auto-attach webcam mask (default: 450 for portrait, 600 for landscape)."
+        help="Width of webcam overlay in pixels for auto-attach webcam mask (default: 400 for portrait, 550 for landscape)."
     )
     parser.add_argument(
         "--all", "-a",
@@ -399,7 +399,7 @@ def run_step2_mask_and_trim(
     speech_intervals = get_speech_intervals(webcam_path)
     select_expr, shift_expr, total_speech_duration = get_silence_trim_expressions(speech_intervals)
 
-    overlay_w = width if width is not None else (450 if preset == "portrait" else 600)
+    overlay_w = width if width is not None else (400 if preset == "portrait" else 550)
     scaled_h = int(round((overlay_w * webcam_h / webcam_w) / 2) * 2)
     temp_dir = video_dir / f"_tmp_{webcam_path.stem}_singlepass"
     temp_dir.mkdir(parents=True, exist_ok=True)
