@@ -20,5 +20,5 @@ cd "$BASE_DIR"
 # By default, --by-file lists files sorted by code LOC in descending order.
 cloc --by-file \
      --include-lang="Python,Bourne Shell,Bourne Again Shell" \
-     --exclude-dir=".venv" \
+     --exclude-dir=".venv,venv,node_modules,.git,__pycache__,.pytest_cache,.mypy_cache" \
      .
