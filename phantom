@@ -11,6 +11,7 @@ fi
 show_usage() {
     echo "Usage: phantom <command> [arguments]"
     echo "Commands:"
+    echo "  pipeline process [webcam_video] [screen_video] [arguments]"
     echo "  audio process [-R|--recursive] <path>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
     echo "  edit attach-webcam-mask --screen <screen_video> --webcam <webcam_video> [arguments]"
@@ -48,6 +49,21 @@ COMMAND="$1"
 shift
 
 case "$COMMAND" in
+    pipeline)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "process" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom pipeline process <webcam_video> [screen_video] [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/process_video.py" "$@"
+        else
+            echo "Unknown pipeline subcommand: $SUBCOMMAND"
+            echo "Usage: phantom pipeline process <webcam_video> [screen_video] [arguments]"
+            exit 1
+        fi
+        ;;
     audio)
         SUBCOMMAND="$1"
         shift
@@ -71,7 +87,7 @@ case "$COMMAND" in
                 echo "Usage: phantom edit process <video_path> [arguments]"
                 exit 1
             fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/process_video.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/process_video.py" "$@"
         elif [ "$SUBCOMMAND" = "add_bgm" ]; then
             "$BASE_DIR/video-editing/add_bgm_to_video.sh" "$@"
         elif [ "$SUBCOMMAND" = "attach-webcam-mask" ]; then
