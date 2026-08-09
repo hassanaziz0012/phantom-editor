@@ -349,7 +349,8 @@ def run_step2_mask_and_trim(
     width: int | None,
     all_overlay: bool,
     video_dir: Path,
-    force_run: bool
+    force_run: bool,
+    skip_confirm: bool = False
 ) -> bool:
     """Step 2: Single-Pass Video Processing (Masking + Silence Trimming)."""
     print_info("\n--- [Step 2/5] Single-Pass Video Processing (Masking + Silence Trimming) ---")
@@ -385,13 +386,45 @@ def run_step2_mask_and_trim(
         print_error(f"Error parsing SRT file: {e}")
         sys.exit(1)
 
+    commands_count = 0
     if all_overlay:
         overlay_ranges = [(0.0, webcam_duration)]
     elif not captions:
+        print_warning("⚠️ Captions file contains no valid subtitle intervals.")
         overlay_ranges = []
     else:
-        overlay_ranges, _ = detect_overlay_ranges(captions, default_overlay=False, total_duration=webcam_duration)
-        if not overlay_ranges:
+        overlay_ranges, commands_count = detect_overlay_ranges(captions, default_overlay=False, total_duration=webcam_duration)
+
+    if not all_overlay and commands_count == 0:
+        print_warning("\n" + "=" * 60)
+        print_warning("⚠️  No voice commands ('webcam start' / 'webcam stop') detected.")
+        print_warning("=" * 60)
+        print("Please choose how to render the video:")
+        print("  1) screen : Overlay webcam in the top-right corner over the screen recording (entire video)")
+        print("  2) webcam : Full-screen webcam video only (no screen recording displayed)")
+        print()
+
+        if skip_confirm or not sys.stdin.isatty():
+            print_info("Notice: Non-interactive / --yes mode. Defaulting to option 1 ('screen').")
+            choice = "screen"
+        else:
+            try:
+                user_input = input("Select layout option [1=screen / 2=webcam] (default: screen): ").strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                print()
+                print_error("Processing cancelled by user.")
+                sys.exit(1)
+
+            if user_input in ["2", "webcam", "w"]:
+                choice = "webcam"
+            else:
+                choice = "screen"
+
+        if choice == "webcam":
+            print_info("⏩ Selected 'webcam': Using full-screen webcam video (no screen overlay).")
+            overlay_ranges = []
+        else:
+            print_info("⏩ Selected 'screen': Overlaying top-right webcam over screen recording throughout entire video.")
             overlay_ranges = [(0.0, webcam_duration)]
 
     segments = get_timeline_segments(overlay_ranges, webcam_duration)
@@ -611,7 +644,8 @@ def main():
         width=args.width,
         all_overlay=args.all,
         video_dir=video_dir,
-        force_run=force_run
+        force_run=force_run,
+        skip_confirm=args.yes
     )
     step2_duration = time.perf_counter() - step2_start
 
