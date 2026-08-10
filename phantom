@@ -82,13 +82,7 @@ case "$COMMAND" in
     edit)
         SUBCOMMAND="$1"
         shift
-        if [ "$SUBCOMMAND" = "process" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit process <video_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/process_video.py" "$@"
-        elif [ "$SUBCOMMAND" = "add_bgm" ]; then
+        if [ "$SUBCOMMAND" = "add_bgm" ]; then
             "$BASE_DIR/video-editing/add_bgm_to_video.sh" "$@"
         elif [ "$SUBCOMMAND" = "attach-webcam-mask" ]; then
             if [ $# -eq 0 ]; then
@@ -140,8 +134,7 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/trim_silences_whisper.py" "$@"
         else
             echo "Unknown edit subcommand: $SUBCOMMAND"
-            echo "Usage: phantom edit process <video_path> [arguments]"
-            echo "       phantom edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
+            echo "Usage: phantom edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
             echo "       phantom edit attach-webcam-mask --screen <screen_video> --webcam <webcam_video> [arguments]"
             echo "       phantom edit auto-attach-webcam --screen <screen_video> --webcam <webcam_video> [arguments]"
             echo "       phantom edit caption <video_path> [arguments]"
