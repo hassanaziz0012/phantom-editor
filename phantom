@@ -11,6 +11,7 @@ fi
 show_usage() {
     echo "Usage: phantom <command> [arguments]"
     echo "Commands:"
+    echo "  pipeline status [arguments]"
     echo "  pipeline process [webcam_video] [screen_video] [arguments]"
     echo "  audio process [-R|--recursive] <path>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
@@ -52,7 +53,9 @@ case "$COMMAND" in
     pipeline)
         SUBCOMMAND="$1"
         shift
-        if [ "$SUBCOMMAND" = "process" ]; then
+        if [ "$SUBCOMMAND" = "status" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/current_pipeline.py" "$@"
+        elif [ "$SUBCOMMAND" = "process" ]; then
             if [ $# -eq 0 ]; then
                 echo "Usage: phantom pipeline process <webcam_video> [screen_video] [arguments]"
                 exit 1
@@ -60,7 +63,8 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/process_video.py" "$@"
         else
             echo "Unknown pipeline subcommand: $SUBCOMMAND"
-            echo "Usage: phantom pipeline process <webcam_video> [screen_video] [arguments]"
+            echo "Usage: phantom pipeline status [arguments]"
+            echo "       phantom pipeline process <webcam_video> [screen_video] [arguments]"
             exit 1
         fi
         ;;
