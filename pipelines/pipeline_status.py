@@ -146,7 +146,8 @@ def print_pipeline_overview(
     print(f" Web camera video: {webcam_path}")
     print(f" Screen video:     {screen_path}")
     print(f" Output directory: {video_dir}")
-    print(f" Overlay width:    {args.width}px")
+    overlay_width = args.width if getattr(args, "width", None) is not None else (400 if getattr(args, "preset", "portrait") == "portrait" else 550)
+    print(f" Overlay width:    {overlay_width}px")
     print(f" Overlay mode:     {'Continuous (--all)' if args.all else 'Dynamic voice commands'}")
     if args.bgm:
         print(f" BGM track:        {args.bgm} (Volume: {args.volume}%)")
