@@ -192,8 +192,8 @@ def get_all_projects(projects_dir: Path) -> List[VideoProject]:
     return projects
 
 
-def render_stage_bar(stage_num: int) -> str:
-    """Render a visual step pipeline indicator."""
+def render_stage_bar(proj: VideoProject) -> str:
+    """Render a visual step pipeline indicator checking actual completion of each step."""
     steps = [
         ("1", "New"),
         ("2", "Rec"),
@@ -206,12 +206,29 @@ def render_stage_bar(stage_num: int) -> str:
     parts = []
     for num_str, name in steps:
         idx = int(num_str)
-        if idx == stage_num:
+        if idx == proj.stage_num:
             parts.append(f"{COLOR_BOLD}{COLOR_GREEN}[{num_str}:{name}]{COLOR_RESET}")
-        elif idx < stage_num:
-            parts.append(f"{COLOR_GREEN}✓{num_str}{COLOR_RESET}")
         else:
-            parts.append(f"{COLOR_GRAY}{num_str}:{name}{COLOR_RESET}")
+            is_complete = False
+            if idx == 1:
+                is_complete = proj.stage_num > 1 or len(proj.raw_files) > 0 or proj.to_review_file is not None or proj.final_file is not None
+            elif idx == 2:
+                is_complete = proj.stage_num > 2 or proj.to_review_file is not None or proj.final_file is not None
+            elif idx == 3:
+                is_complete = proj.stage_num > 3 or proj.final_file is not None
+            elif idx == 4:
+                is_complete = proj.final_file is not None and proj.stage_num > 4
+            elif idx == 5:
+                is_complete = proj.metadata_file is not None
+            elif idx == 6:
+                is_complete = bool(proj.thumbnail_files)
+            elif idx == 7:
+                is_complete = proj.stage_num == 7
+
+            if is_complete:
+                parts.append(f"{COLOR_GREEN}✓{num_str}{COLOR_RESET}")
+            else:
+                parts.append(f"{COLOR_GRAY}{num_str}:{name}{COLOR_RESET}")
     return " ➔ ".join(parts)
 
 
@@ -235,7 +252,7 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         
         print(f"{COLOR_BOLD}{idx}. {proj.name}{COLOR_RESET}")
         print(f"   Stage {proj.stage_num}/7: {color}{COLOR_BOLD}[{proj.stage_name}]{COLOR_RESET}")
-        print(f"   Pipeline: {render_stage_bar(proj.stage_num)}")
+        print(f"   Pipeline: {render_stage_bar(proj)}")
         print(f"   {COLOR_BOLD}➜ Next Step:{COLOR_RESET} {proj.next_step}")
 
         # Checklists for files
