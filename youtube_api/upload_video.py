@@ -214,8 +214,12 @@ def main():
         title=metadata.get("title", ""),
     )
     print(f"\n🐦 Posting tweet:\n   {tweet_content}")
-    subprocess.run(["phantom", "tweet", tweet_content], check=True)
-    print("✅ Tweet posted!")
+    try:
+        subprocess.run(["phantom", "tweet", tweet_content], check=True)
+        print("✅ Tweet posted!")
+    except Exception as e:
+        print(f"⚠️  Tweet step failed or browser closed: {e}")
+        print("⏭  Moving on gracefully...")
 
     # Send email broadcast
     title = metadata.get("title", video_path.stem)
