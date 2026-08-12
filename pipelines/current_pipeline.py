@@ -12,6 +12,7 @@ Stages:
   5. Added Metadata  - metadata.json created, needs thumbnail.
   6. Added Thumbnail - Thumbnail(s) created, needs metadata.json.
   7. Ready to Publish- final.mp4 + metadata.json + thumbnail(s) complete!
+  8. Uploaded        - Video uploaded to YouTube (metadata.json has valid YT URL).
 """
 
 import os
@@ -29,6 +30,14 @@ video_editing_dir = repo_root / "video-editing"
 
 if str(video_editing_dir) not in sys.path:
     sys.path.insert(0, str(video_editing_dir))
+
+if str(pipeline_dir) not in sys.path:
+    sys.path.insert(0, str(pipeline_dir))
+
+try:
+    from pipeline_status import is_valid_yt_url
+except ImportError:
+    from pipelines.pipeline_status import is_valid_yt_url
 
 try:
     from utils import (
@@ -61,6 +70,7 @@ class VideoProject:
     final_file: Optional[Path] = None
     metadata_file: Optional[Path] = None
     thumbnail_files: List[Path] = field(default_factory=list)
+    yt_url: Optional[str] = None
     stage_num: int = 1
     stage_name: str = "New"
     next_step: str = ""
@@ -78,6 +88,7 @@ class VideoProject:
             "final_file": self.final_file.name if self.final_file else None,
             "has_metadata": self.metadata_file is not None,
             "thumbnails": [f.name for f in self.thumbnail_files],
+            "yt_url": self.yt_url,
         }
 
 
@@ -121,18 +132,33 @@ def analyze_project(project_dir: Path) -> VideoProject:
             project.final_file = item
         elif item.name.lower() == "metadata.json":
             project.metadata_file = item
+            try:
+                with open(item, "r", encoding="utf-8") as f:
+                    meta_data = json.load(f)
+                    url = meta_data.get("url")
+                    if url and is_valid_yt_url(url):
+                        project.yt_url = url
+            except Exception:
+                pass
         elif is_thumbnail_file(item):
             project.thumbnail_files.append(item)
         elif is_raw_video_file(item):
             project.raw_files.append(item)
 
     # Determine stage
+    # Stage 8: Uploaded (metadata.json contains a valid YouTube URL)
+    if project.yt_url:
+        project.stage_num = 8
+        project.stage_name = "Uploaded"
+        project.next_step = "Video uploaded to YouTube! 🎉"
+        project.status_color = COLOR_GREEN
+
     # Stage 7: Ready to Publish (final.mp4 + metadata.json + thumbnail(s))
-    if project.final_file and project.metadata_file and project.thumbnail_files:
+    elif project.final_file and project.metadata_file and project.thumbnail_files:
         project.stage_num = 7
         project.stage_name = "Ready to Publish"
         project.next_step = "Upload video and publish on YouTube! 🚀"
-        project.status_color = COLOR_GREEN
+        project.status_color = COLOR_CYAN
 
     # Stage 6: Added Thumbnail (final.mp4 + thumbnail, missing metadata)
     elif project.final_file and project.thumbnail_files:
@@ -201,7 +227,8 @@ def render_stage_bar(proj: VideoProject) -> str:
         ("4", "Rev"),
         ("5", "Meta"),
         ("6", "Thumb"),
-        ("7", "Done"),
+        ("7", "Ready"),
+        ("8", "Done"),
     ]
     parts = []
     for num_str, name in steps:
@@ -223,7 +250,9 @@ def render_stage_bar(proj: VideoProject) -> str:
             elif idx == 6:
                 is_complete = bool(proj.thumbnail_files)
             elif idx == 7:
-                is_complete = proj.stage_num == 7
+                is_complete = proj.stage_num > 7 or (proj.final_file is not None and proj.metadata_file is not None and bool(proj.thumbnail_files))
+            elif idx == 8:
+                is_complete = proj.stage_num == 8
 
             if is_complete:
                 parts.append(f"{COLOR_GREEN}✓{num_str}{COLOR_RESET}")
@@ -244,14 +273,14 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         print(f"{COLOR_YELLOW}No project folders found in {projects_dir}{COLOR_RESET}\n")
         return
 
-    stage_counts = {i: 0 for i in range(1, 8)}
+    stage_counts = {i: 0 for i in range(1, 9)}
 
     for idx, proj in enumerate(projects, 1):
         stage_counts[proj.stage_num] += 1
         color = proj.status_color
         
         print(f"{COLOR_BOLD}{idx}. {proj.name}{COLOR_RESET}")
-        print(f"   Stage {proj.stage_num}/7: {color}{COLOR_BOLD}[{proj.stage_name}]{COLOR_RESET}")
+        print(f"   Stage {proj.stage_num}/8: {color}{COLOR_BOLD}[{proj.stage_name}]{COLOR_RESET}")
         print(f"   Pipeline: {render_stage_bar(proj)}")
         print(f"   {COLOR_BOLD}➜ Next Step:{COLOR_RESET} {proj.next_step}")
 
@@ -259,7 +288,14 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         raw_info = f"{len(proj.raw_files)} raw file(s)" if proj.raw_files else "No raw files"
         to_rev_status = f"{COLOR_GREEN}✓ {proj.to_review_file.name}{COLOR_RESET}" if proj.to_review_file else f"{COLOR_GRAY}✗ to-review.mp4{COLOR_RESET}"
         final_status = f"{COLOR_GREEN}✓ {proj.final_file.name}{COLOR_RESET}" if proj.final_file else f"{COLOR_GRAY}✗ final.mp4{COLOR_RESET}"
-        meta_status = f"{COLOR_GREEN}✓ metadata.json{COLOR_RESET}" if proj.metadata_file else f"{COLOR_GRAY}✗ metadata.json{COLOR_RESET}"
+        
+        if proj.metadata_file:
+            if proj.yt_url:
+                meta_status = f"{COLOR_GREEN}✓ metadata.json (URL set){COLOR_RESET}"
+            else:
+                meta_status = f"{COLOR_GREEN}✓ metadata.json{COLOR_RESET}"
+        else:
+            meta_status = f"{COLOR_GRAY}✗ metadata.json{COLOR_RESET}"
         
         if proj.thumbnail_files:
             thumb_names = ", ".join([f.name for f in proj.thumbnail_files])
@@ -287,16 +323,21 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         f"{COLOR_BLUE}Reviewed: {stage_counts[4]}{COLOR_RESET} | "
         f"{COLOR_CYAN}Metadata: {stage_counts[5]}{COLOR_RESET} | "
         f"{COLOR_CYAN}Thumbnail: {stage_counts[6]}{COLOR_RESET} | "
-        f"{COLOR_GREEN}Ready: {stage_counts[7]}{COLOR_RESET}"
+        f"{COLOR_CYAN}Ready: {stage_counts[7]}{COLOR_RESET} | "
+        f"{COLOR_GREEN}Uploaded: {stage_counts[8]}{COLOR_RESET}"
     )
     print(stat_line)
 
-    action_needed = stage_counts[3] + stage_counts[4] + stage_counts[5] + stage_counts[6]
+    action_needed = stage_counts[3] + stage_counts[4] + stage_counts[5] + stage_counts[6] + stage_counts[7]
     ready_to_pub = stage_counts[7]
+    uploaded_cnt = stage_counts[8]
     
-    print(f"\n {COLOR_YELLOW}⚡ Action Required: {action_needed} video(s) in progress{COLOR_RESET}")
+    if action_needed > 0:
+        print(f"\n {COLOR_YELLOW}⚡ Action Required: {action_needed} video(s) in progress{COLOR_RESET}")
     if ready_to_pub > 0:
-        print(f" {COLOR_GREEN}🎉 Ready to Upload: {ready_to_pub} video(s) fully complete!{COLOR_RESET}")
+        print(f" {COLOR_CYAN}🎉 Ready to Upload: {ready_to_pub} video(s) fully complete!{COLOR_RESET}")
+    if uploaded_cnt > 0:
+        print(f" {COLOR_GREEN}🚀 Uploaded: {uploaded_cnt} video(s) published on YouTube!{COLOR_RESET}")
 
     print(f"\n{COLOR_BOLD}{COLOR_CYAN}{'=' * width}{COLOR_RESET}\n")
 
