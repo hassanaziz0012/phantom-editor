@@ -23,6 +23,41 @@ from utils import (
 )
 
 
+from urllib.parse import urlparse, parse_qs
+
+
+def is_valid_yt_url(url: str) -> bool:
+    """Check if a URL string is a valid YouTube URL (fast, no HTTP requests)."""
+    if not url or not isinstance(url, str):
+        return False
+    url = url.strip()
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = (parsed.hostname or "").lower()
+        valid_hosts = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "www.youtu.be"}
+        if hostname not in valid_hosts:
+            return False
+
+        if hostname in ("youtu.be", "www.youtu.be"):
+            path = parsed.path.strip("/")
+            return len(path) > 0
+        else:
+            if parsed.path == "/watch":
+                qs = parse_qs(parsed.query)
+                v_param = qs.get("v", [""])[0]
+                return len(v_param) > 0
+            elif parsed.path.startswith(("/embed/", "/v/", "/shorts/", "/live/")):
+                parts = [p for p in parsed.path.split("/") if p]
+                return len(parts) >= 2
+            elif len(parsed.path.strip("/")) > 0:
+                return True
+        return False
+    except Exception:
+        return False
+
+
 def is_4k_video(video_path: Path) -> bool:
     """Check if the video resolution is 4K (e.g., width >= 3840 or height >= 2160)."""
     info = get_video_info(video_path)
