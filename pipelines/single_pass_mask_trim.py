@@ -161,7 +161,7 @@ def run_single_pass_mask_trim(
     if select_expr and shift_expr:
         v_trim = f"[composite_v]select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30[out_v]"
         if audio_src:
-            a_trim = f"[{audio_src}]aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB'[out_a]"
+            a_trim = f"[{audio_src}]aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB',aresample=async=1:first_pts=0[out_a]"
             filter_complex = f"{mask_filter};{v_trim};{a_trim}"
             audio_map = ["-map", "[out_a]", "-c:a", "aac", "-b:a", "384k"]
         else:

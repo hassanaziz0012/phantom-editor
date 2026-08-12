@@ -117,11 +117,12 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
     if not intervals:
         print("No active speech intervals found to keep.")
         return
+        
 
     select_expr, shift_expr, total_duration = get_silence_trim_expressions(intervals)
 
     v_script = f"select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30"
-    a_script = f"aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB'"
+    a_script = f"aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB',aresample=async=1:first_pts=0"
 
     cmd = [
         'ffmpeg', '-hide_banner', '-loglevel', 'error', '-stats', '-y',
