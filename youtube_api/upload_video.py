@@ -204,6 +204,16 @@ def main():
     share_url = get_share_url(video_id)
     print(f"\n🔗 Share URL: {share_url}")
 
+    # Save URL to metadata.json
+    metadata["url"] = share_url
+    metadata_file = video_path.parent / "metadata.json"
+    try:
+        with open(metadata_file, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=4, ensure_ascii=False)
+        print("✅ Saved YouTube URL to metadata.json")
+    except Exception as e:
+        print(f"⚠️  Failed to save URL to metadata.json: {e}")
+
     # Post tweet
     tweet_template = metadata.get(
         "tweetTemplate",
