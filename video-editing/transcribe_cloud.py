@@ -14,12 +14,27 @@ from utils import format_srt_time, get_video_info
 # Limit for Groq API in bytes (25MB)
 GROQ_LIMIT_BYTES = 25 * 1024 * 1024
 
-def extract_audio(video_path, output_audio_path, duration=None):
-    """Extracts audio from a video file into a FLAC file using ffmpeg."""
+AUDIO_EXTENSIONS = {
+    ".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus",
+    ".wma", ".aiff", ".aif", ".alac", ".pcm"
+}
+
+def is_audio_file(file_path):
+    """Determines if the given file path is an audio file."""
+    ext = Path(file_path).suffix.lower()
+    if ext in AUDIO_EXTENSIONS:
+        return True
+    info = get_video_info(file_path)
+    if info.has_audio and info.width == 0 and info.height == 0:
+        return True
+    return False
+
+def extract_audio(input_path, output_audio_path, duration=None):
+    """Extracts audio from a video or audio file into a FLAC file using ffmpeg."""
     cmd = [
         "ffmpeg", "-y",
         "-threads", "0",
-        "-i", video_path
+        "-i", str(input_path)
     ]
     if duration:
         cmd.extend(["-t", str(duration)])
@@ -28,7 +43,7 @@ def extract_audio(video_path, output_audio_path, duration=None):
         "-ar", "16000",
         "-ac", "1",
         "-c:a", "flac",
-        output_audio_path
+        str(output_audio_path)
     ])
     
     print(f"Extracting audio to {output_audio_path}...")
@@ -60,21 +75,20 @@ def init_groq_clients():
 
     return [Groq(api_key=k, timeout=300.0, max_retries=0) for k in api_keys]
 
-def prepare_audio_chunks(video_path, extracted_audio, temp_id, temp_files):
+def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
     """Checks audio file size and splits into 10-minute chunks if exceeding Groq limit."""
-    file_size = os.path.getsize(extracted_audio)
-    base_audio = extracted_audio
+    file_size = os.path.getsize(base_audio)
 
     audio_chunks = []
     if file_size > GROQ_LIMIT_BYTES:
-        print(f"Extracted audio size ({file_size / (1024*1024):.2f} MB) exceeds the Groq limit of 25 MB.")
+        print(f"Audio size ({file_size / (1024*1024):.2f} MB) exceeds the Groq limit of 25 MB.")
         print("Splitting audio into 10-minute (600s) chunks using FFmpeg...")
         chunk_size = 600.0
 
         audio_info = get_video_info(base_audio)
         total_duration = audio_info.duration
         if total_duration <= 0:
-            total_duration = get_video_info(video_path).duration
+            total_duration = get_video_info(input_path).duration
 
         chunk_index = 0
         start_time = 0.0
@@ -247,10 +261,12 @@ def write_srt_subtitles(output_srt_path, merged_segments, merged_words, max_word
     if merged_words:
         print(f"1-word captions saved to {one_word_srt_path}")
 
-def transcribe_video_cloud(video_path, model_name, output_srt_path, max_words=None, uppercase=False, preview=False, max_threads=4):
-    """Main orchestrator function to extract audio, split chunks, transcribe, and save SRT."""
-    if not os.path.exists(video_path):
-        print(f"Error: Input video file not found at {video_path}")
+def transcribe_video_cloud(input_path=None, model_name="whisper-large-v3", output_srt_path=None, max_words=None, uppercase=False, preview=False, max_threads=4, video_path=None):
+    """Main orchestrator function to extract audio (if video), split chunks, transcribe, and save SRT."""
+    if input_path is None:
+        input_path = video_path
+    if not input_path or not os.path.exists(input_path):
+        print(f"Error: Input file not found at {input_path}")
         sys.exit(1)
 
     clients = init_groq_clients()
@@ -258,15 +274,22 @@ def transcribe_video_cloud(video_path, model_name, output_srt_path, max_words=No
     temp_files = []
     try:
         temp_id = uuid.uuid4().hex[:8]
-        extracted_audio = f"temp_extracted_{temp_id}.flac"
-        temp_files.append(extracted_audio)
 
-        # 1. Extract audio
-        duration = 5 if preview else None
-        extract_audio(video_path, extracted_audio, duration=duration)
+        # 1. Determine if input is audio or video
+        is_audio = is_audio_file(input_path)
+
+        if is_audio and not preview:
+            # Audio files do not need raw audio extraction unless preview slice is requested
+            base_audio = input_path
+        else:
+            extracted_audio = f"temp_extracted_{temp_id}.flac"
+            temp_files.append(extracted_audio)
+            duration = 5 if preview else None
+            extract_audio(input_path, extracted_audio, duration=duration)
+            base_audio = extracted_audio
 
         # 2. Determine and split into audio chunks if needed
-        audio_chunks = prepare_audio_chunks(video_path, extracted_audio, temp_id, temp_files)
+        audio_chunks = prepare_audio_chunks(input_path, base_audio, temp_id, temp_files)
 
         # 3. Transcribe audio chunks in parallel
         merged_segments, merged_words = transcribe_chunks_parallel(
@@ -297,9 +320,9 @@ if __name__ == "__main__":
         return ivalue
 
     parser = argparse.ArgumentParser(
-        description="Transcribe a video using Groq Cloud Whisper API and generate subtitles SRT file."
+        description="Transcribe a video or audio file using Groq Cloud Whisper API and generate subtitles SRT file."
     )
-    parser.add_argument("video_path", help="Path to the input video file (e.g. mp4).")
+    parser.add_argument("input_path", help="Path to the input video or audio file (e.g. mp4, mp3, wav, flac).")
     parser.add_argument(
         "--model", "-m",
         choices=["whisper-large-v3", "whisper-large-v3-turbo"],
@@ -327,12 +350,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--preview",
         action="store_true",
-        help="Only process the first 5 seconds of the video for preview."
+        help="Only process the first 5 seconds for preview."
     )
     parser.add_argument(
         "--output", "-o",
         default=None,
-        help="Path to save the generated subtitles SRT file (default: same name as video file with .srt extension in the same directory)."
+        help="Path to save the generated subtitles SRT file (default: same name as input file with .srt extension in the same directory)."
     )
     parser.add_argument(
         "--threads", "-t",
@@ -346,13 +369,13 @@ if __name__ == "__main__":
     if args.output:
         output_srt = args.output
     else:
-        # Place output SRT in the same directory as the input video file with the same name
-        video_dir = os.path.dirname(os.path.abspath(args.video_path))
-        video_name_without_ext, _ = os.path.splitext(os.path.basename(args.video_path))
-        output_srt = os.path.join(video_dir, f"{video_name_without_ext}.srt")
+        # Place output SRT in the same directory as the input file with the same name
+        input_dir = os.path.dirname(os.path.abspath(args.input_path))
+        input_name_without_ext, _ = os.path.splitext(os.path.basename(args.input_path))
+        output_srt = os.path.join(input_dir, f"{input_name_without_ext}.srt")
 
     transcribe_video_cloud(
-        video_path=args.video_path,
+        input_path=args.input_path,
         model_name=args.model,
         output_srt_path=output_srt,
         max_words=args.max_words,
