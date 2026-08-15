@@ -2,21 +2,15 @@
 """
 Create a new video project folder inside the 'YT Projects' directory.
 Usage:
-    phantom pipeline newvideo [project_name]
+    phantom pipeline newvideo <project_name>
     or
-    python pipelines/newvideo.py [project_name]
+    python pipelines/newvideo.py <project_name>
 """
 
 import os
 import sys
 import argparse
 from pathlib import Path
-
-# Enable GNU readline for interactive terminal editing if available
-try:
-    import readline
-except ImportError:
-    pass
 
 pipeline_dir = Path(__file__).resolve().parent
 repo_root = pipeline_dir.parent
@@ -62,20 +56,6 @@ def sanitize_project_name(name: str) -> str:
     return name.strip()
 
 
-def prompt_project_name() -> str:
-    """Prompt the user interactively for a project name."""
-    while True:
-        try:
-            name = input(f"{COLOR_BOLD}{COLOR_BLUE}?{COLOR_RESET} {COLOR_BOLD}Enter project name:{COLOR_RESET} ").strip()
-            if not name:
-                print_warning("Project name cannot be empty. Please try again.")
-                continue
-            return name
-        except (KeyboardInterrupt, EOFError):
-            print("\nOperation cancelled by user.")
-            sys.exit(1)
-
-
 def create_video_project(project_name: str, base_dir: Path = DEFAULT_YT_PROJECTS_DIR) -> Path:
     """Creates a new project directory under base_dir/project_name."""
     base_dir = base_dir.expanduser().resolve()
@@ -106,9 +86,7 @@ def main():
     )
     parser.add_argument(
         "name",
-        nargs="?",
-        default=None,
-        help="Name of the new video project (optional, prompted if omitted)."
+        help="Name of the new video project."
     )
     parser.add_argument(
         "--dir", "-d",
@@ -119,13 +97,10 @@ def main():
 
     base_dir = Path(args.dir) if args.dir else DEFAULT_YT_PROJECTS_DIR
 
-    project_name = args.name
+    project_name = sanitize_project_name(args.name)
     if not project_name:
-        project_name = prompt_project_name()
-    else:
-        project_name = sanitize_project_name(project_name)
-        if not project_name:
-            project_name = prompt_project_name()
+        print_error("Error: Project name cannot be empty.")
+        sys.exit(1)
 
     create_video_project(project_name, base_dir=base_dir)
 
