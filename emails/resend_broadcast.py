@@ -140,8 +140,11 @@ def send_broadcast(
 
     resend.api_key = api_key
 
+    # Resend restricts `name` to a maximum of 70 characters
+    broadcast_name = (name or subject or "").strip()[:70]
+
     params: resend.Broadcasts.CreateParams = {
-        "name": name or subject,
+        "name": broadcast_name,
         "segment_id": segment_id,
         "from": from_email,
         "subject": subject,
@@ -169,6 +172,12 @@ def main():
         "-t",
         required=True,
         help="Title of the YouTube video",
+    )
+    parser.add_argument(
+        "--name",
+        "-n",
+        default=None,
+        help="Optional internal name for the broadcast (defaults to title truncated to 70 chars)",
     )
     parser.add_argument(
         "--description",
@@ -256,7 +265,7 @@ def main():
     try:
         result = send_broadcast(
             subject=subject,
-            name=subject,
+            name=args.name or subject,
             html_content=html_content,
             segment_id=target_segment_id,
         )
