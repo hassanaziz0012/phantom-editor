@@ -10,6 +10,11 @@ Whether you're processing audio, editing video segments, or publishing to variou
 
 The project is structured into several modular directories, each responsible for a distinct part of the media creation and distribution lifecycle:
 
+### 🎬 [Content Pipelines](pipelines.md)
+End-to-end orchestration for the 10-stage YouTube content lifecycle, single-pass video masking/trimming, and Google Sheets Content Calendar scheduling.
+
+* **Main Scripts**: [current_pipeline.py](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/current_pipeline.py), [process_video.py](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py), [newvideo.py](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/newvideo.py), [calendar.py](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/calendar.py), and [single_pass_mask_trim.py](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/single_pass_mask_trim.py)
+
 ### 🎙️ [Audio Processing](audio-processing.md)
 Tools for extracting, clean-up, and normalizing audio tracks.
 

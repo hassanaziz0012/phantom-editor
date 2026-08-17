@@ -39,6 +39,7 @@ dev_addr: 127.0.0.1:8000
 
 nav:
   - Home: index.md
+  - Content Pipelines: pipelines.md
   - Audio Processing: audio-processing.md
   - Video Editing: video-editing.md
   - Filmora Automation: filmora-automation.md
