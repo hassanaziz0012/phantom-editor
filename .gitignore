@@ -39,5 +39,5 @@ video-editing/models/
 # Temp files
 *.ass
 temp_*
-
+site/
 shorts/shorts.json.bak
