@@ -61,3 +61,8 @@ class RankedVideo:
     video:   Video
     score:   float
     reasons: dict[str, float]
+
+
+# Re-export VideoMetadata for convenience
+from youtube_api.read_metadata import VideoMetadata  # noqa: E402
+
