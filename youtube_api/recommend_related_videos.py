@@ -48,7 +48,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 from dotenv import load_dotenv
 
@@ -59,6 +59,7 @@ if root_dir not in sys.path:
 
 # Import shared models and fetchers
 from youtube_api.models import Video, VideoSeed, RankedVideo
+from youtube_api.read_metadata import read_metadata, VideoMetadata
 from youtube_api.fetch_videos import fetch_channel_videos
 from youtube_api.utils import (
     tokenize,
@@ -73,12 +74,15 @@ from youtube_api.utils import (
 load_dotenv()
 
 
-def build_seed_from_metadata(metadata: dict[str, Any]) -> VideoSeed:
+def build_seed_from_metadata(metadata: Union[VideoMetadata, dict[str, Any]]) -> VideoSeed:
+    if isinstance(metadata, VideoMetadata):
+        return metadata.to_seed()
+    category_id = metadata.get("categoryId") or metadata.get("category_id")
     return VideoSeed(
         title=metadata.get("title", ""),
         description=metadata.get("description", ""),
         tags=list(metadata.get("tags", [])),
-        category_id=str(metadata["categoryId"]) if metadata.get("categoryId") is not None else None,
+        category_id=str(category_id) if category_id is not None else None,
     )
 
 
@@ -128,11 +132,6 @@ def rank_related_videos(seed: VideoSeed, videos: list[Video], limit: int) -> lis
     ranked = [item for item in ranked if item.score > 0]
     ranked.sort(key=lambda item: (item.score, item.video.view_count or 0), reverse=True)
     return ranked[:limit]
-
-
-def load_metadata(path: Path) -> dict[str, Any]:
-    with path.open() as handle:
-        return json.load(handle)
 
 
 def find_video_by_id(videos: list[Video], video_id: str) -> Video:
@@ -199,7 +198,7 @@ def main() -> None:
         sys.exit(1)
 
     if args.metadata:
-        seed = build_seed_from_metadata(load_metadata(args.metadata))
+        seed = build_seed_from_metadata(read_metadata(args.metadata))
     else:
         try:
             seed = build_seed_from_existing_video(find_video_by_id(videos, args.video_id))

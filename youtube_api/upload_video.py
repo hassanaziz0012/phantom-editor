@@ -12,12 +12,14 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, Optional, Union
 
 # Add project root to sys.path to import global config
 repo_root = Path(__file__).resolve().parent.parent
 if str(repo_root) not in sys.path:
     sys.path.append(str(repo_root))
 import config
+from youtube_api.read_metadata import read_metadata, VideoMetadata
 
 
 import httplib2
@@ -87,15 +89,7 @@ def get_authenticated_service():
 # Upload helpers
 # ---------------------------------------------------------------------------
 
-def load_metadata(video_path: Path) -> dict:
-    metadata_file = video_path.parent / "metadata.json"
-    if not metadata_file.exists():
-        raise FileNotFoundError(f"metadata.json not found in {video_path.parent}")
-    with open(metadata_file) as f:
-        return json.load(f)
-
-
-def upload_video(youtube, video_path: Path, metadata: dict) -> str:
+def upload_video(youtube, video_path: Path, metadata: Union[VideoMetadata, dict]) -> str:
     """Upload the video and return its YouTube video ID."""
 
     raw_description = metadata.get("description", "")
@@ -188,7 +182,7 @@ def main():
 
     # Load metadata
     print("📋 Loading metadata…")
-    metadata = load_metadata(video_path)
+    metadata = read_metadata(video_path)
 
     # Authenticate
     print("🔐 Authenticating with YouTube…")
@@ -205,11 +199,9 @@ def main():
     print(f"\n🔗 Share URL: {share_url}")
 
     # Save URL to metadata.json
-    metadata["url"] = share_url
-    metadata_file = video_path.parent / "metadata.json"
+    metadata.url = share_url
     try:
-        with open(metadata_file, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=4, ensure_ascii=False)
+        metadata.save()
         print("✅ Saved YouTube URL to metadata.json")
     except Exception as e:
         print(f"⚠️  Failed to save URL to metadata.json: {e}")
