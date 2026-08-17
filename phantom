@@ -14,6 +14,10 @@ show_usage() {
     echo "  pipeline status [arguments]"
     echo "  pipeline process [webcam_video] [screen_video] [arguments]"
     echo "  pipeline newvideo <project_name>"
+    echo "  pipeline calendar [list] [--platform <youtube|twitter|all>]"
+    echo "  pipeline calendar next-date [--platform <youtube|twitter>] [--json]"
+    echo "  pipeline calendar add --title <title> [--url <url>] [--desc <desc>] [--date <date>] [--platform <youtube|twitter>]"
+    echo "  pipeline calendar remove <row_index|--title <title>>"
     echo "  audio process [-R|--recursive] <path>"
     echo "  edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
     echo "  edit attach-webcam-mask --screen <screen_video> --webcam <webcam_video> [arguments]"
@@ -68,11 +72,14 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/newvideo.py" "$@"
+        elif [ "$SUBCOMMAND" = "calendar" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/calendar.py" "$@"
         else
             echo "Unknown pipeline subcommand: $SUBCOMMAND"
             echo "Usage: phantom pipeline status [arguments]"
             echo "       phantom pipeline process <webcam_video> [screen_video] [arguments]"
             echo "       phantom pipeline newvideo <project_name>"
+            echo "       phantom pipeline calendar [list|next-date|add|remove] [arguments]"
             exit 1
         fi
         ;;
