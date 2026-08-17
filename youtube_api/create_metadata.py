@@ -215,6 +215,32 @@ def get_description() -> str:
     return "\n".join(description_lines)
 
 
+def get_tweet_template(title: str = "") -> str:
+    """Prompts for tweet template and ensures the rendered tweet does not exceed 280 characters."""
+    default_tweet = "🎬 New video just dropped! {url}"
+    sample_url = "https://youtu.be/OmV52jkTnjE"
+
+    while True:
+        tweet_template = input(f"Tweet Template [{default_tweet}]: ").strip() or default_tweet
+
+        try:
+            rendered = tweet_template.format(url=sample_url, title=title)
+        except KeyError:
+            rendered = tweet_template.replace("{url}", sample_url).replace("{title}", title)
+        except Exception:
+            rendered = tweet_template.replace("{url}", sample_url).replace("{title}", title)
+
+        rendered_len = len(rendered)
+        if rendered_len > 280:
+            print(
+                f"❌ Error: Tweet is too long ({rendered_len}/280 characters including YouTube URL, "
+                f"{rendered_len - 280} over limit). Please enter a shorter template.\n"
+            )
+            continue
+
+        return tweet_template
+
+
 def main():
     parser = argparse.ArgumentParser(description="Create metadata.json for a YouTube video.")
     parser.add_argument("video_path", help="Path to the .mp4 file.")
@@ -247,8 +273,7 @@ def main():
     made_for_kids_input = input("Made for Kids? (y/N) [N]: ").strip().lower()
     made_for_kids = made_for_kids_input in ['y', 'yes']
 
-    default_tweet = "🎬 New video just dropped! {url}"
-    tweet_template = input(f"Tweet Template [{default_tweet}]: ").strip() or default_tweet
+    tweet_template = get_tweet_template(title=title)
 
     metadata = {
         "title": title,
