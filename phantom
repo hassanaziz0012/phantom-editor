@@ -185,6 +185,8 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/recommend_related_videos.py" "$@"
         elif [ "$SUBCOMMAND" = "create-metadata" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/create_metadata.py" "$@"
+        elif [ "$SUBCOMMAND" = "read-metadata" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/read_metadata.py" "$@"
         elif [ "$SUBCOMMAND" = "count-uploads" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/count_youtube_uploads.py" "$@"
         else
@@ -192,6 +194,7 @@ case "$COMMAND" in
             echo "Usage: phantom yt upload <video_path>"
             echo "       phantom yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
             echo "       phantom yt create-metadata <video_path>"
+            echo "       phantom yt read-metadata [<video_or_metadata_path>] [--json]"
             echo "       phantom yt count-uploads [<channel>] [--fresh]"
             exit 1
         fi

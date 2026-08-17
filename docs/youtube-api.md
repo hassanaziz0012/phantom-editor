@@ -23,7 +23,12 @@ Core retrieval module that handles fetching all videos for a channel and caching
 * **Usage**: `python youtube_api/fetch_videos.py [<channel_id_or_handle>] [--fresh]`
 
 ### [models.py](../youtube_api/models.py)
-Defines shared dataclasses (`Video`, `VideoSeed`, `RankedVideo`) for storing video metadata, stats, and recommendation rankings.
+Defines shared dataclasses (`Video`, `VideoSeed`, `RankedVideo`, `VideoMetadata`) for storing video metadata, stats, and recommendation rankings.
+
+### [read_metadata.py](../youtube_api/read_metadata.py)
+Parses, discovers, and reads `metadata.json` files for YouTube projects into typed `VideoMetadata` objects with dictionary fallback compatibility and auto-saving support.
+
+* **Usage**: `python youtube_api/read_metadata.py [<video_or_metadata_path>] [--json]` or via `phantom yt read-metadata [<video_or_metadata_path>] [--json]`
 
 ### [recommend_related_videos.py](../youtube_api/recommend_related_videos.py)
 Calculates and lists recommended related videos from the channel inventory using a weighted similarity algorithm.
