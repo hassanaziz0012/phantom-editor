@@ -20,6 +20,7 @@ wheels/
 
 # Credentials
 auth.json
+reddit/.reddit_user
 tokens
 linkedin_tokens.json
 instagram_session.json
