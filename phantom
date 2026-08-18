@@ -29,6 +29,7 @@ show_usage() {
     echo "  edit trim-silences <video_path> [arguments]"
     echo "  edit trim-silences-whisper <video_path> [arguments] (deprecated)"
     echo "  emails broadcast --title <title> --description <desc> --url <url> [arguments]"
+    echo "  reddit analyze-post <url> [--headless] [--json]"
     echo "  tweet [--image] <tweet_content>"
     echo "  yt upload <video_path>"
     echo "  yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
@@ -173,6 +174,17 @@ case "$COMMAND" in
         else
             echo "Unknown emails subcommand: $SUBCOMMAND"
             echo "Usage: phantom emails broadcast [arguments]"
+            exit 1
+        fi
+        ;;
+    reddit)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "analyze-post" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/analyze_post.py" "$@"
+        else
+            echo "Unknown reddit subcommand: $SUBCOMMAND"
+            echo "Usage: phantom reddit analyze-post <url> [--headless] [--json]"
             exit 1
         fi
         ;;
