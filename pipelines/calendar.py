@@ -8,8 +8,8 @@ content calendar on Google Sheets.
 Usage:
     phantom pipeline calendar [list] [--platform <youtube|twitter|all>]
     phantom pipeline calendar next-date [--platform <youtube|twitter>] [--json]
-    phantom pipeline calendar add --title <title> [--url <url>] [--desc <desc>] [--date <date>] [--platform <youtube|twitter>]
-    phantom pipeline calendar remove <row_index | --title <title>>
+    phantom pipeline calendar add [<project>] [--title <title>] [--url <url>] [--desc <desc>] [--date <date>] [--platform <youtube|twitter>]
+    phantom pipeline calendar remove [<project>] [--project <project>] [--title <title>]
 """
 
 import argparse
@@ -40,27 +40,26 @@ if str(video_editing_dir) not in sys.path:
 if str(pipeline_dir) not in sys.path:
     sys.path.insert(0, str(pipeline_dir))
 
-# Import Google Sheet Utils
+# Import Google Sheet Utils & YouTube Metadata
 try:
     from google_sheet_utils import (
         CalendarRecord,
-        add_record,
         get_sheets_service,
         get_spreadsheet_id,
         list_records,
-        remove_record,
-        update_record,
     )
 except ImportError:
     from pipelines.google_sheet_utils import (
         CalendarRecord,
-        add_record,
         get_sheets_service,
         get_spreadsheet_id,
         list_records,
-        remove_record,
-        update_record,
     )
+
+try:
+    from youtube_api.read_metadata import VideoMetadata, read_metadata
+except ImportError:
+    from read_metadata import VideoMetadata, read_metadata
 
 # Terminal Colors
 COLOR_GREEN = "\033[92m"
@@ -104,6 +103,54 @@ def normalize_platform(platform_str: str) -> str:
     return platform_str.strip().title()
 
 
+def find_project_dir(identifier: Optional[str], projects_dir: Path) -> Optional[Path]:
+    """Locates a project directory from an identifier, folder name, title, or cwd."""
+    # If no identifier provided, check if current directory is a project folder
+    if not identifier or not identifier.strip():
+        cwd = Path.cwd()
+        if (cwd / "metadata.json").exists() or (cwd / "final.mp4").exists() or (cwd / "to-review.mp4").exists():
+            return cwd
+        return None
+
+    raw = identifier.strip()
+    raw_path = Path(raw).expanduser().resolve()
+    if raw_path.is_dir():
+        return raw_path
+
+    if not projects_dir.exists() or not projects_dir.is_dir():
+        return None
+
+    # 1. Exact match in projects_dir
+    direct_match = projects_dir / raw
+    if direct_match.is_dir():
+        return direct_match
+
+    # 2. Case-insensitive exact match
+    raw_lower = raw.lower()
+    for item in projects_dir.iterdir():
+        if item.is_dir() and item.name.lower() == raw_lower:
+            return item
+
+    # 3. Substring match on folder name
+    for item in projects_dir.iterdir():
+        if item.is_dir() and raw_lower in item.name.lower():
+            return item
+
+    # 4. Match metadata.json title
+    for item in projects_dir.iterdir():
+        if item.is_dir():
+            meta_path = item / "metadata.json"
+            if meta_path.exists():
+                try:
+                    meta = read_metadata(meta_path)
+                    if meta.title and (raw_lower == meta.title.lower() or raw_lower in meta.title.lower()):
+                        return item
+                except Exception:
+                    pass
+
+    return None
+
+
 def parse_date_tolerant(date_str: str) -> Optional[datetime]:
     """Tolerantly parses a date string into a datetime object."""
     if not date_str or not str(date_str).strip():
@@ -122,16 +169,21 @@ def parse_date_tolerant(date_str: str) -> Optional[datetime]:
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d %H:%M",
         "%Y-%m-%d",
-        "%d/%m/%Y %I:%M %p",
-        "%d/%m/%Y %H:%M",
-        "%d/%m/%Y",
+        "%m/%d/%Y %I:%M:%S %p",
         "%m/%d/%Y %I:%M %p",
+        "%m/%d/%Y %H:%M:%S",
         "%m/%d/%Y %H:%M",
         "%m/%d/%Y",
+        "%d/%m/%Y %I:%M:%S %p",
+        "%d/%m/%Y %I:%M %p",
+        "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M",
+        "%d/%m/%Y",
         "%b %d, %Y %I:%M %p",
         "%B %d, %Y %I:%M %p",
         "%b %d, %Y",
         "%B %d, %Y",
+        "%Y/%m/%d %H:%M:%S",
         "%Y/%m/%d %H:%M",
         "%Y/%m/%d",
     ]
@@ -218,12 +270,36 @@ def format_human_date(dt: datetime) -> str:
     return f"{date_part} ({relative})"
 
 
-def calculate_next_available_youtube_date(records: List[CalendarRecord]) -> datetime:
+def get_local_booked_dates(projects_dir: Optional[Path] = None) -> Set[date]:
+    """Scan local project folders and collect all scheduled dates from metadata.json."""
+    booked: Set[date] = set()
+    if projects_dir is None:
+        projects_dir = Path(os.path.expanduser("~/Videos/YT Projects")).resolve()
+    if not projects_dir.exists() or not projects_dir.is_dir():
+        return booked
+    for item in projects_dir.iterdir():
+        if item.is_dir() and not item.name.startswith("."):
+            meta_file = item / "metadata.json"
+            if meta_file.exists():
+                try:
+                    meta = read_metadata(meta_file)
+                    if meta.publish_date:
+                        dt = parse_date_tolerant(meta.publish_date)
+                        if dt:
+                            booked.add(dt.date())
+                except Exception:
+                    pass
+    return booked
+
+
+def calculate_next_available_youtube_date(
+    records: Optional[List[CalendarRecord]] = None,
+    projects_dir: Optional[Path] = None
+) -> datetime:
     """
     Computes the next available publish date for YouTube:
     Rule: 1 YouTube video every day at 10:30 PM (22:30).
-    Finds the earliest date (starting today or tomorrow if past 10:30 PM)
-    that is not already booked in the Google Sheet.
+    Uses local project folders as the primary source of truth for booked dates.
     """
     now = datetime.now()
     target_time = time(22, 30)
@@ -234,13 +310,16 @@ def calculate_next_available_youtube_date(records: List[CalendarRecord]) -> date
     else:
         candidate_date = now.date()
 
-    # Collect all scheduled dates for YouTube
-    booked_dates: Set[date] = set()
-    for rec in records:
-        if normalize_platform(rec.platform) == "YouTube" and rec.publish_date:
-            dt = parse_date_tolerant(rec.publish_date)
-            if dt:
-                booked_dates.add(dt.date())
+    # Collect scheduled dates from local projects
+    booked_dates: Set[date] = get_local_booked_dates(projects_dir)
+
+    # Also include any YouTube dates from calendar records if provided
+    if records:
+        for rec in records:
+            if normalize_platform(rec.platform) == "YouTube" and rec.publish_date:
+                dt = parse_date_tolerant(rec.publish_date)
+                if dt:
+                    booked_dates.add(dt.date())
 
     # Find earliest unoccupied day
     while candidate_date in booked_dates:
@@ -302,37 +381,62 @@ def handle_list(args):
 
     # Table headers
     col_idx = "#"
+    col_proj = "Project"
     col_plat = "Platform"
     col_date = "Publish Date"
+    col_stat = "Status"
     col_title = "Title"
     col_url = "URL"
-    col_desc = "Description"
 
-    max_title_len = min(35, max([len(r.title) for r in records] + [len(col_title)]))
+    max_proj_len = min(25, max([len(r.project) for r in records if r.project] + [len(col_proj)]))
+    max_title_len = min(35, max([len(r.title) for r in records if r.title] + [len(col_title)]))
     max_url_len = min(30, max([len(r.url) for r in records if r.url] + [len(col_url)]))
-    max_desc_len = 25
+    max_stat_len = min(18, max([len(r.status) for r in records if r.status] + [len(col_stat)]))
 
     print(
-        f"{COLOR_BOLD}{col_idx:<4} {col_plat:<12} {col_date:<22} {col_title:<{max_title_len}} {col_url:<{max_url_len}} {col_desc}{COLOR_RESET}"
+        f"{COLOR_BOLD}{col_idx:<4} {col_proj:<{max_proj_len}} {col_plat:<12} {col_date:<22} {col_stat:<{max_stat_len}} {col_title:<{max_title_len}} {col_url}{COLOR_RESET}"
     )
-    print(f"{COLOR_GRAY}{'-' * 4} {'-' * 12} {'-' * 22} {'-' * max_title_len} {'-' * max_url_len} {'-' * max_desc_len}{COLOR_RESET}")
+    print(
+        f"{COLOR_GRAY}{'-' * 4} {'-' * max_proj_len} {'-' * 12} {'-' * 22} {'-' * max_stat_len} {'-' * max_title_len} {'-' * max_url_len}{COLOR_RESET}"
+    )
 
     for rec in records:
         badge = format_platform_badge(rec.platform)
-        # Format date if possible
+        
+        # Clean date string & color (pad before coloring)
+        raw_date_str = rec.publish_date or "Unscheduled"
         dt = parse_date_tolerant(rec.publish_date)
-        date_str = rec.publish_date or f"{COLOR_GRAY}Unscheduled{COLOR_RESET}"
+        date_pad = f"{raw_date_str:<22}"
         if dt:
             now = datetime.now()
             if dt < now:
-                date_display = f"{COLOR_GRAY}{rec.publish_date}{COLOR_RESET}"
+                date_display = f"{COLOR_GRAY}{date_pad}{COLOR_RESET}"
             else:
-                date_display = f"{COLOR_GREEN}{rec.publish_date}{COLOR_RESET}"
+                date_display = f"{COLOR_GREEN}{date_pad}{COLOR_RESET}"
         else:
-            date_display = date_str
+            date_display = f"{COLOR_GRAY}{date_pad}{COLOR_RESET}"
 
-        # Truncate title, url, description for clean tabular output
+        # Project name
+        disp_proj = rec.project if len(rec.project) <= max_proj_len else rec.project[:max_proj_len - 3] + "..."
+        if not disp_proj:
+            disp_proj = "-"
+        proj_display = f"{COLOR_BOLD}{disp_proj:<{max_proj_len}}{COLOR_RESET}"
+
+        # Status badge color
+        stat_color = COLOR_WHITE
+        if rec.status.lower() in ("uploaded", "published", "complete"):
+            stat_color = COLOR_GREEN
+        elif rec.status.lower() in ("scheduled", "ready to schedule"):
+            stat_color = COLOR_YELLOW
+        elif rec.status.lower() in ("recorded", "processed", "reviewed"):
+            stat_color = COLOR_CYAN
+        stat_plain = rec.status or "-"
+        disp_stat = f"{stat_color}{stat_plain:<{max_stat_len}}{COLOR_RESET}"
+
+        # Truncate title and url
         disp_title = rec.title if len(rec.title) <= max_title_len else rec.title[:max_title_len - 3] + "..."
+        if not disp_title:
+            disp_title = "-"
         
         raw_url = rec.url.strip() if rec.url else ""
         if raw_url:
@@ -341,17 +445,13 @@ def handle_list(args):
         else:
             url_display = f"{COLOR_GRAY}{'-':<{max_url_len}}{COLOR_RESET}"
 
-        disp_desc = rec.description.replace("\n", " ") if rec.description else ""
-        if len(disp_desc) > max_desc_len:
-            disp_desc = disp_desc[:max_desc_len - 3] + "..."
-
-        row_num_str = f"{COLOR_DIM}{rec.row_index}{COLOR_RESET}"
+        row_num_display = f"{COLOR_DIM}{rec.row_index:<4}{COLOR_RESET}"
         # Adjust spacing for badge with ANSI codes
         plat_plain = f"[{normalize_platform(rec.platform)}]"
         plat_pad = " " * max(0, 12 - len(plat_plain))
 
         print(
-            f"{row_num_str:<12} {badge}{plat_pad} {date_display:<31} {COLOR_WHITE}{disp_title:<{max_title_len}}{COLOR_RESET} {url_display} {COLOR_DIM}{disp_desc}{COLOR_RESET}"
+            f"{row_num_display} {proj_display} {badge}{plat_pad} {date_display} {disp_stat} {COLOR_WHITE}{disp_title:<{max_title_len}}{COLOR_RESET} {url_display}"
         )
 
     # Summary counts
@@ -363,19 +463,19 @@ def handle_list(args):
 def handle_next_date(args):
     """Compute and display the next available publish date."""
     platform = normalize_platform(args.platform or "youtube")
+    projects_dir = Path(getattr(args, "dir", "~/Videos/YT Projects")).expanduser().resolve()
 
     try:
         records = list_records(spreadsheet_id=args.sheet_id)
-    except Exception as e:
-        print(f"{COLOR_RED}✗ Error connecting to Google Sheet: {e}{COLOR_RESET}")
-        sys.exit(1)
+    except Exception:
+        records = []
 
     if platform == "YouTube":
-        next_dt = calculate_next_available_youtube_date(records)
+        next_dt = calculate_next_available_youtube_date(records, projects_dir=projects_dir)
     elif platform == "Twitter":
         next_dt = calculate_next_available_twitter_date(records)
     else:
-        next_dt = calculate_next_available_youtube_date(records)
+        next_dt = calculate_next_available_youtube_date(records, projects_dir=projects_dir)
 
     formatted_sheet = format_publish_datetime(next_dt)
     formatted_human = format_human_date(next_dt)
@@ -398,9 +498,19 @@ def handle_next_date(args):
 
 
 def handle_add(args):
-    """Add a new record to the content calendar."""
-    if not args.title:
-        print(f"{COLOR_RED}✗ Error: --title is required to add a calendar record.{COLOR_RESET}")
+    """
+    Schedule a video project by setting its `publishDate` in metadata.json.
+    Does not write directly to Google Sheets; current_pipeline.py handles the sync.
+    """
+    project_input = (getattr(args, "project", None) or getattr(args, "target", None) or getattr(args, "title", None) or "").strip()
+    projects_dir = Path(getattr(args, "dir", "~/Videos/YT Projects")).expanduser().resolve()
+
+    target_dir = find_project_dir(project_input, projects_dir)
+    if not target_dir:
+        available_dirs = [d.name for d in sorted(projects_dir.iterdir()) if d.is_dir() and not d.name.startswith(".")] if projects_dir.exists() else []
+        avail_str = "\n".join(f"  - {name}" for name in available_dirs[:10]) if available_dirs else "  (None found)"
+        print(f"{COLOR_RED}✗ Error: Could not locate project directory for '{project_input or '.'}' in {projects_dir}.{COLOR_RESET}")
+        print(f"\nAvailable projects in {projects_dir}:\n{avail_str}\n")
         sys.exit(1)
 
     platform = normalize_platform(args.platform or "youtube")
@@ -408,8 +518,8 @@ def handle_add(args):
     try:
         records = list_records(spreadsheet_id=args.sheet_id)
     except Exception as e:
-        print(f"{COLOR_RED}✗ Error connecting to Google Sheet: {e}{COLOR_RESET}")
-        sys.exit(1)
+        records = []
+        print(f"{COLOR_YELLOW}⚠️ Note: Could not fetch Google Sheet records ({e}). Using local fallback date.{COLOR_RESET}")
 
     # Determine publish date
     if args.date:
@@ -418,64 +528,111 @@ def handle_add(args):
     else:
         # Auto-compute next available slot
         if platform == "YouTube":
-            dt = calculate_next_available_youtube_date(records)
+            dt = calculate_next_available_youtube_date(records, projects_dir=projects_dir)
         else:
             dt = calculate_next_available_twitter_date(records)
         publish_date_str = format_publish_datetime(dt)
         print(f"{COLOR_BLUE}ℹ Auto-assigned next available date slot: {COLOR_BOLD}{publish_date_str}{COLOR_RESET}")
 
-    url = (getattr(args, "url", None) or "").strip()
-    description = (getattr(args, "description", None) or getattr(args, "desc", None) or "").strip()
+    formatted_human = format_human_date(parse_date_tolerant(publish_date_str) or datetime.now())
 
+    metadata_path = target_dir / "metadata.json"
     try:
-        rec = add_record(
-            title=args.title.strip(),
-            description=description,
-            url=url,
-            publish_date=publish_date_str,
-            platform=platform,
-            spreadsheet_id=args.sheet_id,
-        )
-        print(f"\n{COLOR_GREEN}{COLOR_BOLD}✓ Successfully added to Content Calendar!{COLOR_RESET}")
-        print(f"  {COLOR_BOLD}Row #{COLOR_RESET}         {rec.row_index if rec.row_index > 0 else 'Appended'}")
+        if metadata_path.exists():
+            meta = read_metadata(metadata_path)
+            meta.publish_date = publish_date_str
+            if getattr(args, "title", None) and args.title.strip():
+                meta.title = args.title.strip()
+            if getattr(args, "url", None) and args.url.strip():
+                meta.url = args.url.strip()
+            meta.save()
+        else:
+            meta = VideoMetadata(
+                title=getattr(args, "title", None) or target_dir.name,
+                publish_date=publish_date_str,
+                url=getattr(args, "url", None) or None,
+            )
+            meta.save(metadata_path)
+
+        print(f"\n{COLOR_GREEN}{COLOR_BOLD}✓ Successfully scheduled project release date!{COLOR_RESET}")
+        print(f"  {COLOR_BOLD}Project:{COLOR_RESET}       {target_dir.name}")
         print(f"  {COLOR_BOLD}Platform:{COLOR_RESET}      {format_platform_badge(platform)}")
-        print(f"  {COLOR_BOLD}Title:{COLOR_RESET}         {rec.title}")
-        if rec.url:
-            print(f"  {COLOR_BOLD}URL:{COLOR_RESET}           {COLOR_CYAN}{rec.url}{COLOR_RESET}")
-        print(f"  {COLOR_BOLD}Publish Date:{COLOR_RESET}  {COLOR_GREEN}{rec.publish_date}{COLOR_RESET}")
-        if rec.description:
-            print(f"  {COLOR_BOLD}Description:{COLOR_RESET}   {rec.description}")
-        print()
+        print(f"  {COLOR_BOLD}Publish Date:{COLOR_RESET}  {COLOR_GREEN}{publish_date_str}{COLOR_RESET} ({formatted_human})")
+        if meta.title:
+            print(f"  {COLOR_BOLD}Title:{COLOR_RESET}         {meta.title}")
+        if meta.url:
+            print(f"  {COLOR_BOLD}URL:{COLOR_RESET}           {COLOR_CYAN}{meta.url}{COLOR_RESET}")
+        print(f"  {COLOR_BOLD}Metadata File:{COLOR_RESET} {metadata_path}")
+        print(f"\n{COLOR_GRAY}Run '{COLOR_BOLD}phantom pipeline status{COLOR_RESET}{COLOR_GRAY}' to view the pipeline and sync this schedule to Google Sheets.{COLOR_RESET}\n")
     except Exception as e:
-        print(f"{COLOR_RED}✗ Failed to add record: {e}{COLOR_RESET}")
+        print(f"{COLOR_RED}✗ Failed to save metadata: {e}{COLOR_RESET}")
         sys.exit(1)
 
 
 def handle_remove(args):
-    """Remove a record by row number or title match."""
-    row_idx = args.row
-    title_match = args.title
+    """
+    Unschedule a video project by removing its `publishDate` from metadata.json.
+    Does not write directly to Google Sheets; current_pipeline.py handles the sync.
+    """
+    project_input = (getattr(args, "project", None) or getattr(args, "target", None) or getattr(args, "identifier", None) or getattr(args, "title", None) or "").strip()
+    row_idx = getattr(args, "row", None)
+    projects_dir = Path(getattr(args, "dir", "~/Videos/YT Projects")).expanduser().resolve()
 
-    if not row_idx and not title_match:
-        if args.identifier:
-            if args.identifier.isdigit():
-                row_idx = int(args.identifier)
+    # If row index was provided or identifier is purely numeric, look up corresponding project in Google Sheet
+    if not project_input and row_idx:
+        try:
+            records = list_records(spreadsheet_id=args.sheet_id)
+            match = next((r for r in records if r.row_index == row_idx), None)
+            if match:
+                project_input = match.project or match.title
             else:
-                title_match = args.identifier
-        else:
-            print(f"{COLOR_RED}✗ Error: Must specify a row number or --title to remove.{COLOR_RESET}")
+                print(f"{COLOR_RED}✗ Error: No calendar record found at row #{row_idx} in Google Sheet.{COLOR_RESET}")
+                sys.exit(1)
+        except Exception as e:
+            print(f"{COLOR_RED}✗ Failed to query Google Sheet for row #{row_idx}: {e}{COLOR_RESET}")
             sys.exit(1)
+    elif project_input and project_input.isdigit():
+        try:
+            records = list_records(spreadsheet_id=args.sheet_id)
+            match = next((r for r in records if r.row_index == int(project_input)), None)
+            if match and (match.project or match.title):
+                project_input = match.project or match.title
+        except Exception:
+            pass
+
+    target_dir = find_project_dir(project_input, projects_dir)
+    if not target_dir:
+        available_dirs = [d.name for d in sorted(projects_dir.iterdir()) if d.is_dir() and not d.name.startswith(".")] if projects_dir.exists() else []
+        avail_str = "\n".join(f"  - {name}" for name in available_dirs[:10]) if available_dirs else "  (None found)"
+        print(f"{COLOR_RED}✗ Error: Could not locate project directory for '{project_input or '.'}' in {projects_dir}.{COLOR_RESET}")
+        print(f"\nAvailable projects in {projects_dir}:\n{avail_str}\n")
+        sys.exit(1)
+
+    metadata_path = target_dir / "metadata.json"
+    if not metadata_path.exists():
+        print(f"{COLOR_RED}✗ Error: No metadata.json found in project directory '{target_dir.name}' ({metadata_path}).{COLOR_RESET}")
+        sys.exit(1)
 
     try:
-        remove_record(
-            row_index=row_idx,
-            title=title_match,
-            spreadsheet_id=args.sheet_id,
-        )
-        target_str = f"row #{row_idx}" if row_idx else f"title '{title_match}'"
-        print(f"\n{COLOR_GREEN}{COLOR_BOLD}✓ Successfully removed {target_str} from Content Calendar.{COLOR_RESET}\n")
+        meta = read_metadata(metadata_path)
+        prev_date = meta.publish_date
+        if not prev_date:
+            print(f"\n{COLOR_YELLOW}ℹ Project '{target_dir.name}' does not have a scheduled publishDate in metadata.json.{COLOR_RESET}\n")
+            return
+
+        meta.publish_date = None
+        if hasattr(meta, "raw_data") and isinstance(meta.raw_data, dict):
+            meta.raw_data.pop("publishDate", None)
+            meta.raw_data.pop("publish_date", None)
+        meta.save()
+
+        print(f"\n{COLOR_GREEN}{COLOR_BOLD}✓ Successfully removed publishDate from project metadata!{COLOR_RESET}")
+        print(f"  {COLOR_BOLD}Project:{COLOR_RESET}        {target_dir.name}")
+        print(f"  {COLOR_BOLD}Removed Date:{COLOR_RESET}   {COLOR_GRAY}{prev_date}{COLOR_RESET}")
+        print(f"  {COLOR_BOLD}Metadata File:{COLOR_RESET}  {metadata_path}")
+        print(f"\n{COLOR_GRAY}Run '{COLOR_BOLD}phantom pipeline status{COLOR_RESET}{COLOR_GRAY}' to view the pipeline and sync this update with Google Sheets.{COLOR_RESET}\n")
     except Exception as e:
-        print(f"{COLOR_RED}✗ Failed to remove record: {e}{COLOR_RESET}")
+        print(f"{COLOR_RED}✗ Failed to update metadata: {e}{COLOR_RESET}")
         sys.exit(1)
 
 
@@ -522,13 +679,35 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Output result as JSON",
     )
+    next_parser.add_argument(
+        "--dir", "-d",
+        default=os.path.expanduser("~/Videos/YT Projects"),
+        help="Base directory for YouTube projects",
+    )
 
     # add subcommand
-    add_parser = subparsers.add_parser("add", help="Add a new entry to the content calendar")
+    add_parser = subparsers.add_parser("add", help="Schedule a video project by setting its publishDate in metadata.json")
+    add_parser.add_argument(
+        "target",
+        nargs="?",
+        default="",
+        help="Project folder name or directory path",
+    )
+    add_parser.add_argument(
+        "--project", "-P",
+        dest="project",
+        default="",
+        help="Project folder name in YT Projects",
+    )
     add_parser.add_argument(
         "--title", "-t",
-        required=True,
-        help="Content title",
+        default="",
+        help="Content title (optional override)",
+    )
+    add_parser.add_argument(
+        "--dir", "-d",
+        default=os.path.expanduser("~/Videos/YT Projects"),
+        help="Base directory for YouTube projects",
     )
     add_parser.add_argument(
         "--url", "-u",
@@ -542,7 +721,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target platform (default: youtube)",
     )
     add_parser.add_argument(
-        "--date", "-d",
+        "--date",
         default=None,
         help="Publish date (e.g. '2026-08-20', 'tomorrow', '2026-08-20 10:30 PM'). If omitted, next available slot is auto-assigned.",
     )
@@ -554,23 +733,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # remove subcommand
-    remove_parser = subparsers.add_parser("remove", aliases=["delete", "rm"], help="Remove an entry from the calendar")
+    remove_parser = subparsers.add_parser(
+        "remove",
+        aliases=["delete", "rm", "unschedule"],
+        help="Unschedule a video project by removing publishDate from metadata.json"
+    )
     remove_parser.add_argument(
-        "identifier",
+        "target",
         nargs="?",
-        default=None,
-        help="Row number (e.g. 3) or title substring to remove",
+        default="",
+        help="Project folder name, directory path, or title substring to remove schedule for",
+    )
+    remove_parser.add_argument(
+        "--project", "-P",
+        dest="project",
+        default="",
+        help="Project folder name in YT Projects",
+    )
+    remove_parser.add_argument(
+        "--title", "-t",
+        default="",
+        help="Title of the video/content to remove schedule for",
+    )
+    remove_parser.add_argument(
+        "--dir", "-d",
+        default=os.path.expanduser("~/Videos/YT Projects"),
+        help="Base directory for YouTube projects",
     )
     remove_parser.add_argument(
         "--row", "-r",
         type=int,
         default=None,
-        help="Exact row number in the Google Sheet to remove",
-    )
-    remove_parser.add_argument(
-        "--title", "-t",
-        default=None,
-        help="Title of the video/content to remove",
+        help="Row number in the Google Sheet to unschedule",
     )
 
     return parser
@@ -589,7 +783,7 @@ def main():
         handle_next_date(args)
     elif args.subcommand == "add":
         handle_add(args)
-    elif args.subcommand in ("remove", "delete", "rm"):
+    elif args.subcommand in ("remove", "delete", "rm", "unschedule"):
         handle_remove(args)
     else:
         parser.print_help()
