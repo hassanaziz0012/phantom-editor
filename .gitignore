@@ -42,3 +42,4 @@ video-editing/models/
 temp_*
 site/
 shorts/shorts.json.bak
+reddit/example_analysis_output.txt
