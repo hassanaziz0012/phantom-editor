@@ -53,12 +53,12 @@ except ImportError:
     from pipeline_status import is_valid_yt_url
 
 try:
-    from pipelines.google_sheet_utils import list_records
+    from pipelines.google_sheet_utils import sync_projects_to_sheet
 except ImportError:
     try:
-        from google_sheet_utils import list_records
+        from google_sheet_utils import sync_projects_to_sheet
     except ImportError:
-        list_records = None
+        sync_projects_to_sheet = None
 
 try:
     from utils import (
@@ -149,60 +149,7 @@ def is_thumbnail_file(file_path: Path) -> bool:
     return name_lower.startswith("thumbnail") or name_lower.startswith("thumb")
 
 
-def get_calendar_records() -> list:
-    """Fetch calendar records safely from Google Sheets."""
-    if list_records is None:
-        return []
-    try:
-        return list_records()
-    except Exception:
-        return []
-
-
-def find_calendar_record_match(
-    project_title: Optional[str],
-    yt_url: Optional[str],
-    project_name: str,
-    records: list
-) -> Optional[Any]:
-    """Find a matching calendar record for a video project by URL, title, or project name."""
-    if not records:
-        return None
-
-    def extract_id(url_val: Optional[str]) -> Optional[str]:
-        if not url_val:
-            return None
-        m = re.search(r"(?:v=|youtu\.be/|shorts/)([a-zA-Z0-9_-]{11})", url_val)
-        return m.group(1) if m else None
-
-    yt_id = extract_id(yt_url)
-
-    # 1. Match by YouTube Video ID
-    if yt_id:
-        for r in records:
-            r_url = getattr(r, "url", "") or ""
-            if yt_id in r_url:
-                return r
-
-    # 2. Match by exact metadata title
-    if project_title:
-        clean_title = project_title.strip().lower()
-        for r in records:
-            r_title = getattr(r, "title", "") or ""
-            if r_title.strip().lower() == clean_title:
-                return r
-
-    # 3. Match by project folder name
-    clean_name = project_name.strip().lower()
-    for r in records:
-        r_title = getattr(r, "title", "") or ""
-        if r_title.strip().lower() == clean_name:
-            return r
-
-    return None
-
-
-def analyze_project(project_dir: Path, calendar_records: Optional[list] = None) -> VideoProject:
+def analyze_project(project_dir: Path) -> VideoProject:
     """Scan a project directory and evaluate its pipeline stage."""
     project = VideoProject(name=project_dir.name, path=project_dir)
 
@@ -229,6 +176,8 @@ def analyze_project(project_dir: Path, calendar_records: Optional[list] = None) 
                     project.title = meta.title
                 if meta.url and is_valid_yt_url(meta.url):
                     project.yt_url = meta.url
+                if meta.publish_date:
+                    project.scheduled_date = meta.publish_date
             except Exception:
                 pass
         elif is_script_file(item):
@@ -238,30 +187,22 @@ def analyze_project(project_dir: Path, calendar_records: Optional[list] = None) 
         elif is_raw_video_file(item):
             project.raw_files.append(item)
 
-    # Check for calendar scheduling match
-    matched_record = None
-    if calendar_records is not None:
-        matched_record = find_calendar_record_match(project.title, project.yt_url, project.name, calendar_records)
-    elif project.yt_url or project.title:
-        matched_record = find_calendar_record_match(project.title, project.yt_url, project.name, get_calendar_records())
-
-    if matched_record:
-        project.scheduled_date = getattr(matched_record, "publish_date", None) or "Scheduled"
+    has_scheduled_date = bool(project.scheduled_date and project.scheduled_date.strip())
 
     # Determine stage
     # Stage 10: Uploaded (metadata.json contains a valid YouTube URL)
     if project.yt_url:
         project.stage_num = 10
         project.stage_name = "Uploaded"
-        date_info = f" (Scheduled: {project.scheduled_date})" if project.scheduled_date and project.scheduled_date != "Scheduled" else ""
+        date_info = f" (Scheduled: {project.scheduled_date})" if project.scheduled_date else ""
         project.next_step = f"Video uploaded to YouTube{date_info}! All pipeline stages complete! 🚀"
         project.status_color = COLOR_GREEN
 
-    # Stage 9: Scheduled (in content calendar, awaiting YouTube upload)
-    elif matched_record:
+    # Stage 9: Scheduled (has scheduled publish date in local metadata.json, awaiting YouTube upload)
+    elif has_scheduled_date:
         project.stage_num = 9
         project.stage_name = "Scheduled"
-        date_info = f" ({project.scheduled_date})" if project.scheduled_date and project.scheduled_date != "Scheduled" else ""
+        date_info = f" ({project.scheduled_date})" if project.scheduled_date else ""
         project.next_step = f"Upload video to YouTube{date_info}! 🚀 (`phantom yt upload` or add URL to metadata.json)"
         project.status_color = COLOR_YELLOW
 
@@ -329,12 +270,10 @@ def get_all_projects(projects_dir: Path) -> List[VideoProject]:
     if not projects_dir.exists() or not projects_dir.is_dir():
         return []
 
-    calendar_records = get_calendar_records()
-
     projects = []
     for item in sorted(projects_dir.iterdir()):
         if item.is_dir() and not item.name.startswith("."):
-            projects.append(analyze_project(item, calendar_records=calendar_records))
+            projects.append(analyze_project(item))
     
     return projects
 
@@ -525,6 +464,11 @@ def main():
         action="store_true",
         help="Show detailed file list for each project."
     )
+    parser.add_argument(
+        "--no-sync",
+        action="store_true",
+        help="Skip syncing pipeline status with Google Sheets content calendar.",
+    )
     args = parser.parse_args()
 
     projects_dir = Path(args.dir).expanduser().resolve()
@@ -539,6 +483,23 @@ def main():
         print(json.dumps(data, indent=2))
     else:
         print_terminal_summary(projects, projects_dir, verbose=args.verbose)
+
+    # Automatically synchronize project statuses with Google Sheets
+    if not args.no_sync and sync_projects_to_sheet is not None:
+        try:
+            print(f"{COLOR_CYAN}🔄 Syncing video projects with Google Sheets Content Calendar...{COLOR_RESET}", end="", flush=True)
+            stats = sync_projects_to_sheet(projects)
+            details = []
+            if stats.get("added"):
+                details.append(f"{stats['added']} added")
+            if stats.get("updated"):
+                details.append(f"{stats['updated']} updated")
+            if stats.get("removed"):
+                details.append(f"{stats['removed']} removed")
+            detail_str = f" ({', '.join(details)})" if details else " (all up to date)"
+            print(f"\r{COLOR_GREEN}✓ Synced {stats['total']} project(s) with Google Sheets{detail_str}.{COLOR_RESET}\n")
+        except Exception as e:
+            print(f"\r{COLOR_YELLOW}⚠️ Note: Could not sync with Google Sheets: {e}{COLOR_RESET}\n")
 
 
 if __name__ == "__main__":
