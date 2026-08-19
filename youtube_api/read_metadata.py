@@ -138,10 +138,19 @@ class VideoMetadata:
     made_for_kids: bool = False
     tweet_template: str = "🎬 New video just dropped! {url}"
     url: Optional[str] = None
+    publish_date: Optional[str] = None
     file_path: Optional[Path] = None
     raw_data: dict[str, Any] = field(default_factory=dict)
 
     # ── CamelCase Property Aliases for Compatibility ───────────────────────────
+
+    @property
+    def publishDate(self) -> Optional[str]:
+        return self.publish_date
+
+    @publishDate.setter
+    def publishDate(self, value: Optional[str]) -> None:
+        self.publish_date = str(value) if value is not None else None
 
     @property
     def categoryId(self) -> str:
@@ -199,6 +208,8 @@ class VideoMetadata:
             "tweetTemplate": self.tweet_template,
             "tweet_template": self.tweet_template,
             "url": self.url,
+            "publishDate": self.publish_date,
+            "publish_date": self.publish_date,
         }
         if key in mapping:
             return mapping[key]
@@ -223,6 +234,8 @@ class VideoMetadata:
             self.tweet_template = str(value)
         elif key == "url":
             self.url = str(value) if value is not None else None
+        elif key in ("publishDate", "publish_date"):
+            self.publish_date = str(value) if value is not None else None
         else:
             self.raw_data[key] = value
 
@@ -237,7 +250,7 @@ class VideoMetadata:
         standard_keys = {
             "title", "description", "tags", "categoryId", "category_id",
             "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-            "tweetTemplate", "tweet_template", "url"
+            "tweetTemplate", "tweet_template", "url", "publishDate", "publish_date"
         }
         return key in standard_keys or key in self.raw_data
 
@@ -265,6 +278,8 @@ class VideoMetadata:
         }
         if self.url:
             out["url"] = self.url
+        if self.publish_date:
+            out["publishDate"] = self.publish_date
 
         # Include any extra keys originally present
         for k, v in self.raw_data.items():
@@ -347,10 +362,14 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
     if url is not None:
         url = str(url).strip() or None
 
+    publish_date = data.get("publishDate") or data.get("publish_date")
+    if publish_date is not None:
+        publish_date = str(publish_date).strip() or None
+
     standard_keys = {
         "title", "description", "tags", "categoryId", "category_id",
         "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-        "tweetTemplate", "tweet_template", "url"
+        "tweetTemplate", "tweet_template", "url", "publishDate", "publish_date"
     }
     raw_data = {k: v for k, v in data.items() if k not in standard_keys}
 
@@ -363,6 +382,7 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
         made_for_kids=made_for_kids,
         tweet_template=tweet_template,
         url=url,
+        publish_date=publish_date,
         file_path=file_path,
         raw_data=raw_data,
     )
