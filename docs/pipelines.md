@@ -263,16 +263,23 @@ phantom pipeline calendar add \
     --url "https://x.com/..."
 ```
 
-#### 4. `remove`: Remove an Entry
+#### 4. `remove`: Unschedule a Project
 
-Removes a row by its row number or exact/fuzzy title match.
+Removes the `publishDate` from the target project's `metadata.json` (which automatically updates the status and unschedules it in Google Sheets upon next sync).
 
 ```bash
-# Remove by row index
-phantom pipeline calendar remove 4
+# Unschedule current project (when running inside project directory)
+phantom pipeline calendar remove
 
-# Remove by title
+# Unschedule by project name or folder path
+phantom pipeline calendar remove "Mastersealer case study"
+phantom pipeline calendar remove --project "Mastersealer case study"
+
+# Unschedule by title substring
 phantom pipeline calendar remove --title "How to Build AI Agents"
+
+# Unschedule by sheet row index
+phantom pipeline calendar remove 4
 ```
 
 ---
