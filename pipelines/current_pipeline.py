@@ -74,6 +74,7 @@ except ImportError:
 
 COLOR_CYAN = "\033[96m"
 COLOR_MAGENTA = "\033[95m"
+COLOR_PURPLE = "\033[35m"
 COLOR_GRAY = "\033[90m"
 COLOR_WHITE = "\033[97m"
 
@@ -232,7 +233,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.stage_num = 5
         project.stage_name = "Reviewed"
         project.next_step = "Create metadata.json AND design thumbnail (e.g. thumbnail.png)"
-        project.status_color = COLOR_BLUE
+        project.status_color = COLOR_PURPLE
 
     # Stage 4: Processed (to-review.mp4 exists, final.mp4 does not)
     elif project.to_review_file:
@@ -415,7 +416,7 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         f"{COLOR_BLUE}Scripted: {stage_counts[2]}{COLOR_RESET} | "
         f"{COLOR_MAGENTA}Recorded: {stage_counts[3]}{COLOR_RESET} | "
         f"{COLOR_YELLOW}Processed: {stage_counts[4]}{COLOR_RESET} | "
-        f"{COLOR_BLUE}Reviewed: {stage_counts[5]}{COLOR_RESET} | "
+        f"{COLOR_PURPLE}Reviewed: {stage_counts[5]}{COLOR_RESET} | "
         f"{COLOR_CYAN}Metadata: {stage_counts[6]}{COLOR_RESET} | "
         f"{COLOR_CYAN}Thumbnail: {stage_counts[7]}{COLOR_RESET} | "
         f"{COLOR_CYAN}Ready: {stage_counts[8]}{COLOR_RESET} | "
