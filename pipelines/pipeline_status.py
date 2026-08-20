@@ -166,30 +166,38 @@ def format_status(needed: bool, will_run: bool, is_complete: bool, force: bool, 
 
 def print_pipeline_overview(
     webcam_path: Path,
-    screen_path: Path,
+    screen_path: Path | None,
     video_dir: Path,
     args: argparse.Namespace,
     webcam_is_4k: bool,
     statuses: dict[int, bool],
     run_plan: dict[int, bool],
     ext: str,
+    raw_mode: bool = False,
 ) -> None:
     """Display the pipeline execution overview header and step statuses."""
     print_info("============================================================")
     print_info("            FULL VIDEO PROCESSING PIPELINE")
     print_info("============================================================")
-    print(f" Web camera video: {webcam_path}")
-    print(f" Screen video:     {screen_path}")
+    if raw_mode:
+        print(f" Raw video:        {webcam_path}")
+        print(f" Pipeline mode:    Raw Pre-Composed Video (Skip Webcam Overlay)")
+    else:
+        print(f" Web camera video: {webcam_path}")
+        print(f" Screen video:     {screen_path}")
+        overlay_width = args.width if getattr(args, "width", None) is not None else (400 if getattr(args, "preset", "portrait") == "portrait" else 550)
+        print(f" Overlay width:    {overlay_width}px")
+        print(f" Overlay mode:     {'Continuous (--all)' if getattr(args, 'all', False) else 'Dynamic voice commands'}")
+
     print(f" Output directory: {video_dir}")
-    overlay_width = args.width if getattr(args, "width", None) is not None else (400 if getattr(args, "preset", "portrait") == "portrait" else 550)
-    print(f" Overlay width:    {overlay_width}px")
-    print(f" Overlay mode:     {'Continuous (--all)' if args.all else 'Dynamic voice commands'}")
     if args.bgm:
         print(f" BGM track:        {args.bgm} (Volume: {args.volume}%)")
     else:
         print_warning(" BGM track:        None specified (Step 4 will be skipped)")
     if webcam_is_4k:
-        print_warning(" 4K Webcam:        Detected 4K resolution (single-pass downscaled to 1080p during processing)")
+        print_warning(" Resolution check: Detected >1080p resolution (downscaled to 1080p during processing)")
+    else:
+        print_info(" Resolution check: 1080p HD (no downscaling needed)")
     if args.force:
         print_warning(" Force re-run:     --force option enabled (re-executing all steps)")
 
@@ -202,8 +210,14 @@ def print_pipeline_overview(
     s4_str = format_status(bool(args.bgm), run_plan[4], statuses[4], args.force, "No BGM specified")
     s5_str = format_status(True, run_plan[5], statuses[5], args.force)
 
+    step2_name = (
+        "Trim Silences via Silero VAD (trim_silences.py)"
+        if raw_mode else
+        "Single-pass Masking & Silence Trimming (FFmpeg combined)"
+    )
+
     print(f" 1. Transcribe video via Groq cloud (transcribe_cloud.py)    {s1_str}")
-    print(f" 2. Single-pass Masking & Silence Trimming (FFmpeg combined) {s2_str}")
+    print(f" 2. {step2_name:<56} {s2_str}")
     print(f" 3. Process audio via process_audio.sh                       {s3_str}")
     print(f" 4. Add background music (add_bgm_to_video.sh)               {s4_str}")
     print(f" 5. Rename final video file to 'to-review{ext}'               {s5_str}")
