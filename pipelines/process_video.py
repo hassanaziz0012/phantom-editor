@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Full Video Processing Pipeline Orchestrator.
-Chains together transcription, webcam masking & silence trimming, audio processing,
+Chains together transcription, silence trimming / webcam masking, audio processing,
 background music addition, and final review file creation.
+Supports raw pre-composed video (--raw) or separate webcam + screen recordings.
 """
 
 import os
@@ -23,7 +24,7 @@ if str(pipeline_dir) not in sys.path:
     sys.path.insert(0, str(pipeline_dir))
 
 from utils import (
-    print_info, print_success, print_warning, print_error
+    print_info, print_success, print_warning, print_error, get_video_info
 )
 from pipeline_status import (
     is_4k_video, is_valid_file, format_duration,
@@ -31,25 +32,36 @@ from pipeline_status import (
     print_pipeline_overview, confirm_execution
 )
 from single_pass_mask_trim import run_single_pass_mask_trim
+from trim_silences import get_speech_intervals, get_silence_trim_expressions
 
 
 def parse_cli_args() -> argparse.Namespace:
     """Parse and return command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Full video processing pipeline executing Groq cloud transcription, webcam mask auto-attachment, "
-                    "audio processing, silence trimming, BGM addition, and final review file renaming."
+        description="Full video processing pipeline executing Groq cloud transcription, silence trimming, "
+                    "audio processing, BGM addition, and final review file renaming. "
+                    "Supports pre-composed raw recordings (--raw) or dual webcam + screen recording."
     )
     parser.add_argument(
         "webcam",
         nargs="?",
         default=None,
-        help="Path to webcam / main video file."
+        help="Path to webcam / main video file (or raw OBS video file if --raw is passed)."
     )
     parser.add_argument(
         "screen",
         nargs="?",
         default=None,
-        help="Path to screen recording video file (optional; defaults to webcam video)."
+        help="Path to screen recording video file (optional; ignored if --raw is passed)."
+    )
+    parser.add_argument(
+        "--raw", "-r",
+        dest="raw",
+        nargs="?",
+        const=True,
+        default=None,
+        help="Process a single pre-composed raw video file (e.g. OBS recording with scene switches). "
+             "Skips webcam overlay attachment and proceeds directly with silence trimming."
     )
     parser.add_argument(
         "--webcam", "-w_file",
@@ -106,17 +118,36 @@ def parse_cli_args() -> argparse.Namespace:
 
     args = parser.parse_args()
 
-    webcam_input = args.webcam_flag or args.webcam
-    if not webcam_input:
-        print_error("Error: Input video file (webcam video) is required.")
-        parser.print_help()
-        sys.exit(1)
+    # Verify that at least one valid input file is provided
+    is_raw = args.raw is not None
+    if is_raw:
+        raw_input = args.raw if isinstance(args.raw, str) else (args.webcam_flag or args.webcam)
+        if not raw_input:
+            print_error("Error: Input raw video file is required when using --raw.")
+            parser.print_help()
+            sys.exit(1)
+    else:
+        webcam_input = args.webcam_flag or args.webcam
+        if not webcam_input:
+            print_error("Error: Input video file (webcam video) is required.")
+            parser.print_help()
+            sys.exit(1)
 
     return args
 
 
-def validate_pipeline_inputs(args: argparse.Namespace) -> tuple[Path, Path, Path]:
-    """Validate input video files and return resolved paths for (webcam, screen, video_dir)."""
+def validate_pipeline_inputs(args: argparse.Namespace) -> tuple[Path, Path | None, Path, bool]:
+    """Validate input video files and return (main_video_path, screen_path, video_dir, is_raw_mode)."""
+    is_raw = args.raw is not None
+    if is_raw:
+        raw_input = args.raw if isinstance(args.raw, str) else (args.webcam_flag or args.webcam)
+        raw_path = Path(raw_input).resolve()
+        if not raw_path.is_file():
+            print_error(f"Error: Raw video file not found at '{raw_path}'")
+            sys.exit(1)
+        video_dir = raw_path.parent
+        return raw_path, None, video_dir, True
+
     webcam_input = args.webcam_flag or args.webcam
     screen_input = args.screen_flag or args.screen
 
@@ -134,7 +165,7 @@ def validate_pipeline_inputs(args: argparse.Namespace) -> tuple[Path, Path, Path
         screen_path = webcam_path
 
     video_dir = webcam_path.parent
-    return webcam_path, screen_path, video_dir
+    return webcam_path, screen_path, video_dir, False
 
 
 def verify_script_dependencies(pipeline_dir: Path, repo_root: Path) -> dict[str, Path]:
@@ -188,6 +219,89 @@ def run_step1_transcription(
         print_error(f"[ERROR] Step 1 output 1word SRT file invalid or missing at '{step1_1word_srt}'")
         sys.exit(1)
     print_success(f"[SUCCESS] Step 1 complete: Transcribed video -> {step1_1word_srt.name}")
+    return True
+
+
+def run_step2_trim_silences_raw(
+    raw_video_path: Path,
+    step2_output: Path,
+    force_run: bool
+) -> bool:
+    """Step 2 (Raw Mode): Silence Trimming on pre-composed video (skips webcam mask attachment)."""
+    print_info("\n--- [Step 2/5] Silence Trimming on Raw Video ---")
+    if not force_run and is_valid_file(step2_output):
+        print_success(f"[SKIP] Step 2 complete: Trimmed video file already exists -> {step2_output.name}")
+        return force_run
+
+    video_info = get_video_info(raw_video_path)
+    needs_downscale = is_4k_video(raw_video_path)
+
+    if needs_downscale:
+        print_warning(f"Video resolution {video_info.width}x{video_info.height} exceeds 1080p. Downscaling to 1080p during trimming.")
+    else:
+        print_info(f"Video resolution {video_info.width}x{video_info.height} is 1080p HD. No downscaling needed.")
+
+    print_info("Analyzing audio for speech intervals with Silero VAD...")
+    speech_intervals = get_speech_intervals(raw_video_path)
+    print_info(f"Detected {len(speech_intervals)} active speech intervals.")
+
+    select_expr, shift_expr, total_speech_duration = get_silence_trim_expressions(speech_intervals)
+
+    if select_expr and shift_expr:
+        v_filter = f"select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30"
+        if needs_downscale:
+            v_filter = f"scale=1920:1080:flags=bicubic,{v_filter}"
+        a_filter = f"aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB',aresample=async=1:first_pts=0"
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
+            "-threads", "0",
+            "-i", str(raw_video_path),
+            "-vf", v_filter,
+            "-af", a_filter,
+            "-fps_mode", "cfr",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "20",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "384k",
+            "-t", f"{total_speech_duration:.3f}",
+            "-movflags", "+faststart",
+            str(step2_output)
+        ]
+    else:
+        print_warning("No silence intervals to cut. Re-encoding video directly.")
+        vf_args = ["-vf", "scale=1920:1080:flags=bicubic"] if needs_downscale else []
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
+            "-threads", "0",
+            "-i", str(raw_video_path),
+        ] + vf_args + [
+            "-fps_mode", "cfr",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "20",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "384k",
+            "-movflags", "+faststart",
+            str(step2_output)
+        ]
+
+    print_info("🚀 Executing silence trimming...")
+    print(f"Executing: {' '.join(cmd)}")
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print_error(f"[ERROR] Silence trimming failed with exit code {e.returncode}")
+        sys.exit(e.returncode)
+
+    if not is_valid_file(step2_output):
+        print_error(f"[ERROR] Step 2 output file invalid or missing at '{step2_output}'")
+        sys.exit(1)
+
+    print_success(f"[SUCCESS] Step 2 complete: Silences trimmed -> {step2_output.name}")
     return True
 
 
@@ -281,17 +395,17 @@ def run_step5_finalize(
 
 def main():
     args = parse_cli_args()
-    webcam_path, screen_path, video_dir = validate_pipeline_inputs(args)
+    main_video_path, screen_path, video_dir, is_raw_mode = validate_pipeline_inputs(args)
 
     scripts = verify_script_dependencies(pipeline_dir, repo_root)
 
-    webcam_is_4k = is_4k_video(webcam_path)
-    outputs = get_pipeline_outputs(webcam_path, video_dir, args.bgm)
+    video_is_4k = is_4k_video(main_video_path)
+    outputs = get_pipeline_outputs(main_video_path, video_dir, args.bgm)
     statuses, run_plan = compute_pipeline_status(outputs, args.force)
 
-    ext = webcam_path.suffix or ".mp4"
+    ext = main_video_path.suffix or ".mp4"
     print_pipeline_overview(
-        webcam_path, screen_path, video_dir, args, webcam_is_4k, statuses, run_plan, ext
+        main_video_path, screen_path, video_dir, args, video_is_4k, statuses, run_plan, ext, raw_mode=is_raw_mode
     )
 
     confirm_execution(args.yes)
@@ -305,7 +419,7 @@ def main():
     # Step 1: Transcribe Video using Groq Cloud
     step1_start = time.perf_counter()
     force_run = run_step1_transcription(
-        webcam_path=webcam_path,
+        webcam_path=main_video_path,
         step1_srt_output=outputs["step1_srt"],
         step1_1word_srt=outputs["step1_1word_srt"],
         transcribe_cloud_py=scripts["transcribe_cloud_py"],
@@ -313,20 +427,27 @@ def main():
     )
     step1_duration = time.perf_counter() - step1_start
 
-    # Step 2: Single-Pass Video Processing (Masking + Silence Trimming)
+    # Step 2: Video Processing (Silence Trimming for --raw, or Single-Pass Mask + Trim)
     step2_start = time.perf_counter()
-    force_run = run_single_pass_mask_trim(
-        webcam_path=webcam_path,
-        screen_path=screen_path,
-        step1_1word_srt=outputs["step1_1word_srt"],
-        step2_output=outputs["step2_output"],
-        preset=args.preset,
-        width=args.width,
-        all_overlay=args.all,
-        video_dir=video_dir,
-        force_run=force_run,
-        skip_confirm=args.yes
-    )
+    if is_raw_mode:
+        force_run = run_step2_trim_silences_raw(
+            raw_video_path=main_video_path,
+            step2_output=outputs["step2_output"],
+            force_run=force_run
+        )
+    else:
+        force_run = run_single_pass_mask_trim(
+            webcam_path=main_video_path,
+            screen_path=screen_path,
+            step1_1word_srt=outputs["step1_1word_srt"],
+            step2_output=outputs["step2_output"],
+            preset=args.preset,
+            width=args.width,
+            all_overlay=args.all,
+            video_dir=video_dir,
+            force_run=force_run,
+            skip_confirm=args.yes
+        )
     step2_duration = time.perf_counter() - step2_start
 
     # Step 3: Process Audio
@@ -362,6 +483,8 @@ def main():
 
     total_duration = time.perf_counter() - pipeline_start_time
 
+    step2_label = "Step 2 (Silence Trimming):" if is_raw_mode else "Step 2 (Mask & Silence Trim):"
+
     print()
     print_success("============================================================")
     print_success(" 🎉 FULL VIDEO PROCESSING PIPELINE COMPLETED SUCCESSFULLY!")
@@ -369,7 +492,7 @@ def main():
     print_info("------------------------------------------------------------")
     print_info(" Step Execution Timing Summary:")
     print(f"  Step 1 (Transcription):        {format_duration(step1_duration)}")
-    print(f"  Step 2 (Mask & Silence Trim):   {format_duration(step2_duration)}")
+    print(f"  {step2_label:<32}{format_duration(step2_duration)}")
     print(f"  Step 3 (Audio Processing):      {format_duration(step3_duration)}")
     print(f"  Step 4 (Background Music):      {format_duration(step4_duration)}")
     print(f"  Step 5 (Finalize File):         {format_duration(step5_duration)}")
@@ -380,3 +503,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
