@@ -562,7 +562,7 @@ def sync_projects_to_sheet(
                 updated_title = p.title or ""
                 updated_url = p.yt_url or ""
                 updated_status = p.stage_name
-                updated_date = p.scheduled_date or ""
+                updated_date = getattr(p, "uploaded_date", None) or getattr(p, "scheduled_date", None) or ""
 
                 if (
                     updated_status != row_status
@@ -603,12 +603,13 @@ def sync_projects_to_sheet(
             if matched_proj:
                 matched_local_names.add(matched_proj.name)
                 stats["updated"] += 1
+                matched_date = getattr(matched_proj, "uploaded_date", None) or getattr(matched_proj, "scheduled_date", None) or ""
                 row_data = [""] * len(headers)
                 if col_map["project"] >= 0: row_data[col_map["project"]] = matched_proj.name
                 if col_map["title"] >= 0: row_data[col_map["title"]] = matched_proj.title or ""
                 if col_map["status"] >= 0: row_data[col_map["status"]] = matched_proj.stage_name
                 if col_map["url"] >= 0: row_data[col_map["url"]] = matched_proj.yt_url or ""
-                if col_map["publish_date"] >= 0: row_data[col_map["publish_date"]] = matched_proj.scheduled_date or ""
+                if col_map["publish_date"] >= 0: row_data[col_map["publish_date"]] = matched_date
                 if col_map["platform"] >= 0: row_data[col_map["platform"]] = row_plat
                 new_rows.append(row_data)
             else:
@@ -621,12 +622,13 @@ def sync_projects_to_sheet(
     for p_name, p in local_projects.items():
         if p_name not in matched_local_names:
             stats["added"] += 1
+            proj_date = getattr(p, "uploaded_date", None) or getattr(p, "scheduled_date", None) or ""
             row_data = [""] * len(headers)
             if col_map["project"] >= 0: row_data[col_map["project"]] = p.name
             if col_map["title"] >= 0: row_data[col_map["title"]] = p.title or ""
             if col_map["status"] >= 0: row_data[col_map["status"]] = p.stage_name
             if col_map["url"] >= 0: row_data[col_map["url"]] = p.yt_url or ""
-            if col_map["publish_date"] >= 0: row_data[col_map["publish_date"]] = p.scheduled_date or ""
+            if col_map["publish_date"] >= 0: row_data[col_map["publish_date"]] = proj_date
             if col_map["platform"] >= 0: row_data[col_map["platform"]] = "YouTube"
             new_rows.append(row_data)
 
