@@ -19,6 +19,7 @@ def get_outlier_videos(
     min_score: float = 2.0,
     min_views: int = 500,
     no_shorts: bool = False,
+    days: Optional[int] = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """
@@ -31,6 +32,10 @@ def get_outlier_videos(
     if channel_id:
         conditions.append("v.channel_id = %s")
         params.append(channel_id)
+
+    if days is not None:
+        conditions.append("v.published_at >= NOW() - (%s * INTERVAL '1 day')")
+        params.append(days)
 
     if no_shorts:
         conditions.append("v.is_short = FALSE")
@@ -74,6 +79,7 @@ def get_top_videos(
     channel_id: Optional[str] = None,
     sort_by: str = "score",
     no_shorts: bool = False,
+    days: Optional[int] = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """
@@ -95,6 +101,10 @@ def get_top_videos(
     if channel_id:
         conditions.append("v.channel_id = %s")
         params.append(channel_id)
+
+    if days is not None:
+        conditions.append("v.published_at >= NOW() - (%s * INTERVAL '1 day')")
+        params.append(days)
 
     if no_shorts:
         conditions.append("v.is_short = FALSE")
