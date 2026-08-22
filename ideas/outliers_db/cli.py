@@ -25,7 +25,7 @@ try:
         get_container_status,
         stop_postgres_container,
     )
-    from .queries import get_outlier_videos, get_top_videos
+    from .queries import get_outlier_videos
     from .schema import init_db
     from .scoring import update_video_scores
 except ImportError:
@@ -43,9 +43,19 @@ except ImportError:
         get_container_status,
         stop_postgres_container,
     )
-    from ideas.outliers_db.queries import get_outlier_videos, get_top_videos
+    from ideas.outliers_db.queries import get_outlier_videos
     from ideas.outliers_db.schema import init_db
     from ideas.outliers_db.scoring import update_video_scores
+
+
+# ANSI Color codes for terminal display
+C_RESET = "\033[0m"
+C_BOLD = "\033[1m"
+C_DIM = "\033[2m"
+C_CYAN = "\033[96m"       # VIEWS
+C_BLUE = "\033[94m"       # AVG VIEWS
+C_YELLOW = "\033[93m"     # VIEW SCORE
+C_GREEN = "\033[92m"      # SCORE
 
 
 def format_number(val: Any) -> str:
@@ -83,25 +93,17 @@ def main() -> None:
     calc_parser.add_argument("--channel", "-c", help="Specific channel ID to calculate")
     calc_parser.add_argument("--threshold", "-t", type=float, default=2.0, help="Outlier score multiplier threshold")
 
-    # list outliers
-    outliers_parser = subparsers.add_parser("outliers", help="List detected outlier videos")
-    outliers_parser.add_argument("--channel", "-c", help="Filter by channel ID")
-    outliers_parser.add_argument("--min-score", "-s", type=float, default=2.0, help="Minimum outlier score")
-    outliers_parser.add_argument("--min-views", "-v", type=int, default=100, help="Minimum view count")
-    outliers_parser.add_argument("--days", "-d", type=int, default=None, help="Filter videos published within the last N days")
-    outliers_parser.add_argument("--no-shorts", action="store_true", help="Exclude YouTube Shorts from results")
-    outliers_parser.add_argument("--limit", "-n", type=int, default=25, help="Number of results")
+    # list top outliers
+    top_parser = subparsers.add_parser("top", help="List detected outlier videos")
+    top_parser.add_argument("--channel", "-c", help="Filter by channel ID")
+    top_parser.add_argument("--min-score", "-s", type=float, default=2.0, help="Minimum outlier score")
+    top_parser.add_argument("--min-views", "-v", type=int, default=100, help="Minimum view count")
+    top_parser.add_argument("--days", "-d", type=int, default=None, help="Filter videos published within the last N days")
+    top_parser.add_argument("--no-shorts", action="store_true", help="Exclude YouTube Shorts from results")
+    top_parser.add_argument("--limit", "-n", type=int, default=25, help="Number of results")
 
     # list channels
     subparsers.add_parser("channels", help="List all channels with average views and likes")
-
-    # top videos
-    top_parser = subparsers.add_parser("top", help="List top performing videos")
-    top_parser.add_argument("--channel", "-c", help="Filter by channel ID")
-    top_parser.add_argument("--sort", choices=["score", "view_score", "like_score", "views", "recent"], default="score")
-    top_parser.add_argument("--days", "-d", type=int, default=None, help="Filter videos published within the last N days")
-    top_parser.add_argument("--no-shorts", action="store_true", help="Exclude YouTube Shorts from results")
-    top_parser.add_argument("--limit", "-n", type=int, default=20, help="Number of results")
 
     args = parser.parse_args()
 
@@ -167,7 +169,7 @@ def main() -> None:
                 f"{ch['outlier_videos_count']:<8}"
             )
 
-    elif args.command == "outliers":
+    elif args.command == "top":
         outliers = get_outlier_videos(
             channel_id=args.channel,
             min_score=args.min_score,
@@ -179,39 +181,33 @@ def main() -> None:
         if not outliers:
             print("No outlier videos found matching the criteria.")
             return
-        print(f"\n{'TITLE':<40} {'CHANNEL':<20} {'VIEWS':<10} {'AVG VIEWS':<10} {'VIEW SCORE':<12} {'SCORE':<8}")
-        print("-" * 106)
-        for vid in outliers:
-            print(
-                f"{vid['title'][:38]:<40} "
-                f"{vid['channel_title'][:18]:<20} "
-                f"{format_number(vid['view_count']):<10} "
-                f"{format_number(vid['channel_avg_views']):<10} "
-                f"{vid['view_score']:<12.2f} "
-                f"{vid['score']:<8.2f}"
-            )
-
-    elif args.command == "top":
-        videos = get_top_videos(
-            channel_id=args.channel,
-            sort_by=args.sort,
-            no_shorts=args.no_shorts,
-            days=args.days,
-            limit=args.limit,
+        print(
+            f"\n{C_BOLD}{'TITLE':<40} {'CHANNEL':<20} {'URL':<45} "
+            f"{C_CYAN}{'VIEWS':<10}{C_RESET}{C_BOLD} "
+            f"{C_BLUE}{'AVG VIEWS':<11}{C_RESET}{C_BOLD} "
+            f"{C_YELLOW}{'VIEW SCORE':<12}{C_RESET}{C_BOLD} "
+            f"{C_GREEN}{'SCORE':<8}{C_RESET}"
         )
-        if not videos:
-            print("No videos found.")
-            return
-        print(f"\n{'TITLE':<40} {'CHANNEL':<20} {'VIEWS':<10} {'LIKES':<10} {'VIEW SCORE':<12} {'SCORE':<8}")
-        print("-" * 106)
-        for vid in videos:
+        print("-" * 152)
+        for vid in outliers:
+            title_str = vid["title"][:38] if vid.get("title") else ""
+            channel_str = vid["channel_title"][:18] if vid.get("channel_title") else ""
+            url_str = vid.get("url") or f"https://www.youtube.com/watch?v={vid.get('video_id', '')}"
+            views_formatted = f"{format_number(vid.get('view_count')):<10}"
+            avg_views_formatted = f"{format_number(vid.get('channel_avg_views')):<11}"
+            view_score_val = vid.get("view_score") or 0.0
+            score_val = vid.get("score") or 0.0
+            view_score_formatted = f"{view_score_val:<12.2f}"
+            score_formatted = f"{score_val:<8.2f}"
+
             print(
-                f"{vid['title'][:38]:<40} "
-                f"{vid['channel_title'][:18]:<20} "
-                f"{format_number(vid['view_count']):<10} "
-                f"{format_number(vid['like_count']):<10} "
-                f"{vid['view_score']:<12.2f} "
-                f"{vid['score']:<8.2f}"
+                f"{title_str:<40} "
+                f"{channel_str:<20} "
+                f"{url_str:<45} "
+                f"{C_CYAN}{views_formatted}{C_RESET} "
+                f"{C_BLUE}{avg_views_formatted}{C_RESET} "
+                f"{C_YELLOW}{view_score_formatted}{C_RESET} "
+                f"{C_GREEN}{score_formatted}{C_RESET}"
             )
 
 
