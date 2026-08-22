@@ -11,8 +11,9 @@ from groq import Groq
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils import format_srt_time, get_video_info
 
-# Limit for Groq API in bytes (25MB)
+# Limit for Groq API in bytes (25MB hard limit, using 20MB threshold for safety)
 GROQ_LIMIT_BYTES = 25 * 1024 * 1024
+SAFE_CHUNK_BYTES = 20 * 1024 * 1024
 
 AUDIO_EXTENSIONS = {
     ".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus",
@@ -76,31 +77,40 @@ def init_groq_clients():
     return [Groq(api_key=k, timeout=300.0, max_retries=0) for k in api_keys]
 
 def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
-    """Checks audio file size and splits into 10-minute chunks if exceeding Groq limit."""
+    """Checks audio file size and splits into chunks (guaranteeing <= 20 MB each) if exceeding Groq limit."""
     file_size = os.path.getsize(base_audio)
 
+    # If base_audio itself is already within safe limit (<= 20 MB), process directly
+    if file_size <= SAFE_CHUNK_BYTES:
+        return [{
+            "index": 0,
+            "path": base_audio,
+            "offset": 0.0
+        }]
+
+    print(f"Audio size ({file_size / (1024*1024):.2f} MB) exceeds the Groq limit of 25 MB.")
+    print("Splitting audio into chunks using FFmpeg...")
+
+    audio_info = get_video_info(base_audio)
+    total_duration = audio_info.duration
+    if total_duration <= 0:
+        total_duration = get_video_info(input_path).duration
+
     audio_chunks = []
-    if file_size > GROQ_LIMIT_BYTES:
-        print(f"Audio size ({file_size / (1024*1024):.2f} MB) exceeds the Groq limit of 25 MB.")
-        print("Splitting audio into 10-minute (600s) chunks using FFmpeg...")
-        chunk_size = 600.0
+    chunk_index = 0
+    start_time = 0.0
+    default_chunk_duration = 300.0  # 5 minutes default chunk length
 
-        audio_info = get_video_info(base_audio)
-        total_duration = audio_info.duration
-        if total_duration <= 0:
-            total_duration = get_video_info(input_path).duration
+    while start_time < total_duration:
+        chunk_duration = min(default_chunk_duration, total_duration - start_time)
+        chunk_file = f"temp_chunk_{temp_id}_{chunk_index:03d}.flac"
 
-        chunk_index = 0
-        start_time = 0.0
-        while start_time < total_duration:
-            chunk_file = f"temp_chunk_{temp_id}_{chunk_index:03d}.flac"
-            temp_files.append(chunk_file)
-
+        while chunk_duration > 10.0:
             split_cmd = [
                 "ffmpeg", "-y",
                 "-threads", "0",
                 "-ss", str(start_time),
-                "-t", str(chunk_size),
+                "-t", str(chunk_duration),
                 "-i", base_audio,
                 "-vn",
                 "-ar", "16000",
@@ -110,19 +120,23 @@ def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
             ]
             subprocess.run(split_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            audio_chunks.append({
-                "index": chunk_index,
-                "path": chunk_file,
-                "offset": start_time
-            })
-            chunk_index += 1
-            start_time += chunk_size
-    else:
+            c_size = os.path.getsize(chunk_file)
+            if c_size <= SAFE_CHUNK_BYTES:
+                break
+
+            # If chunk is larger than safe threshold, halve duration and retry
+            if os.path.exists(chunk_file):
+                os.remove(chunk_file)
+            chunk_duration /= 2.0
+
+        temp_files.append(chunk_file)
         audio_chunks.append({
-            "index": 0,
-            "path": base_audio,
-            "offset": 0.0
+            "index": chunk_index,
+            "path": chunk_file,
+            "offset": start_time
         })
+        chunk_index += 1
+        start_time += chunk_duration
 
     return audio_chunks
 
