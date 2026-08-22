@@ -475,9 +475,22 @@ def main():
         help="Minimum character length for comments to be sent to the LLM (default: 5).",
     )
     parser.add_argument(
-        "--export",
+        "--no-export", "--no-sheet",
         action="store_true",
-        help="Export generated ideas to the 'Ideas' tab in Google Sheets content calendar.",
+        dest="no_export",
+        help="Skip saving generated ideas to Google Sheets (exported by default).",
+    )
+    parser.add_argument(
+        "--export",
+        action="store_false",
+        dest="no_export",
+        help="Export generated ideas to Google Sheets (default: enabled).",
+    )
+    parser.add_argument(
+        "--sheet-id",
+        type=str,
+        default=None,
+        help="Google Sheets spreadsheet ID (defaults to GOOGLE_SHEET_ID from .env).",
     )
     parser.add_argument(
         "--headless",
@@ -617,11 +630,14 @@ def main():
     # 8. Parse Claude's response
     ideas = parse_claude_response(claude_raw_response)
 
-    # 9. Handle --export if requested
+    # 9. Handle export to Google Sheets (enabled by default unless --no-export is passed)
     exported_count = 0
     video_url = f"https://www.youtube.com/watch?v={video_id}"
-    if args.export and ideas:
+    should_export = not args.no_export
+    if should_export and ideas:
         try:
+            if not args.json:
+                print(f"{Colors.CYAN}Exporting {len(ideas)} ideas to Google Sheets...{Colors.RESET}")
             from ideas.export_ideas_to_sheet import export_ideas_to_sheet
             export_payload = []
             for item in ideas:
@@ -633,7 +649,7 @@ def main():
                     "source_type": "YT Comments",
                     "confidence_score": item.get("confidence_score", ""),
                 })
-            res = export_ideas_to_sheet(export_payload)
+            res = export_ideas_to_sheet(export_payload, spreadsheet_id=args.sheet_id)
             exported_count = res.get("appended_count", len(export_payload))
         except Exception as e:
             logger.error("Failed to export ideas to Google Sheet: %s", e)
@@ -648,10 +664,9 @@ def main():
         "total_scraped": total_scraped,
         "filtered_count": filtered_count,
         "ideas": ideas,
+        "exported_to_sheet": bool(exported_count > 0),
+        "exported_count": exported_count,
     }
-    if args.export:
-        payload["exported_to_sheet"] = bool(exported_count > 0)
-        payload["exported_count"] = exported_count
 
     if args.output:
         try:
