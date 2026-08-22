@@ -88,6 +88,7 @@ def main() -> None:
     outliers_parser.add_argument("--channel", "-c", help="Filter by channel ID")
     outliers_parser.add_argument("--min-score", "-s", type=float, default=2.0, help="Minimum outlier score")
     outliers_parser.add_argument("--min-views", "-v", type=int, default=100, help="Minimum view count")
+    outliers_parser.add_argument("--days", "-d", type=int, default=None, help="Filter videos published within the last N days")
     outliers_parser.add_argument("--no-shorts", action="store_true", help="Exclude YouTube Shorts from results")
     outliers_parser.add_argument("--limit", "-n", type=int, default=25, help="Number of results")
 
@@ -98,6 +99,7 @@ def main() -> None:
     top_parser = subparsers.add_parser("top", help="List top performing videos")
     top_parser.add_argument("--channel", "-c", help="Filter by channel ID")
     top_parser.add_argument("--sort", choices=["score", "view_score", "like_score", "views", "recent"], default="score")
+    top_parser.add_argument("--days", "-d", type=int, default=None, help="Filter videos published within the last N days")
     top_parser.add_argument("--no-shorts", action="store_true", help="Exclude YouTube Shorts from results")
     top_parser.add_argument("--limit", "-n", type=int, default=20, help="Number of results")
 
@@ -171,6 +173,7 @@ def main() -> None:
             min_score=args.min_score,
             min_views=args.min_views,
             no_shorts=args.no_shorts,
+            days=args.days,
             limit=args.limit,
         )
         if not outliers:
@@ -193,6 +196,7 @@ def main() -> None:
             channel_id=args.channel,
             sort_by=args.sort,
             no_shorts=args.no_shorts,
+            days=args.days,
             limit=args.limit,
         )
         if not videos:
