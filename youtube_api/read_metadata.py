@@ -139,6 +139,7 @@ class VideoMetadata:
     tweet_template: str = "🎬 New video just dropped! {url}"
     url: Optional[str] = None
     publish_date: Optional[str] = None
+    uploaded_date: Optional[str] = None
     file_path: Optional[Path] = None
     raw_data: dict[str, Any] = field(default_factory=dict)
 
@@ -151,6 +152,14 @@ class VideoMetadata:
     @publishDate.setter
     def publishDate(self, value: Optional[str]) -> None:
         self.publish_date = str(value) if value is not None else None
+
+    @property
+    def uploadedDate(self) -> Optional[str]:
+        return self.uploaded_date
+
+    @uploadedDate.setter
+    def uploadedDate(self, value: Optional[str]) -> None:
+        self.uploaded_date = str(value) if value is not None else None
 
     @property
     def categoryId(self) -> str:
@@ -210,6 +219,8 @@ class VideoMetadata:
             "url": self.url,
             "publishDate": self.publish_date,
             "publish_date": self.publish_date,
+            "uploadedDate": self.uploaded_date,
+            "uploaded_date": self.uploaded_date,
         }
         if key in mapping:
             return mapping[key]
@@ -236,6 +247,8 @@ class VideoMetadata:
             self.url = str(value) if value is not None else None
         elif key in ("publishDate", "publish_date"):
             self.publish_date = str(value) if value is not None else None
+        elif key in ("uploadedDate", "uploaded_date"):
+            self.uploaded_date = str(value) if value is not None else None
         else:
             self.raw_data[key] = value
 
@@ -250,7 +263,8 @@ class VideoMetadata:
         standard_keys = {
             "title", "description", "tags", "categoryId", "category_id",
             "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-            "tweetTemplate", "tweet_template", "url", "publishDate", "publish_date"
+            "tweetTemplate", "tweet_template", "url", "publishDate", "publish_date",
+            "uploadedDate", "uploaded_date"
         }
         return key in standard_keys or key in self.raw_data
 
@@ -280,6 +294,8 @@ class VideoMetadata:
             out["url"] = self.url
         if self.publish_date:
             out["publishDate"] = self.publish_date
+        if self.uploaded_date:
+            out["uploadedDate"] = self.uploaded_date
 
         # Include any extra keys originally present
         for k, v in self.raw_data.items():
@@ -366,10 +382,15 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
     if publish_date is not None:
         publish_date = str(publish_date).strip() or None
 
+    uploaded_date = data.get("uploadedDate") or data.get("uploaded_date")
+    if uploaded_date is not None:
+        uploaded_date = str(uploaded_date).strip() or None
+
     standard_keys = {
         "title", "description", "tags", "categoryId", "category_id",
         "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-        "tweetTemplate", "tweet_template", "url", "publishDate", "publish_date"
+        "tweetTemplate", "tweet_template", "url", "publishDate", "publish_date",
+        "uploadedDate", "uploaded_date"
     }
     raw_data = {k: v for k, v in data.items() if k not in standard_keys}
 
@@ -383,6 +404,7 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
         tweet_template=tweet_template,
         url=url,
         publish_date=publish_date,
+        uploaded_date=uploaded_date,
         file_path=file_path,
         raw_data=raw_data,
     )
@@ -459,6 +481,10 @@ def main() -> None:
     print(f"  Made for Kids:  {metadata.made_for_kids}")
     print(f"  Tags ({len(metadata.tags)}):     {', '.join(metadata.tags) if metadata.tags else '(None)'}")
     print(f"  YouTube URL:    {metadata.url or '(Not uploaded yet)'}")
+    if metadata.uploaded_date:
+        print(f"  Uploaded Date:  {metadata.uploaded_date}")
+    if metadata.publish_date:
+        print(f"  Publish Date:   {metadata.publish_date}")
     print(f"  Tweet Template: {metadata.tweet_template}")
     print("-" * 60)
     print("  Description:")
