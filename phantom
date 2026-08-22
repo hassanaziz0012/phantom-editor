@@ -32,6 +32,7 @@ show_usage() {
     echo "  reddit analyze-post <url> [--headless] [--json]"
     echo "  tweet [--image] <tweet_content>"
     echo "  ideas generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--export] [--json]"
+    echo "  ideas generate-from-outlier <video> [--no-export] [--fresh-summary] [--json]"
     echo "  ideas export [--file <path> | --idea <text>] [arguments]"
     echo "  ideas scrape (<channel_or_file> | --channels <path>) [arguments]"
     echo "  ideas outliers [arguments]"
@@ -213,6 +214,12 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/comments/generate_ideas.py" "$@"
+        elif [ "$SUBCOMMAND" = "generate-from-outlier" ] || [ "$SUBCOMMAND" = "from-outlier" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom ideas generate-from-outlier <video> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/generate_from_outlier.py" "$@"
         elif [ "$SUBCOMMAND" = "export" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/export_ideas_to_sheet.py" "$@"
         elif [ "$SUBCOMMAND" = "outliers" ]; then
@@ -222,6 +229,7 @@ case "$COMMAND" in
         else
             echo "Unknown ideas subcommand: $SUBCOMMAND"
             echo "Usage: phantom ideas generate-from-comments <video> [arguments]"
+            echo "       phantom ideas generate-from-outlier <video> [arguments]"
             echo "       phantom ideas export [--file <path> | --idea <text>] [arguments]"
             echo "       phantom ideas scrape (<channel_or_file> | --channels <path>) [arguments]"
             echo "       phantom ideas outliers [arguments]"
