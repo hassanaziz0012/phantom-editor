@@ -31,6 +31,8 @@ show_usage() {
     echo "  emails broadcast --title <title> --description <desc> --url <url> [arguments]"
     echo "  reddit analyze-post <url> [--headless] [--json]"
     echo "  tweet [--image] <tweet_content>"
+    echo "  ideas generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--export] [--json]"
+    echo "  ideas export [--file <path> | --idea <text>] [arguments]"
     echo "  yt upload <video_path>"
     echo "  yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
     echo "  yt create-metadata <video_path>"
@@ -199,6 +201,24 @@ case "$COMMAND" in
             exit 1
         fi
         "$BASE_DIR/twitter/tweet.sh" "$@"
+        ;;
+    ideas)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "generate-from-comments" ] || [ "$SUBCOMMAND" = "from-comments" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom ideas generate-from-comments <video> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/comments/generate_ideas.py" "$@"
+        elif [ "$SUBCOMMAND" = "export" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/export_ideas_to_sheet.py" "$@"
+        else
+            echo "Unknown ideas subcommand: $SUBCOMMAND"
+            echo "Usage: phantom ideas generate-from-comments <video> [arguments]"
+            echo "       phantom ideas export [--file <path> | --idea <text>] [arguments]"
+            exit 1
+        fi
         ;;
     yt)
         SUBCOMMAND="$1"
