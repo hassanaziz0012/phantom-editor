@@ -434,6 +434,31 @@ def fetch_video_details_batch(
     return raw_videos
 
 
+def read_channels_from_file(file_path: Path | str) -> list[str]:
+    """
+    Reads channel identifiers/URLs from a text file, ignoring empty lines and comments (# or //).
+    Returns a deduplicated list preserving original file order.
+    """
+    p = Path(file_path)
+    if not p.is_file():
+        raise FileNotFoundError(f"Channels file not found: {file_path}")
+
+    channels: list[str] = []
+    seen: set[str] = set()
+
+    with open(p, "r", encoding="utf-8") as f:
+        for line in f:
+            cleaned = line.strip()
+            # Ignore empty lines and comments
+            if not cleaned or cleaned.startswith("#") or cleaned.startswith("//"):
+                continue
+            if cleaned not in seen:
+                seen.add(cleaned)
+                channels.append(cleaned)
+
+    return channels
+
+
 # ── Core Scraper Pipeline ──────────────────────────────────────────────────────
 
 def scrape_and_save_channel_videos(
@@ -442,10 +467,11 @@ def scrape_and_save_channel_videos(
     outlier_threshold: float = 1.0,
     api_key: Optional[str] = None,
     token_path: Optional[Path | str] = None,
+    youtube_service: Optional[Any] = None,
 ) -> tuple[ChannelRecord, list[VideoRecord]]:
     """
-    Full pipeline:
-    1. Authenticate with YouTube API
+    Full pipeline for a single channel:
+    1. Authenticate with YouTube API (or reuse existing youtube_service)
     2. Resolve channel ID and fetch channel metadata
     3. Fetch all videos uploaded in the past 12 months
     4. Fetch video details and stats in batch
@@ -463,8 +489,8 @@ def scrape_and_save_channel_videos(
     # 1. Initialize DB schema
     init_db()
 
-    # 2. Authenticate
-    youtube = get_youtube_service(token_path=token_path, api_key=api_key)
+    # 2. Authenticate / reuse service
+    youtube = youtube_service or get_youtube_service(token_path=token_path, api_key=api_key)
 
     # 3. Resolve Channel
     channel_id = resolve_channel_id(youtube, channel_input)
@@ -525,6 +551,70 @@ def scrape_and_save_channel_videos(
 
     logger.info("Successfully scraped, scored, and stored %d videos for '%s'.", len(video_records), channel_record.title)
     return channel_record, video_records
+
+
+def scrape_channels_bulk(
+    channel_inputs: list[str],
+    months: int = 12,
+    outlier_threshold: float = 1.0,
+    api_key: Optional[str] = None,
+    token_path: Optional[Path | str] = None,
+    stop_on_error: bool = False,
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]], list[VideoRecord]]:
+    """
+    Bulk pipeline:
+    Iterates over multiple channels, scrapes metadata and videos from the last 12 months,
+    computes outlier performance, and saves all channels and videos to PostgreSQL.
+    Returns:
+      - results: list of dicts with channel summary stats
+      - failed_channels: list of (channel_input, error_message)
+      - all_outliers: combined list of outlier VideoRecords sorted by score descending
+    """
+    init_db()
+    youtube = get_youtube_service(token_path=token_path, api_key=api_key)
+
+    results: list[dict[str, Any]] = []
+    failed_channels: list[tuple[str, str]] = []
+    all_outliers: list[VideoRecord] = []
+
+    total_count = len(channel_inputs)
+    logger.info("Starting bulk scraping for %d channels...", total_count)
+
+    for index, ch_input in enumerate(channel_inputs, 1):
+        print("\n" + "=" * 80)
+        print(f"🚀 [{index}/{total_count}] Scraping: {ch_input}")
+        print("=" * 80)
+
+        try:
+            channel_record, video_records = scrape_and_save_channel_videos(
+                channel_input=ch_input,
+                months=months,
+                outlier_threshold=outlier_threshold,
+                youtube_service=youtube,
+            )
+
+            outliers = [v for v in video_records if v.is_outlier or v.score >= outlier_threshold]
+            all_outliers.extend(outliers)
+
+            results.append({
+                "channel_record": channel_record,
+                "video_count": len(video_records),
+                "shorts_count": sum(1 for v in video_records if v.is_short),
+                "long_count": sum(1 for v in video_records if not v.is_short),
+                "outliers_count": len(outliers),
+            })
+
+            # Print single channel report
+            print_scrape_summary(channel_record, video_records, outlier_threshold=outlier_threshold)
+
+        except Exception as err:
+            logger.error("Failed to scrape channel '%s': %s", ch_input, err)
+            failed_channels.append((ch_input, str(err)))
+            if stop_on_error:
+                raise
+
+    all_outliers.sort(key=lambda v: (v.score, v.view_score), reverse=True)
+    return results, failed_channels, all_outliers
 
 
 # ── Terminal Display Utilities ──────────────────────────────────────────────────
@@ -602,17 +692,82 @@ def print_scrape_summary(
     print("=" * 85 + "\n")
 
 
+def print_bulk_summary(
+    results: list[dict[str, Any]],
+    failed_channels: list[tuple[str, str]],
+    all_outliers: list[VideoRecord],
+    outlier_threshold: float = 1.0,
+) -> None:
+    """Prints a consolidated summary report after bulk channel processing."""
+    total_processed = len(results) + len(failed_channels)
+    total_videos = sum(r["video_count"] for r in results)
+    total_shorts = sum(r["shorts_count"] for r in results)
+    total_long = sum(r["long_count"] for r in results)
+    total_outliers = sum(r["outliers_count"] for r in results)
+
+    print("\n" + "═" * 90)
+    print("📊  BULK SCRAPING COMPLETED SUMMARY REPORT")
+    print("═" * 90)
+    print(f"Channels Processed: {total_processed} ({len(results)} Succeeded, {len(failed_channels)} Failed)")
+    print(f"Total Videos Saved: {total_videos} ({total_shorts} Shorts, {total_long} Long-form)")
+    print(f"Total Outliers:     {total_outliers} (Threshold: {outlier_threshold}x)")
+    print("-" * 90)
+
+    if results:
+        print(f"{'CHANNEL':<30} | {'SUBS':<10} | {'VIDEOS':<8} | {'AVG VIEWS':<11} | {'AVG LIKES':<11} | {'OUTLIERS':<8}")
+        print("-" * 90)
+        for r in results:
+            ch: ChannelRecord = r["channel_record"]
+            title = (ch.title[:27] + "...") if len(ch.title) > 30 else ch.title
+            print(
+                f"{title:<30} | "
+                f"{format_number(ch.subscriber_count):<10} | "
+                f"{r['video_count']:<8} | "
+                f"{format_number(ch.avg_views):<11} | "
+                f"{format_number(ch.avg_likes):<11} | "
+                f"{r['outliers_count']:<8}"
+            )
+        print("-" * 90)
+
+    if failed_channels:
+        print("\n❌ Failed Channels:")
+        for ch_input, err in failed_channels:
+            print(f"  • {ch_input}: {err}")
+
+    if all_outliers:
+        print(f"\n🏆 Top {min(15, len(all_outliers))} Outlier Videos Across All Processed Channels:")
+        print(f"{'TITLE':<36} | {'TYPE':<6} | {'VIEWS':<8} | {'MULT':<7} | {'SCORE':<7} | {'URL'}")
+        print("-" * 90)
+        for v in all_outliers[:15]:
+            title_truncated = (v.title[:33] + "...") if len(v.title) > 36 else v.title
+            type_str = "Short" if v.is_short else "Video"
+            view_str = format_number(v.view_count)
+            mult_str = f"{v.view_score:.2f}x"
+            score_str = f"{v.score:.2f}"
+            print(f"{title_truncated:<36} | {type_str:<6} | {view_str:<8} | {mult_str:<7} | {score_str:<7} | {v.url}")
+
+    print("═" * 90 + "\n")
+
+
 # ── CLI Interface ─────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Scrape YouTube channel videos from the past 12 months and compute outlier performance scores in PostgreSQL.",
+        description="Scrape YouTube channel videos from the past 12 months and compute outlier performance scores in PostgreSQL (supports single channel or bulk processing from a file).",
     )
     parser.add_argument(
         "channel",
         nargs="?",
         default=None,
-        help="Channel ID, @handle, custom URL, or YouTube channel URL (falls back to YOUTUBE_CHANNEL_ID in .env).",
+        help="Channel ID, @handle, custom URL, YouTube channel URL, or path to a text file containing channels (falls back to YOUTUBE_CHANNEL_ID in .env).",
+    )
+    parser.add_argument(
+        "--channels",
+        "-c",
+        "--file",
+        "-f",
+        dest="channels_file",
+        help="Path to a text file containing a list of YouTube channels (one per line).",
     )
     parser.add_argument(
         "--months",
@@ -637,24 +792,76 @@ def main() -> None:
         "--token-file",
         help="Optional path to OAuth token.json file.",
     )
+    parser.add_argument(
+        "--stop-on-error",
+        action="store_true",
+        help="Stop immediately if any channel fails during bulk scraping (default: continue to next channel).",
+    )
 
     args = parser.parse_args()
 
-    channel_input = args.channel or os.getenv("YOUTUBE_CHANNEL_ID")
-    if not channel_input:
-        print("Error: No YouTube channel specified.", file=sys.stderr)
-        print("Usage: python ideas/scrape_videos.py <channel_handle_or_id>", file=sys.stderr)
+    # Determine channel(s) or file to process
+    is_bulk = False
+    channels_to_scrape: list[str] = []
+
+    if args.channels_file:
+        is_bulk = True
+        try:
+            channels_to_scrape = read_channels_from_file(args.channels_file)
+        except Exception as e:
+            print(f"Error reading channels file: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif args.channel and Path(args.channel).is_file():
+        is_bulk = True
+        try:
+            channels_to_scrape = read_channels_from_file(args.channel)
+        except Exception as e:
+            print(f"Error reading channels file: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif args.channel:
+        channels_to_scrape = [args.channel]
+    else:
+        env_channel = os.getenv("YOUTUBE_CHANNEL_ID")
+        if env_channel:
+            if Path(env_channel).is_file():
+                is_bulk = True
+                channels_to_scrape = read_channels_from_file(env_channel)
+            else:
+                channels_to_scrape = [env_channel]
+
+    if not channels_to_scrape:
+        print("Error: No YouTube channel or channel list file specified.", file=sys.stderr)
+        print("Usage:", file=sys.stderr)
+        print("  Single Channel: python ideas/scrape_videos.py <channel_handle_or_id>", file=sys.stderr)
+        print("  Bulk File:      python ideas/scrape_videos.py ideas/tech_channels.txt", file=sys.stderr)
+        print("                  python ideas/scrape_videos.py --channels ideas/tech_channels.txt", file=sys.stderr)
         sys.exit(1)
 
     try:
-        channel_record, video_records = scrape_and_save_channel_videos(
-            channel_input=channel_input,
-            months=args.months,
-            outlier_threshold=args.threshold,
-            api_key=args.api_key,
-            token_path=args.token_file,
-        )
-        print_scrape_summary(channel_record, video_records, outlier_threshold=args.threshold)
+        if is_bulk or len(channels_to_scrape) > 1:
+            results, failed_channels, all_outliers = scrape_channels_bulk(
+                channel_inputs=channels_to_scrape,
+                months=args.months,
+                outlier_threshold=args.threshold,
+                api_key=args.api_key,
+                token_path=args.token_file,
+                stop_on_error=args.stop_on_error,
+            )
+            print_bulk_summary(
+                results=results,
+                failed_channels=failed_channels,
+                all_outliers=all_outliers,
+                outlier_threshold=args.threshold,
+            )
+        else:
+            channel_record, video_records = scrape_and_save_channel_videos(
+                channel_input=channels_to_scrape[0],
+                months=args.months,
+                outlier_threshold=args.threshold,
+                api_key=args.api_key,
+                token_path=args.token_file,
+            )
+            print_scrape_summary(channel_record, video_records, outlier_threshold=args.threshold)
     except Exception as e:
         logger.exception("Scraping execution failed: %s", e)
         sys.exit(1)
