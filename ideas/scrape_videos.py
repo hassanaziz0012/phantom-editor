@@ -759,7 +759,7 @@ def main() -> None:
         "channel",
         nargs="?",
         default=None,
-        help="Channel ID, @handle, custom URL, YouTube channel URL, or path to a text file containing channels (falls back to YOUTUBE_CHANNEL_ID in .env).",
+        help="Channel ID, @handle, custom URL, YouTube channel URL, or path to a text file containing channels.",
     )
     parser.add_argument(
         "--channels",
@@ -820,14 +820,6 @@ def main() -> None:
             sys.exit(1)
     elif args.channel:
         channels_to_scrape = [args.channel]
-    else:
-        env_channel = os.getenv("YOUTUBE_CHANNEL_ID")
-        if env_channel:
-            if Path(env_channel).is_file():
-                is_bulk = True
-                channels_to_scrape = read_channels_from_file(env_channel)
-            else:
-                channels_to_scrape = [env_channel]
 
     if not channels_to_scrape:
         print("Error: No YouTube channel or channel list file specified.", file=sys.stderr)
