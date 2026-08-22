@@ -7,6 +7,7 @@ Expects metadata.json and thumbnail.png (optional) in the same folder as the vid
 
 import argparse
 import asyncio
+from datetime import datetime
 import json
 import os
 import subprocess
@@ -198,13 +199,14 @@ def main():
     share_url = get_share_url(video_id)
     print(f"\n🔗 Share URL: {share_url}")
 
-    # Save URL to metadata.json
+    # Save URL and uploadedDate to metadata.json
     metadata.url = share_url
+    metadata.uploaded_date = datetime.now().strftime("%Y-%m-%d")
     try:
         metadata.save()
-        print("✅ Saved YouTube URL to metadata.json")
+        print("✅ Saved YouTube URL and uploadedDate to metadata.json")
     except Exception as e:
-        print(f"⚠️  Failed to save URL to metadata.json: {e}")
+        print(f"⚠️  Failed to save metadata to metadata.json: {e}")
 
     # Post tweet
     tweet_template = metadata.get(
