@@ -218,7 +218,7 @@ case "$COMMAND" in
         elif [ "$SUBCOMMAND" = "summarize" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/summarize_video.py" "$@"
         elif [ "$SUBCOMMAND" = "comments" ] || [ "$SUBCOMMAND" = "scrape-comments" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/scrape_comments.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/comments/scrape_comments.py" "$@"
         else
             echo "Unknown yt subcommand: $SUBCOMMAND"
             echo "Usage: phantom yt upload <video_path>"
