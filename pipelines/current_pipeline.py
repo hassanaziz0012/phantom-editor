@@ -96,6 +96,7 @@ class VideoProject:
     yt_url: Optional[str] = None
     title: Optional[str] = None
     scheduled_date: Optional[str] = None
+    uploaded_date: Optional[str] = None
     stage_num: int = 1
     stage_name: str = "New"
     next_step: str = ""
@@ -118,6 +119,7 @@ class VideoProject:
             "thumbnails": [f.name for f in self.thumbnail_files],
             "yt_url": self.yt_url,
             "scheduled_date": self.scheduled_date,
+            "uploaded_date": self.uploaded_date,
         }
 
 
@@ -179,6 +181,8 @@ def analyze_project(project_dir: Path) -> VideoProject:
                     project.yt_url = meta.url
                 if meta.publish_date:
                     project.scheduled_date = meta.publish_date
+                if meta.uploaded_date:
+                    project.uploaded_date = meta.uploaded_date
             except Exception:
                 pass
         elif is_script_file(item):
@@ -195,7 +199,8 @@ def analyze_project(project_dir: Path) -> VideoProject:
     if project.yt_url:
         project.stage_num = 10
         project.stage_name = "Uploaded"
-        date_info = f" (Scheduled: {project.scheduled_date})" if project.scheduled_date else ""
+        date_str = project.uploaded_date or project.scheduled_date
+        date_info = f" (Published: {date_str})" if date_str else ""
         project.next_step = f"Video uploaded to YouTube{date_info}! All pipeline stages complete! 🚀"
         project.status_color = COLOR_GREEN
 
@@ -332,7 +337,7 @@ def render_stage_bar(proj: VideoProject) -> str:
                     and bool(proj.thumbnail_files)
                 )
             elif idx == 9:
-                is_complete = proj.stage_num > 9 or bool(proj.yt_url) or bool(proj.scheduled_date)
+                is_complete = proj.stage_num > 9 or bool(proj.yt_url) or bool(proj.scheduled_date) or bool(proj.uploaded_date)
             elif idx == 10:
                 is_complete = proj.stage_num == 10 or bool(proj.yt_url)
 
@@ -379,7 +384,9 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         
         if proj.metadata_file:
             if proj.yt_url:
-                meta_status = f"{COLOR_GREEN}✓ metadata.json (URL set){COLOR_RESET}"
+                date_str = proj.uploaded_date or proj.scheduled_date
+                date_label = f" (Uploaded: {date_str})" if date_str else " (URL set)"
+                meta_status = f"{COLOR_GREEN}✓ metadata.json{date_label}{COLOR_RESET}"
             elif proj.scheduled_date:
                 meta_status = f"{COLOR_GREEN}✓ metadata.json (Scheduled: {proj.scheduled_date}){COLOR_RESET}"
             else:
