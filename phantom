@@ -31,7 +31,7 @@ show_usage() {
     echo "  emails broadcast --title <title> --description <desc> --url <url> [arguments]"
     echo "  reddit analyze-post <url> [--headless] [--json]"
     echo "  tweet [--image] <tweet_content>"
-    echo "  ideas generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--export] [--json]"
+    echo "  ideas generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
     echo "  ideas generate-from-outlier <video> [--no-export] [--fresh-summary] [--json]"
     echo "  ideas export [--file <path> | --idea <text>] [arguments]"
     echo "  ideas scrape (<channel_or_file> | --channels <path>) [arguments]"
