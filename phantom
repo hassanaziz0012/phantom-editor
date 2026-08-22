@@ -35,6 +35,7 @@ show_usage() {
     echo "  yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
     echo "  yt create-metadata <video_path>"
     echo "  yt count-uploads [<channel>] [--fresh]"
+    echo "  yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
     echo "  yt summarize [<video>] [--all] [--limit <int>] [arguments]"
     echo "  shorts metadata create <folder_path> [arguments]"
     echo "  shorts metadata clean"
@@ -211,6 +212,8 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/read_metadata.py" "$@"
         elif [ "$SUBCOMMAND" = "count-uploads" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/count_youtube_uploads.py" "$@"
+        elif [ "$SUBCOMMAND" = "print-titles" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/print_titles.py" "$@"
         elif [ "$SUBCOMMAND" = "summarize" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/summarize_video.py" "$@"
         else
@@ -220,6 +223,7 @@ case "$COMMAND" in
             echo "       phantom yt create-metadata <video_path>"
             echo "       phantom yt read-metadata [<video_or_metadata_path>] [--json]"
             echo "       phantom yt count-uploads [<channel>] [--fresh]"
+            echo "       phantom yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
             echo "       phantom yt summarize [<video>] [--all] [--limit <int>] [arguments]"
             exit 1
         fi
