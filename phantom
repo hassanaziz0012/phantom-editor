@@ -37,6 +37,7 @@ show_usage() {
     echo "  yt count-uploads [<channel>] [--fresh]"
     echo "  yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
     echo "  yt summarize [<video>] [--all] [--limit <int>] [arguments]"
+    echo "  yt comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
     echo "  shorts metadata create <folder_path> [arguments]"
     echo "  shorts metadata clean"
     echo "  shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
@@ -216,6 +217,8 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/print_titles.py" "$@"
         elif [ "$SUBCOMMAND" = "summarize" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/summarize_video.py" "$@"
+        elif [ "$SUBCOMMAND" = "comments" ] || [ "$SUBCOMMAND" = "scrape-comments" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/scrape_comments.py" "$@"
         else
             echo "Unknown yt subcommand: $SUBCOMMAND"
             echo "Usage: phantom yt upload <video_path>"
@@ -225,6 +228,7 @@ case "$COMMAND" in
             echo "       phantom yt count-uploads [<channel>] [--fresh]"
             echo "       phantom yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
             echo "       phantom yt summarize [<video>] [--all] [--limit <int>] [arguments]"
+            echo "       phantom yt comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
             exit 1
         fi
         ;;
