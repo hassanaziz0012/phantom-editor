@@ -33,6 +33,7 @@ show_usage() {
     echo "  tweet [--image] <tweet_content>"
     echo "  ideas generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--export] [--json]"
     echo "  ideas export [--file <path> | --idea <text>] [arguments]"
+    echo "  ideas scrape [<channel_or_file>] [--channels <path>] [arguments]"
     echo "  ideas outliers [arguments]"
     echo "  yt upload <video_path>"
     echo "  yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
@@ -216,10 +217,13 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/export_ideas_to_sheet.py" "$@"
         elif [ "$SUBCOMMAND" = "outliers" ]; then
             uv run --project "$BASE_DIR" python -m ideas.outliers_db "$@"
+        elif [ "$SUBCOMMAND" = "scrape" ] || [ "$SUBCOMMAND" = "scrape-videos" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/scrape_videos.py" "$@"
         else
             echo "Unknown ideas subcommand: $SUBCOMMAND"
             echo "Usage: phantom ideas generate-from-comments <video> [arguments]"
             echo "       phantom ideas export [--file <path> | --idea <text>] [arguments]"
+            echo "       phantom ideas scrape [<channel_or_file>] [--channels <path>] [arguments]"
             echo "       phantom ideas outliers [arguments]"
             exit 1
         fi
