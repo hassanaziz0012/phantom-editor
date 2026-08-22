@@ -4,7 +4,7 @@ YouTube Video Summarizer
 ========================
 Downloads audio from a YouTube video via yt-dlp, transcribes it using Groq Cloud
 via phantom transcribe-cloud, analyzes and summarizes the transcript with OpenRouter
-(using google/gemma-4-26b-a4b-it:free), and persists the summary and key takeaways
+(using nvidia/nemotron-3-ultra-550b-a55b:free), and persists the summary and key takeaways
 into PostgreSQL.
 """
 
@@ -31,7 +31,7 @@ if str(repo_root) not in sys.path:
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-from agentic.ask_openrouter import ask_openrouter, DEFAULT_OPENROUTER_MODEL
+from agentic.ask_openrouter import ask_openrouter
 from ideas.outliers_db.schema import init_db
 from ideas.outliers_db.videos import get_unsummarized_videos, update_video_summary, get_video
 
@@ -45,6 +45,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("phantom.ideas.summarizer")
 
+DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
 PROMPT_PATH = repo_root / "agentic" / "prompts" / "summarize_yt_video.md"
 
 
@@ -254,10 +255,10 @@ def load_system_prompt() -> str:
 def summarize_transcript(
     transcript: str,
     video_title: str = "",
-    model: str = DEFAULT_OPENROUTER_MODEL,
+    model: str = DEFAULT_MODEL,
 ) -> VideoSummaryResponse:
     """
-    Sends the video transcript to OpenRouter (Gemma 4 26B) and receives structured summary & takeaways.
+    Sends the video transcript to OpenRouter and receives structured summary & takeaways.
     """
     logger.info("Generating summary via OpenRouter (%s)...", model)
     system_prompt = load_system_prompt()
@@ -284,7 +285,7 @@ def summarize_transcript(
 
 def summarize_video(
     video_input: str,
-    model: str = DEFAULT_OPENROUTER_MODEL,
+    model: str = DEFAULT_MODEL,
     save_to_db: bool = True,
 ) -> Tuple[VideoSummaryResponse, str]:
     """
@@ -347,7 +348,7 @@ def summarize_video(
 def summarize_bulk_videos(
     limit: Optional[int] = None,
     workers: int = 4,
-    model: str = DEFAULT_OPENROUTER_MODEL,
+    model: str = DEFAULT_MODEL,
     save_to_db: bool = True,
 ) -> List[Dict[str, Any]]:
     """
@@ -434,7 +435,7 @@ def summarize_bulk_videos(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Download, transcribe, and summarize YouTube videos using yt-dlp, Groq Whisper, and Gemma 4 26B on OpenRouter."
+        description="Download, transcribe, and summarize YouTube videos using yt-dlp, Groq Whisper, and OpenRouter."
     )
     parser.add_argument(
         "video",
@@ -461,8 +462,8 @@ def main():
     )
     parser.add_argument(
         "--model", "-m",
-        default=DEFAULT_OPENROUTER_MODEL,
-        help=f"OpenRouter model to use (default: {DEFAULT_OPENROUTER_MODEL})",
+        default=DEFAULT_MODEL,
+        help=f"OpenRouter model to use (default: {DEFAULT_MODEL})",
     )
     parser.add_argument(
         "--no-db",
