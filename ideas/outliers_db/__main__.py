@@ -1,5 +1,5 @@
 """
-Main entry point for `python -m ideas.db`
+Main entry point for `python -m ideas.outliers_db`
 """
 
 from .cli import main

@@ -32,8 +32,8 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from agentic.ask_openrouter import ask_openrouter, DEFAULT_OPENROUTER_MODEL
-from ideas.db.schema import init_db
-from ideas.db.videos import get_unsummarized_videos, update_video_summary, get_video
+from ideas.outliers_db.schema import init_db
+from ideas.outliers_db.videos import get_unsummarized_videos, update_video_summary, get_video
 
 load_dotenv()
 

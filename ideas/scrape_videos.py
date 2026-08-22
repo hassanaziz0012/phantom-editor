@@ -32,12 +32,12 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 import requests
 
-from ideas.db.channels import get_channel, upsert_channel
-from ideas.db.models import ChannelRecord, VideoRecord
-from ideas.db.queries import get_outlier_videos
-from ideas.db.schema import init_db
-from ideas.db.scoring import compute_video_score_components, update_video_scores
-from ideas.db.videos import upsert_videos_batch
+from ideas.outliers_db.channels import get_channel, upsert_channel
+from ideas.outliers_db.models import ChannelRecord, VideoRecord
+from ideas.outliers_db.queries import get_outlier_videos
+from ideas.outliers_db.schema import init_db
+from ideas.outliers_db.scoring import compute_video_score_components, update_video_scores
+from ideas.outliers_db.videos import upsert_videos_batch
 
 load_dotenv()
 
