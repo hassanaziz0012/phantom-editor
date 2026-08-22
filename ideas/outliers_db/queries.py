@@ -18,6 +18,7 @@ def get_outlier_videos(
     channel_id: Optional[str] = None,
     min_score: float = 2.0,
     min_views: int = 500,
+    no_shorts: bool = False,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """
@@ -30,6 +31,9 @@ def get_outlier_videos(
     if channel_id:
         conditions.append("v.channel_id = %s")
         params.append(channel_id)
+
+    if no_shorts:
+        conditions.append("v.is_short = FALSE")
 
     params.append(limit)
 
@@ -69,6 +73,7 @@ def get_outlier_videos(
 def get_top_videos(
     channel_id: Optional[str] = None,
     sort_by: str = "score",
+    no_shorts: bool = False,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """
@@ -90,6 +95,9 @@ def get_top_videos(
     if channel_id:
         conditions.append("v.channel_id = %s")
         params.append(channel_id)
+
+    if no_shorts:
+        conditions.append("v.is_short = FALSE")
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     params.append(limit)

@@ -10,23 +10,42 @@ import argparse
 import sys
 from typing import Any
 
-from .channels import get_all_channels
-from .config import (
-    POSTGRES_CONTAINER_NAME,
-    POSTGRES_DB,
-    POSTGRES_HOST,
-    POSTGRES_IMAGE,
-    POSTGRES_PORT,
-)
-from .connection import get_db_connection
-from .docker import (
-    ensure_postgres_container,
-    get_container_status,
-    stop_postgres_container,
-)
-from .queries import get_outlier_videos, get_top_videos
-from .schema import init_db
-from .scoring import update_video_scores
+try:
+    from .channels import get_all_channels
+    from .config import (
+        POSTGRES_CONTAINER_NAME,
+        POSTGRES_DB,
+        POSTGRES_HOST,
+        POSTGRES_IMAGE,
+        POSTGRES_PORT,
+    )
+    from .connection import get_db_connection
+    from .docker import (
+        ensure_postgres_container,
+        get_container_status,
+        stop_postgres_container,
+    )
+    from .queries import get_outlier_videos, get_top_videos
+    from .schema import init_db
+    from .scoring import update_video_scores
+except ImportError:
+    from ideas.outliers_db.channels import get_all_channels
+    from ideas.outliers_db.config import (
+        POSTGRES_CONTAINER_NAME,
+        POSTGRES_DB,
+        POSTGRES_HOST,
+        POSTGRES_IMAGE,
+        POSTGRES_PORT,
+    )
+    from ideas.outliers_db.connection import get_db_connection
+    from ideas.outliers_db.docker import (
+        ensure_postgres_container,
+        get_container_status,
+        stop_postgres_container,
+    )
+    from ideas.outliers_db.queries import get_outlier_videos, get_top_videos
+    from ideas.outliers_db.schema import init_db
+    from ideas.outliers_db.scoring import update_video_scores
 
 
 def format_number(val: Any) -> str:
@@ -46,6 +65,7 @@ def format_number(val: Any) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
+        prog="phantom ideas outliers",
         description="PostgreSQL Database Manager for YouTube Channels & Outlier Analytics",
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -68,6 +88,7 @@ def main() -> None:
     outliers_parser.add_argument("--channel", "-c", help="Filter by channel ID")
     outliers_parser.add_argument("--min-score", "-s", type=float, default=2.0, help="Minimum outlier score")
     outliers_parser.add_argument("--min-views", "-v", type=int, default=100, help="Minimum view count")
+    outliers_parser.add_argument("--no-shorts", action="store_true", help="Exclude YouTube Shorts from results")
     outliers_parser.add_argument("--limit", "-n", type=int, default=25, help="Number of results")
 
     # list channels
@@ -77,6 +98,7 @@ def main() -> None:
     top_parser = subparsers.add_parser("top", help="List top performing videos")
     top_parser.add_argument("--channel", "-c", help="Filter by channel ID")
     top_parser.add_argument("--sort", choices=["score", "view_score", "like_score", "views", "recent"], default="score")
+    top_parser.add_argument("--no-shorts", action="store_true", help="Exclude YouTube Shorts from results")
     top_parser.add_argument("--limit", "-n", type=int, default=20, help="Number of results")
 
     args = parser.parse_args()
@@ -148,6 +170,7 @@ def main() -> None:
             channel_id=args.channel,
             min_score=args.min_score,
             min_views=args.min_views,
+            no_shorts=args.no_shorts,
             limit=args.limit,
         )
         if not outliers:
@@ -166,7 +189,12 @@ def main() -> None:
             )
 
     elif args.command == "top":
-        videos = get_top_videos(channel_id=args.channel, sort_by=args.sort, limit=args.limit)
+        videos = get_top_videos(
+            channel_id=args.channel,
+            sort_by=args.sort,
+            no_shorts=args.no_shorts,
+            limit=args.limit,
+        )
         if not videos:
             print("No videos found.")
             return
