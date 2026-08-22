@@ -195,12 +195,16 @@ def fetch_video_details(youtube, video_ids: list[str]) -> list[Video]:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def fetch_channel_videos(api_key: str, channel_id: str, fresh: bool = False) -> list[Video]:
+def fetch_channel_videos(api_key: str, channel_id: str, fresh: bool = False, quiet: bool = False) -> list[Video]:
     """
     Full pipeline with caching: authenticate → find uploads playlist
     → check cache for channel_id → page uploads playlist (stopping early if hit cache)
     → enrich new video IDs with stats → merge and return all Video objects.
     """
+    def _log(msg: str) -> None:
+        if not quiet:
+            print(msg)
+
     # 1. Establish and sanitize cache path (to prevent directory traversal)
     cache_dir = Path(__file__).resolve().parent / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -223,20 +227,20 @@ def fetch_channel_videos(api_key: str, channel_id: str, fresh: bool = False) -> 
                 if isinstance(cached_data, list):
                     cached_videos = [dict_to_video(v_dict) for v_dict in cached_data]
                     cached_ids = {v.video_id for v in cached_videos}
-                    print(f"      Fetched {len(cached_videos)} videos from cache")
+                    _log(f"      Fetched {len(cached_videos)} videos from cache")
         except Exception as e:
             # Handle corrupt/invalid cache gracefully
-            print(f"      Warning: Failed to load cache from {cache_file.name} ({e}). Falling back to API.")
+            _log(f"      Warning: Failed to load cache from {cache_file.name} ({e}). Falling back to API.")
 
     youtube = get_youtube_client(api_key)
 
-    print(f"[1/3] Fetching uploads playlist for channel: {channel_id}")
+    _log(f"[1/3] Fetching uploads playlist for channel: {channel_id}")
     uploads_playlist_id = get_uploads_playlist_id(youtube, channel_id)
 
     # 3. Fetch video IDs from API, stopping early if we encounter a cached ID
-    print(f"[2/3] Collecting new video IDs from playlist: {uploads_playlist_id}")
+    _log(f"[2/3] Collecting new video IDs from playlist: {uploads_playlist_id}")
     if fresh:
-        print("      Bypassing cache (--fresh requested)...")
+        _log("      Bypassing cache (--fresh requested)...")
     
     new_video_ids, hit_cache = fetch_all_video_ids(
         youtube, 
@@ -245,16 +249,16 @@ def fetch_channel_videos(api_key: str, channel_id: str, fresh: bool = False) -> 
     )
     
     if hit_cache:
-        print(f"      Found cached video ID. Stopping API fetch.")
+        _log("      Found cached video ID. Stopping API fetch.")
     
-    print(f"      Found {len(new_video_ids)} new videos to fetch from API")
+    _log(f"      Found {len(new_video_ids)} new videos to fetch from API")
 
     # 4. Fetch details for new videos from API
     new_videos = []
     if new_video_ids:
-        print("[3/3] Fetching full metadata and statistics for new videos …")
+        _log("[3/3] Fetching full metadata and statistics for new videos …")
         new_videos = fetch_video_details(youtube, new_video_ids)
-        print(f"      Fetched {len(new_videos)} videos from API")
+        _log(f"      Fetched {len(new_videos)} videos from API")
 
     # 5. Merge new videos and cached videos
     # Make sure we don't have duplicates, keeping the fresh/new versions if any conflicts occur.
@@ -277,11 +281,11 @@ def fetch_channel_videos(api_key: str, channel_id: str, fresh: bool = False) -> 
             rel_path = cache_file.relative_to(Path(root_dir))
         except Exception:
             rel_path = cache_file.name
-        print(f"      Saved {len(all_videos)} videos to cache: {rel_path}")
+        _log(f"      Saved {len(all_videos)} videos to cache: {rel_path}")
     except Exception as e:
-        print(f"      Warning: Failed to save cache to {cache_file.name} ({e})")
+        _log(f"      Warning: Failed to save cache to {cache_file.name} ({e})")
 
-    print(f"Done! Returning {len(all_videos)} Video objects.\n")
+    _log(f"Done! Returning {len(all_videos)} Video objects.\n")
     return all_videos
 
 
