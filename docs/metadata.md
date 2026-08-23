@@ -59,6 +59,20 @@ Generates YouTube chapters and topics from phrase-level `.srt` captions using Cl
 
 ---
 
+### [create_metadata.py](../metadata/create_metadata.py)
+Interactively prompts for and creates a `metadata.json` file used when uploading a video.
+
+* **CLI Command**: `phantom metadata manual <video_path>` or `python metadata/create_metadata.py <video_path>`
+
+---
+
+### [read_metadata.py](../metadata/read_metadata.py)
+Parses, discovers, and reads `metadata.json` files for YouTube projects into typed `VideoMetadata` objects with dictionary fallback compatibility and auto-saving support.
+
+* **CLI Command**: `phantom metadata read [<project_or_video_path>] [--json]` or `python metadata/read_metadata.py [<project_or_video_path>] [--json]`
+
+---
+
 ### [utils.py](../metadata/utils.py)
 Shared helper module containing:
 - `query_claude(prompt_text)`: Invokes `browserllm -p <file> --provider claude -o <file>`.

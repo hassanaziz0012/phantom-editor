@@ -45,7 +45,10 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Any
 
 
-from youtube_api.read_metadata import read_metadata
+try:
+    from metadata.read_metadata import read_metadata
+except ImportError:
+    from read_metadata import read_metadata
 
 try:
     from pipelines.pipeline_status import is_valid_yt_url

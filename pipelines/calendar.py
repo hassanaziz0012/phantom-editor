@@ -57,9 +57,12 @@ except ImportError:
     )
 
 try:
-    from youtube_api.read_metadata import VideoMetadata, read_metadata
+    from metadata.read_metadata import VideoMetadata, read_metadata
 except ImportError:
-    from read_metadata import VideoMetadata, read_metadata
+    try:
+        from youtube_api.read_metadata import VideoMetadata, read_metadata
+    except ImportError:
+        from read_metadata import VideoMetadata, read_metadata
 
 # Terminal Colors
 COLOR_GREEN = "\033[92m"

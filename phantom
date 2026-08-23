@@ -193,13 +193,13 @@ case "$COMMAND" in
         elif [ "$SUBCOMMAND" = "timestamps" ] || [ "$SUBCOMMAND" = "generate-timestamps" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/generate_timestamps.py" "$@"
         elif [ "$SUBCOMMAND" = "read" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/read_metadata.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/read_metadata.py" "$@"
         elif [ "$SUBCOMMAND" = "manual" ] || [ "$SUBCOMMAND" = "interactive" ]; then
             if [ $# -eq 0 ]; then
                 echo "Usage: phantom metadata manual <video_path>"
                 exit 1
             fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/create_metadata.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/create_metadata.py" "$@"
         else
             echo "Unknown metadata subcommand: $SUBCOMMAND"
             echo "Usage: phantom metadata create [<project_path>] [arguments]"

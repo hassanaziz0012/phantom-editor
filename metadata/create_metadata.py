@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
 Create YouTube video metadata interactively.
-Usage: python create_metadata.py /path/to/video.mp4
+
+Usage:
+    python metadata/create_metadata.py /path/to/video.mp4
+    phantom metadata manual <video_path>
 """
+
+from __future__ import annotations
 
 import argparse
 import json
@@ -13,6 +18,11 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# Ensure repository root is in sys.path
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
 # Enable GNU readline for interactive terminal editing (fixes arrow key escape sequences like ^[[D)
 try:

@@ -6,7 +6,7 @@ Provides a unified abstraction for discovering, reading, parsing, and modifying
 `metadata.json` project files for YouTube video uploads.
 
 Usage as a Python module:
-    from youtube_api.read_metadata import read_metadata, VideoMetadata
+    from metadata.read_metadata import read_metadata, VideoMetadata
 
     # Load metadata by passing video path, folder path, or metadata.json directly
     meta = read_metadata("/path/to/project/final.mp4")
@@ -18,8 +18,8 @@ Usage as a Python module:
     meta.save()
 
 Usage as a CLI script:
-    python read_metadata.py /path/to/project/or/video.mp4
-    phantom yt read-metadata /path/to/project
+    python metadata/read_metadata.py /path/to/project/or/video.mp4
+    phantom metadata read /path/to/project
 """
 
 from __future__ import annotations
@@ -32,6 +32,11 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, Optional, Union
+
+# Ensure repository root is in sys.path
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
 if TYPE_CHECKING:
     from youtube_api.models import VideoSeed
@@ -137,6 +142,7 @@ class VideoMetadata:
     privacy_status: str = "public"
     made_for_kids: bool = False
     tweet_template: str = "🎬 New video just dropped! {url}"
+    timestamps: list[Any] = field(default_factory=list)
     url: Optional[str] = None
     publish_date: Optional[str] = None
     uploaded_date: Optional[str] = None
@@ -216,6 +222,7 @@ class VideoMetadata:
             "made_for_kids": self.made_for_kids,
             "tweetTemplate": self.tweet_template,
             "tweet_template": self.tweet_template,
+            "timestamps": self.timestamps,
             "url": self.url,
             "publishDate": self.publish_date,
             "publish_date": self.publish_date,
@@ -243,6 +250,8 @@ class VideoMetadata:
             self.made_for_kids = bool(value)
         elif key in ("tweetTemplate", "tweet_template"):
             self.tweet_template = str(value)
+        elif key == "timestamps":
+            self.timestamps = list(value) if isinstance(value, (list, tuple, set)) else (value if value else [])
         elif key == "url":
             self.url = str(value) if value is not None else None
         elif key in ("publishDate", "publish_date"):
@@ -263,7 +272,7 @@ class VideoMetadata:
         standard_keys = {
             "title", "description", "tags", "categoryId", "category_id",
             "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-            "tweetTemplate", "tweet_template", "url", "publishDate", "publish_date",
+            "tweetTemplate", "tweet_template", "timestamps", "url", "publishDate", "publish_date",
             "uploadedDate", "uploaded_date"
         }
         return key in standard_keys or key in self.raw_data
@@ -290,6 +299,8 @@ class VideoMetadata:
             "madeForKids": self.made_for_kids,
             "tweetTemplate": self.tweet_template,
         }
+        if self.timestamps:
+            out["timestamps"] = self.timestamps
         if self.url:
             out["url"] = self.url
         if self.publish_date:
@@ -374,6 +385,14 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
     tweet_template = str(
         data.get("tweetTemplate") or data.get("tweet_template") or "🎬 New video just dropped! {url}"
     )
+    raw_timestamps = data.get("timestamps", [])
+    if isinstance(raw_timestamps, list):
+        timestamps = raw_timestamps
+    elif raw_timestamps:
+        timestamps = [raw_timestamps]
+    else:
+        timestamps = []
+
     url = data.get("url")
     if url is not None:
         url = str(url).strip() or None
@@ -389,7 +408,7 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
     standard_keys = {
         "title", "description", "tags", "categoryId", "category_id",
         "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-        "tweetTemplate", "tweet_template", "url", "publishDate", "publish_date",
+        "tweetTemplate", "tweet_template", "timestamps", "url", "publishDate", "publish_date",
         "uploadedDate", "uploaded_date"
     }
     raw_data = {k: v for k, v in data.items() if k not in standard_keys}
@@ -402,6 +421,7 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
         privacy_status=privacy_status,
         made_for_kids=made_for_kids,
         tweet_template=tweet_template,
+        timestamps=timestamps,
         url=url,
         publish_date=publish_date,
         uploaded_date=uploaded_date,
@@ -493,6 +513,16 @@ def main() -> None:
             print(f"    {line}")
     else:
         print("    (Empty)")
+    if metadata.timestamps:
+        print("-" * 60)
+        print(f"  Timestamps ({len(metadata.timestamps)}):")
+        for item in metadata.timestamps:
+            if isinstance(item, dict):
+                ts = item.get("timestamp") or item.get("time") or ""
+                topic = item.get("topic") or item.get("title") or ""
+                print(f"    {ts:<8} {topic}")
+            else:
+                print(f"    {item}")
     print("=" * 60)
 
 

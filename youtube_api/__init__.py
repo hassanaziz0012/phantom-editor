@@ -6,7 +6,7 @@ enabling video fetching, outlier reporting, and smart video recommendations.
 """
 
 from youtube_api.models import Video, VideoSeed, RankedVideo, VideoMetadata
-from youtube_api.read_metadata import read_metadata, load_metadata, find_metadata_file
+from metadata.read_metadata import read_metadata, load_metadata, find_metadata_file
 
 __all__ = [
     "Video",

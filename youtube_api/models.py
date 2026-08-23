@@ -64,5 +64,5 @@ class RankedVideo:
 
 
 # Re-export VideoMetadata for convenience
-from youtube_api.read_metadata import VideoMetadata  # noqa: E402
+from metadata.read_metadata import VideoMetadata  # noqa: E402
 
