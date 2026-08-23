@@ -15,7 +15,7 @@ Calculates and displays a channel's upload counts for today, the last 7 days, 14
 ### [create_metadata.py](../youtube_api/create_metadata.py)
 Interactively prompts for and creates a `metadata.json` file used when uploading a video.
 
-* **Usage**: `python youtube_api/create_metadata.py /path/to/video.mp4` or via `phantom yt create-metadata <video_path>`
+* **Usage**: `python youtube_api/create_metadata.py /path/to/video.mp4` or via `phantom metadata manual <video_path>`
 
 ### [fetch_videos.py](../youtube_api/fetch_videos.py)
 Core retrieval module that handles fetching all videos for a channel and caching them in local JSON files.
@@ -28,7 +28,7 @@ Defines shared dataclasses (`Video`, `VideoSeed`, `RankedVideo`, `VideoMetadata`
 ### [read_metadata.py](../youtube_api/read_metadata.py)
 Parses, discovers, and reads `metadata.json` files for YouTube projects into typed `VideoMetadata` objects with dictionary fallback compatibility and auto-saving support.
 
-* **Usage**: `python youtube_api/read_metadata.py [<video_or_metadata_path>] [--json]` or via `phantom yt read-metadata [<video_or_metadata_path>] [--json]`
+* **Usage**: `python youtube_api/read_metadata.py [<video_or_metadata_path>] [--json]` or via `phantom metadata read [<video_or_metadata_path>] [--json]`
 
 ### [recommend_related_videos.py](../youtube_api/recommend_related_videos.py)
 Calculates and lists recommended related videos from the channel inventory using a weighted similarity algorithm.

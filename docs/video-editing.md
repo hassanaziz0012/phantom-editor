@@ -152,9 +152,26 @@ Trims silences from a video using speech/caption intervals generated via Whisper
   - If a custom captions file is not provided via `--captions` and a word-level subtitle file (`<video_name>-1word.srt` or legacy `captions_1word.srt`) does not exist, it automatically invokes `transcribe_video` with `max_words=1` to generate it.
   - Merges close speech blocks and cuts the video in a single-pass using FFmpeg's `select`/`aselect` filtergraph, ensuring audio-video sync is preserved.
 
-### [utils.py](../video-editing/utils.py)
-A shared utility module containing helper functions for timestamp parsing/formatting, slug generation, and Google Docs retrieval:
+### [generate_timestamps.py](../metadata/generate_timestamps.py)
+Generates YouTube chapters and video topics with start timestamps from a phrase-level `.srt` captions file using Claude via BrowserLLM, and updates the project's `metadata.json`.
 
+* **CLI Command**: `phantom metadata timestamps [<captions_srt_path>] [--metadata <path>]`
+* **Usage/Arguments**:
+  - `captions`: Path to the phrase-level `.srt` captions subtitle file, video file, or project directory (phrase-level captions, not 1-word).
+  - `-m`, `--metadata`: Path to a custom `metadata.json` (default: `metadata.json` in the project directory).
+* **Key Features**:
+  - Formats phrase-level captions with timestamp cues into a clean transcript.
+  - Constructs prompt using [`agentic/prompts/generate_timestamps.md`](../agentic/prompts/generate_timestamps.md).
+  - Queries Claude through BrowserLLM and parses the generated JSON schema.
+  - Ensures the first chapter starts at `00:00` for YouTube chapter compatibility.
+  - Updates the `"timestamps"` array directly in the project's existing `metadata.json`.
+
+### [utils.py](../video-editing/utils.py)
+A shared utility module containing helper functions for subtitle/SRT parsing, timestamp formatting, slug generation, and Google Docs retrieval:
+
+- `parse_srt(srt_path)`: Parses an SRT subtitle file into a list of `(start_seconds, end_seconds, text)` tuples.
+- `parse_srt_to_text(srt_path)`: Parses an SRT subtitle file into clean continuous plain text.
+- `parse_srt_to_timestamped_transcript(srt_path)`: Parses an SRT subtitle file into a formatted transcript with `[MM:SS]` or `[HH:MM:SS]` cues.
 - `format_srt_time(seconds)`: Converts float seconds to `HH:MM:SS,mmm` string format.
 - `parse_timestamp(val)`: Parses float seconds or `HH:MM:SS,mmm` strings into float seconds.
 - `slugify(text)`: Converts arbitrary text to a lowercase hyphenated filename-safe slug.
