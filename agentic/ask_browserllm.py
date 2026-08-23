@@ -102,12 +102,20 @@ def ask_browserllm(
             cmd.extend(["-i", str(image)])
 
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        output = Path(output_path).read_text(encoding="utf-8").strip() if Path(output_path).exists() else ""
-        if not output:
-            output = res.stdout.strip()
+        combined_logs = f"{res.stdout}\n{res.stderr}".strip()
+        if "FATAL ERROR" in combined_logs or "hard rate limit reached" in combined_logs.lower():
+            raise RuntimeError(f"FATAL ERROR: ChatGPT hard rate limit reached in BrowserLLM: {combined_logs}")
 
-        if res.returncode != 0 and not output:
-            raise RuntimeError(f"BrowserLLM ({provider}) failed (code {res.returncode}): {res.stderr.strip() or res.stdout.strip()}")
+        output = Path(output_path).read_text(encoding="utf-8").strip() if Path(output_path).exists() else ""
+        if "FATAL ERROR" in output or "hard rate limit reached" in output.lower():
+            raise RuntimeError(f"FATAL ERROR: ChatGPT hard rate limit reached in BrowserLLM: {output}")
+
+        if not output:
+            if res.returncode != 0:
+                raise RuntimeError(f"BrowserLLM ({provider}) failed (code {res.returncode}): {res.stderr.strip() or res.stdout.strip()}")
+            if "[*]" in res.stdout or "Launching" in res.stdout:
+                raise RuntimeError(f"BrowserLLM ({provider}) did not produce output file. CLI logs:\n{res.stdout.strip()}")
+            output = res.stdout.strip()
 
         if not output:
             raise RuntimeError(f"BrowserLLM ({provider}) returned empty response. Stderr: {res.stderr.strip()}")
