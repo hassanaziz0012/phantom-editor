@@ -43,7 +43,6 @@ show_usage() {
     echo "  ideas scrape (<channel_or_file> | --channels <path>) [arguments]"
     echo "  ideas outliers [arguments]"
     echo "  yt upload <video_path>"
-    echo "  yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
     echo "  yt count-uploads [<channel>] [--fresh]"
     echo "  yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
     echo "  yt summarize [<video>] [--all] [--limit <int>] [arguments]"
@@ -276,8 +275,6 @@ case "$COMMAND" in
         shift
         if [ "$SUBCOMMAND" = "upload" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/upload_video.py" "$@"
-        elif [ "$SUBCOMMAND" = "recommend-related" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/recommend_related_videos.py" "$@"
         elif [ "$SUBCOMMAND" = "count-uploads" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/count_youtube_uploads.py" "$@"
         elif [ "$SUBCOMMAND" = "print-titles" ]; then
@@ -289,7 +286,6 @@ case "$COMMAND" in
         else
             echo "Unknown yt subcommand: $SUBCOMMAND"
             echo "Usage: phantom yt upload <video_path>"
-            echo "       phantom yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
             echo "       phantom yt count-uploads [<channel>] [--fresh]"
             echo "       phantom yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
             echo "       phantom yt summarize [<video>] [--all] [--limit <int>] [arguments]"

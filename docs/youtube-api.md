@@ -1,6 +1,6 @@
 # YouTube API Integration
 
-This directory contains scripts and helper utilities for interacting with the YouTube Data API v3. They enable video uploading, metadata generation, upload counting, and related video recommendations.
+This directory contains scripts and helper utilities for interacting with the YouTube Data API v3. They enable video uploading, metadata generation, and upload counting.
 
 ## Configuration
 Requires `YOUTUBE_API_KEY` and OAuth client/token JSON files in `youtube_api/tokens/` (for video uploading).
@@ -19,11 +19,6 @@ Core retrieval module that handles fetching all videos for a channel and caching
 
 ### [models.py](../youtube_api/models.py)
 Defines shared dataclasses (`Video`, `VideoSeed`, `RankedVideo`, `VideoMetadata`) for storing video metadata, stats, and recommendation rankings.
-
-### [recommend_related_videos.py](../youtube_api/recommend_related_videos.py)
-Calculates and lists recommended related videos from the channel inventory using a weighted similarity algorithm.
-
-* **Usage**: `python youtube_api/recommend_related_videos.py (--metadata <path> | --video-id <id>) [--limit <int>] [--json]` or via `phantom yt recommend-related`
 
 ### [upload_video.py](../youtube_api/upload_video.py)
 Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a custom `thumbnail.png`, shares the link on Twitter (X), and sends an email broadcast to subscribers via Resend.
