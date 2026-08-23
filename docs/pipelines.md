@@ -130,41 +130,47 @@ phantom pipeline newvideo "How to Build AI Agents"
 
 ## ⚡ Video Processing Engine: [`process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)
 
-The video processing engine executes an automated 6-step media pipeline that transforms raw webcam and screen recordings into a polished review video (`to-review.mp4`) and automatically generates YouTube metadata (`metadata.json`).
+The video processing engine executes an automated 7-step media pipeline that transforms raw webcam and screen recordings into a polished review video (`to-review.mp4`) and automatically generates YouTube metadata (`metadata.json`).
 
 ```mermaid
 flowchart TD
     Raw[Raw Webcam & Screen Footage] --> Step1[Step 1: Groq Cloud Transcription]
     Step1 -->|*.srt & *-1word.srt| Step2[Step 2: Single-Pass Mask & Silence Trim]
-    Step2 -->|after-trim-silences.mp4| Step3[Step 3: Vocal Audio Cleanup & Normalization]
-    Step3 -->|after-audio-processing.mp4| Step4{Step 4: Background Music?}
-    Step4 -->|Yes| Step4Run[Mix BGM via add_bgm_to_video.sh]
-    Step4 -->|No / Skipped| Step5[Step 5: Finalize Review File]
-    Step4Run -->|after-audio-processing-bgm.mp4| Step5
-    Step5 -->|to-review.mp4| Step6[Step 6: Auto-Create Metadata]
-    Step6 --> Output[metadata.json & to-review.mp4]
+    Step2 -->|after-trim-silences.mp4| Step3[Step 3: Transcribe Trimmed Video]
+    Step3 -->|trimmed.srt & trimmed-1word.srt| Step4[Step 4: Vocal Audio Cleanup & Normalization]
+    Step2 -->|after-trim-silences.mp4| Step4
+    Step4 -->|after-audio-processing.mp4| Step5{Step 5: Background Music?}
+    Step5 -->|Yes| Step5Run[Mix BGM via add_bgm_to_video.sh]
+    Step5 -->|No / Skipped| Step6[Step 6: Finalize Review File]
+    Step5Run -->|after-audio-processing-bgm.mp4| Step6
+    Step6 -->|to-review.mp4| Step7[Step 7: Auto-Create Metadata]
+    Step3 -.->|trimmed.srt| Step7
+    Step7 --> Output[metadata.json & to-review.mp4]
 ```
 
 ### Pipeline Steps in Detail
 
 1. **Step 1: Cloud Transcription (`transcribe_cloud.py`)**
-   - Transcribes the audio track using the Groq Whisper cloud API.
+   - Transcribes the raw audio track using the Groq Whisper cloud API.
    - Generates both a standard sentence-level `.srt` and a word-level `*-1word.srt` subtitle file.
 2. **Step 2: Single-Pass Masking & Silence Trimming ([`single_pass_mask_trim.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/single_pass_mask_trim.py))**
    - Analyzes word-level SRT timestamps for voice triggers (`"webcam start"` and `"webcam stop"`).
    - Generates an anti-aliased rounded-corner mask for the webcam overlay.
    - Computes speech intervals with Silero VAD (`trim_silences.py`).
-   - Executes webcam overlay positioning and dead-air silence removal inside a single unified FFmpeg filtergraph, avoiding redundant re-encodings.
-3. **Step 3: Vocal Audio Enhancement (`process_audio.sh`)**
+   - Executes webcam overlay positioning and dead-air silence removal inside a single unified FFmpeg filtergraph, avoiding redundant re-encodings (`after-trim-silences.mp4`).
+3. **Step 3: Transcribe Trimmed Video (`transcribe_cloud.py`)**
+   - Re-runs Groq Whisper cloud transcription on `after-trim-silences.mp4`.
+   - Saves `trimmed.srt` and `trimmed-1word.srt` containing updated timestamps aligned with the newly trimmed cut (with silences and bad takes removed).
+4. **Step 4: Vocal Audio Enhancement (`process_audio.sh`)**
    - Strips and processes audio using DeepFilterNet noise suppression.
    - Applies dual-pass EBU R128 `loudnorm` normalization and multiplexes the enhanced track back into the video (`after-audio-processing.mp4`).
-4. **Step 4: Background Music Addition (`add_bgm_to_video.sh`)**
+5. **Step 5: Background Music Addition (`add_bgm_to_video.sh`)**
    - Mixes in background music from the local library or custom path with automated ducking and volume adjustment (`after-audio-processing-bgm.mp4`).
    - Skipped automatically if no `--bgm` flag is passed.
-5. **Step 5: File Finalization**
+6. **Step 6: File Finalization**
    - Safely copies the latest generated video file to `to-review.mp4`, preparing the cut for manual review.
-6. **Step 6: Automatic Metadata Generation ([`auto_create_metadata.py`](file:///home/hassan/Desktop/programming/phantom-editor/metadata/auto_create_metadata.py))**
-   - Automatically inspects the project transcript (`.srt`) and generates chapters/timestamps, an engaging video description, and a promotional tweet template into `metadata.json`.
+7. **Step 7: Automatic Metadata Generation ([`auto_create_metadata.py`](file:///home/hassan/Desktop/programming/phantom-editor/metadata/auto_create_metadata.py))**
+   - Automatically inspects the project's updated transcript (`trimmed.srt`) and generates chapters/timestamps, an engaging video description, and a promotional tweet template into `metadata.json`.
    - Uses the provided `--title` if specified, or defaults to the formatted project folder name.
 
 ### Smart Resumption & Caching

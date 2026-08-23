@@ -107,14 +107,16 @@ def format_duration(seconds: float) -> str:
 def get_pipeline_outputs(webcam_path: Path, video_dir: Path, bgm: str | None) -> dict:
     """Compute and return step output file paths given webcam input and options."""
     ext = webcam_path.suffix or ".mp4"
-    step4_needed = bool(bgm)
+    step5_needed = bool(bgm)
     return {
         "step1_srt": video_dir / f"{webcam_path.stem}.srt",
         "step1_1word_srt": video_dir / f"{webcam_path.stem}-1word.srt",
         "step2_output": video_dir / "after-trim-silences.mp4",
-        "step3_output": video_dir / "after-audio-processing.mp4",
-        "step4_needed": step4_needed,
-        "step4_output": video_dir / "after-audio-processing-bgm.mp4",
+        "trimmed_srt": video_dir / "trimmed.srt",
+        "trimmed_1word_srt": video_dir / "trimmed-1word.srt",
+        "step4_output": video_dir / "after-audio-processing.mp4",
+        "step5_needed": step5_needed,
+        "step5_output": video_dir / "after-audio-processing-bgm.mp4",
         "final_output": video_dir / f"to-review{ext}",
         "metadata_output": video_dir / "metadata.json",
     }
@@ -124,14 +126,15 @@ def compute_pipeline_status(outputs: dict, force: bool) -> tuple[dict[int, bool]
     """Determine step completion statuses and execution plan."""
     step1_complete = is_valid_file(outputs["step1_1word_srt"]) and is_valid_file(outputs["step1_srt"])
     step2_complete = is_valid_file(outputs["step2_output"])
-    step3_complete = is_valid_file(outputs["step3_output"])
-    step4_complete = is_valid_file(outputs["step4_output"]) if outputs["step4_needed"] else True
+    step3_complete = is_valid_file(outputs["trimmed_srt"]) and is_valid_file(outputs["trimmed_1word_srt"])
+    step4_complete = is_valid_file(outputs["step4_output"])
+    step5_complete = is_valid_file(outputs["step5_output"]) if outputs["step5_needed"] else True
 
-    latest_output = outputs["step4_output"] if outputs["step4_needed"] else outputs["step3_output"]
-    step5_complete = is_valid_file(outputs["final_output"]) and (
+    latest_output = outputs["step5_output"] if outputs["step5_needed"] else outputs["step4_output"]
+    step6_complete = is_valid_file(outputs["final_output"]) and (
         not is_valid_file(latest_output) or outputs["final_output"].stat().st_mtime >= latest_output.stat().st_mtime
     )
-    step6_complete = is_valid_file(outputs["metadata_output"])
+    step7_complete = is_valid_file(outputs["metadata_output"])
 
     statuses = {
         1: step1_complete,
@@ -140,18 +143,20 @@ def compute_pipeline_status(outputs: dict, force: bool) -> tuple[dict[int, bool]
         4: step4_complete,
         5: step5_complete,
         6: step6_complete,
+        7: step7_complete,
     }
 
     if force:
-        run_plan = {1: True, 2: True, 3: True, 4: outputs["step4_needed"], 5: True, 6: True}
+        run_plan = {1: True, 2: True, 3: True, 4: True, 5: outputs["step5_needed"], 6: True, 7: True}
     else:
         run1 = not step1_complete
         run2 = run1 or not step2_complete
         run3 = run2 or not step3_complete
-        run4 = outputs["step4_needed"] and (run3 or not step4_complete)
-        run5 = (run4 if outputs["step4_needed"] else run3) or not step5_complete
-        run6 = run5 or not step6_complete
-        run_plan = {1: run1, 2: run2, 3: run3, 4: run4, 5: run5, 6: run6}
+        run4 = run2 or not step4_complete
+        run5 = outputs["step5_needed"] and (run4 or not step5_complete)
+        run6 = (run5 if outputs["step5_needed"] else run4) or not step6_complete
+        run7 = run3 or run6 or not step7_complete
+        run_plan = {1: run1, 2: run2, 3: run3, 4: run4, 5: run5, 6: run6, 7: run7}
 
     return statuses, run_plan
 
@@ -203,7 +208,7 @@ def print_pipeline_overview(
     if args.bgm:
         print(f" BGM track:        {args.bgm} (Volume: {args.volume}%)")
     else:
-        print_warning(" BGM track:        None specified (Step 4 will be skipped)")
+        print_warning(" BGM track:        None specified (Step 5 will be skipped)")
     if webcam_is_4k:
         print_warning(" Resolution check: Detected >1080p resolution (downscaled to 1080p during processing)")
     else:
@@ -217,9 +222,10 @@ def print_pipeline_overview(
     s1_str = format_status(True, run_plan[1], statuses[1], args.force)
     s2_str = format_status(True, run_plan[2], statuses[2], args.force)
     s3_str = format_status(True, run_plan[3], statuses[3], args.force)
-    s4_str = format_status(bool(args.bgm), run_plan[4], statuses[4], args.force, "No BGM specified")
-    s5_str = format_status(True, run_plan[5], statuses[5], args.force)
+    s4_str = format_status(True, run_plan[4], statuses[4], args.force)
+    s5_str = format_status(bool(args.bgm), run_plan[5], statuses[5], args.force, "No BGM specified")
     s6_str = format_status(True, run_plan[6], statuses[6], args.force)
+    s7_str = format_status(True, run_plan[7], statuses[7], args.force)
 
     step2_name = (
         "Trim Silences via Silero VAD (trim_silences.py)"
@@ -229,10 +235,11 @@ def print_pipeline_overview(
 
     print(f" 1. Transcribe video via Groq cloud (transcribe_cloud.py)    {s1_str}")
     print(f" 2. {step2_name:<56} {s2_str}")
-    print(f" 3. Process audio via process_audio.sh                       {s3_str}")
-    print(f" 4. Add background music (add_bgm_to_video.sh)               {s4_str}")
-    print(f" 5. Rename final video file to 'to-review{ext}'               {s5_str}")
-    print(f" 6. Auto-generate project metadata (metadata.json)           {s6_str}")
+    print(f" 3. Transcribe trimmed video to 'trimmed.srt'               {s3_str}")
+    print(f" 4. Process audio via process_audio.sh                       {s4_str}")
+    print(f" 5. Add background music (add_bgm_to_video.sh)               {s5_str}")
+    print(f" 6. Rename final video file to 'to-review{ext}'               {s6_str}")
+    print(f" 7. Auto-generate project metadata (metadata.json)           {s7_str}")
     print_info("============================================================")
 
 

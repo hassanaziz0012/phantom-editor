@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -110,8 +111,13 @@ def resolve_project_paths(target: str | Path | None = None) -> tuple[Path, Path,
 
     if target_path.is_file():
         if target_path.suffix.lower() == ".srt":
-            captions_path = target_path
             project_dir = target_path.parent
+            trimmed_srt = project_dir / "trimmed.srt"
+            # If trimmed.srt exists in the project and the target was a raw untrimmed srt, prioritize trimmed.srt
+            if trimmed_srt.is_file() and trimmed_srt.stat().st_size > 0 and target_path.name.lower() != "trimmed.srt" and "trim" not in target_path.stem.lower():
+                captions_path = trimmed_srt
+            else:
+                captions_path = target_path
         elif target_path.name.lower() == "metadata.json" or target_path.suffix.lower() == ".json":
             project_dir = target_path.parent
         else:
@@ -121,7 +127,7 @@ def resolve_project_paths(target: str | Path | None = None) -> tuple[Path, Path,
 
     metadata_path = project_dir / "metadata.json"
 
-    # Search for captions file if not explicitly targeted
+    # Search for captions file if not explicitly targeted or if target was a directory / video
     if captions_path is None and project_dir.exists():
         captions_path = find_captions_file(project_dir)
 
@@ -140,28 +146,82 @@ def resolve_project_paths(target: str | Path | None = None) -> tuple[Path, Path,
     return project_dir, metadata_path, captions_path, title
 
 
+def ensure_trimmed_captions(project_dir: Path) -> Path | None:
+    """Ensures trimmed.srt exists in the project directory. If missing, transcribes the trimmed video."""
+    trimmed_path = project_dir / "trimmed.srt"
+    if trimmed_path.is_file() and trimmed_path.stat().st_size > 0:
+        return trimmed_path
+
+    # Search for trimmed video candidates
+    trimmed_video_candidates = [
+        project_dir / "after-trim-silences.mp4",
+        project_dir / "after-audio-processing.mp4",
+        project_dir / "to-review.mp4",
+        project_dir / "final.mp4",
+    ]
+
+    video_to_transcribe = None
+    for candidate in trimmed_video_candidates:
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            video_to_transcribe = candidate
+            break
+
+    if video_to_transcribe:
+        print(f"⚡ 'trimmed.srt' not found in project folder. Automatically transcribing '{video_to_transcribe.name}' via Groq Cloud...")
+        transcribe_script = REPO_ROOT / "video-editing" / "transcribe_cloud.py"
+        if transcribe_script.is_file():
+            cmd = [
+                sys.executable,
+                str(transcribe_script),
+                str(video_to_transcribe),
+                "--output", str(trimmed_path)
+            ]
+            try:
+                subprocess.run(cmd, check=True)
+                if trimmed_path.is_file() and trimmed_path.stat().st_size > 0:
+                    print(f"✓ Successfully generated trimmed subtitles at {trimmed_path.name}")
+                    return trimmed_path
+            except Exception as e:
+                print(f"⚠️ Failed to auto-generate trimmed.srt: {e}")
+
+    return None
+
+
 def find_captions_file(project_dir: Path) -> Path | None:
-    """Finds best phrase-level .srt captions file in the project directory."""
+    """Finds best phrase-level .srt captions file in the project directory, strictly prioritizing trimmed subtitles."""
     if not project_dir.is_dir():
         return None
+
+    # 1. Exact priority: trimmed.srt (or auto-generate if trimmed video exists)
+    trimmed_path = ensure_trimmed_captions(project_dir)
+    if trimmed_path and trimmed_path.is_file() and trimmed_path.stat().st_size > 0:
+        return trimmed_path
 
     srt_files = list(project_dir.glob("*.srt"))
     if not srt_files:
         return None
 
-    # Prefer non-1word srt files (e.g. captions.srt, subtitles.srt, final.srt)
+    # Filter out 1-word-per-timestamp SRT files
     phrase_candidates = [
         f for f in srt_files
         if not (f.stem.endswith("-1word") or f.stem.endswith("_1word") or "1word" in f.name.lower())
     ]
-    if phrase_candidates:
-        # Sort to prioritize files named captions.srt or matching project name
-        for cand in phrase_candidates:
-            if cand.name.lower() in ("captions.srt", "subtitles.srt", "transcript.srt", "final.srt"):
-                return cand
-        return phrase_candidates[0]
+    if not phrase_candidates:
+        return srt_files[0]
 
-    return srt_files[0]
+    # 2. Check for any trimmed variations (e.g. after-trim.srt, trimmed_video.srt)
+    for cand in phrase_candidates:
+        if "trimmed" in cand.name.lower() or "trim" in cand.name.lower():
+            return cand
+
+    # 3. Check for standard priority names in order
+    for name in ("captions.srt", "subtitles.srt", "transcript.srt", "final.srt"):
+        for cand in phrase_candidates:
+            if cand.name.lower() == name:
+                return cand
+
+    # 4. Fallback to first non-1word phrase candidate
+    return phrase_candidates[0]
 
 
 def highlight_json(json_str: str) -> str:

@@ -47,7 +47,7 @@ def run_single_pass_mask_trim(
     if video_dir is None:
         video_dir = step2_output.parent
 
-    print_info("\n--- [Step 2/5] Single-Pass Video Processing (Masking + Silence Trimming) ---")
+    print_info("\n--- [Step 2/7] Single-Pass Video Processing (Masking + Silence Trimming) ---")
     if not force_run and step2_output.is_file() and step2_output.stat().st_size > 0:
         cmd_check = [
             "ffprobe", "-v", "error",
