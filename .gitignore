@@ -32,6 +32,9 @@ node_modules
 # cache / data
 cache
 shorts/shorts.json
+metadata/recommendations/my_videos.json
+metadata/recommendations/my_videos_embeddings.npy
+*.npy
 
 # AI models
 Kokoro-82M
