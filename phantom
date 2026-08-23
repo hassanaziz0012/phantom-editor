@@ -28,6 +28,12 @@ show_usage() {
     echo "  edit transcribe-cloud <video_path> [arguments]"
     echo "  edit trim-silences <video_path> [arguments]"
     echo "  edit trim-silences-whisper <video_path> [arguments] (deprecated)"
+    echo "  metadata create [<project_path>] [arguments]"
+    echo "  metadata desc [<project_path>] [arguments]"
+    echo "  metadata tweet [<project_path>] [arguments]"
+    echo "  metadata timestamps [<captions_srt_path>] [arguments]"
+    echo "  metadata read [<project_or_video_path>] [--json]"
+    echo "  metadata manual <video_path>"
     echo "  emails broadcast --title <title> --description <desc> --url <url> [arguments]"
     echo "  reddit analyze-post <url> [--headless] [--json]"
     echo "  tweet [--image] <tweet_content>"
@@ -38,7 +44,6 @@ show_usage() {
     echo "  ideas outliers [arguments]"
     echo "  yt upload <video_path>"
     echo "  yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
-    echo "  yt create-metadata <video_path>"
     echo "  yt count-uploads [<channel>] [--fresh]"
     echo "  yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
     echo "  yt summarize [<video>] [--all] [--limit <int>] [arguments]"
@@ -176,6 +181,36 @@ case "$COMMAND" in
             exit 1
         fi
         ;;
+    metadata)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "create" ] || [ "$SUBCOMMAND" = "auto-create" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/auto_create_metadata.py" "$@"
+        elif [ "$SUBCOMMAND" = "desc" ] || [ "$SUBCOMMAND" = "description" ] || [ "$SUBCOMMAND" = "auto-desc" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/auto_gen_desc.py" "$@"
+        elif [ "$SUBCOMMAND" = "tweet" ] || [ "$SUBCOMMAND" = "auto-tweet" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/auto_gen_tweet.py" "$@"
+        elif [ "$SUBCOMMAND" = "timestamps" ] || [ "$SUBCOMMAND" = "generate-timestamps" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/generate_timestamps.py" "$@"
+        elif [ "$SUBCOMMAND" = "read" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/read_metadata.py" "$@"
+        elif [ "$SUBCOMMAND" = "manual" ] || [ "$SUBCOMMAND" = "interactive" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom metadata manual <video_path>"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/create_metadata.py" "$@"
+        else
+            echo "Unknown metadata subcommand: $SUBCOMMAND"
+            echo "Usage: phantom metadata create [<project_path>] [arguments]"
+            echo "       phantom metadata desc [<project_path>] [arguments]"
+            echo "       phantom metadata tweet [<project_path>] [arguments]"
+            echo "       phantom metadata timestamps [<captions_srt_path>] [arguments]"
+            echo "       phantom metadata read [<project_or_video_path>] [--json]"
+            echo "       phantom metadata manual <video_path>"
+            exit 1
+        fi
+        ;;
     emails)
         SUBCOMMAND="$1"
         shift
@@ -243,10 +278,6 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/upload_video.py" "$@"
         elif [ "$SUBCOMMAND" = "recommend-related" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/recommend_related_videos.py" "$@"
-        elif [ "$SUBCOMMAND" = "create-metadata" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/create_metadata.py" "$@"
-        elif [ "$SUBCOMMAND" = "read-metadata" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/read_metadata.py" "$@"
         elif [ "$SUBCOMMAND" = "count-uploads" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/count_youtube_uploads.py" "$@"
         elif [ "$SUBCOMMAND" = "print-titles" ]; then
@@ -259,8 +290,6 @@ case "$COMMAND" in
             echo "Unknown yt subcommand: $SUBCOMMAND"
             echo "Usage: phantom yt upload <video_path>"
             echo "       phantom yt recommend-related (--metadata <path> | --video-id <id>) [--limit <int>] [--json]"
-            echo "       phantom yt create-metadata <video_path>"
-            echo "       phantom yt read-metadata [<video_or_metadata_path>] [--json]"
             echo "       phantom yt count-uploads [<channel>] [--fresh]"
             echo "       phantom yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
             echo "       phantom yt summarize [<video>] [--all] [--limit <int>] [arguments]"
