@@ -16,36 +16,7 @@ if str(repo_root) not in sys.path:
 if str(video_editing_dir) not in sys.path:
     sys.path.insert(0, str(video_editing_dir))
 
-from utils import parse_timestamp, format_srt_time, check_dependencies, get_video_info, resolve_output_path
-
-def parse_srt(srt_path: Path):
-    """Parses SRT captions into a list of (start_time, end_time, text) tuples."""
-    if not srt_path.exists():
-        raise FileNotFoundError(f"SRT captions file not found: {srt_path}")
-        
-    with open(srt_path, "r", encoding="utf-8") as f:
-        content = f.read()
-        
-    content = content.replace('\r\n', '\n').strip()
-    blocks = re.split(r'\n\s*\n', content)
-    
-    captions = []
-    for block in blocks:
-        lines = block.strip().split('\n')
-        if len(lines) < 3:
-            continue
-        
-        time_line = lines[1]
-        match = re.match(r'(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})', time_line)
-        if not match:
-            continue
-            
-        start_t = parse_timestamp(match.group(1))
-        end_t = parse_timestamp(match.group(2))
-        text = " ".join(lines[2:]).strip()
-        captions.append((start_t, end_t, text))
-        
-    return captions
+from utils import parse_srt, parse_timestamp, format_srt_time, check_dependencies, get_video_info, resolve_output_path
 
 def detect_overlay_ranges(captions, default_overlay=False, total_duration=None):
     """

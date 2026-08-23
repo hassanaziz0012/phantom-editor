@@ -23,11 +23,15 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Add repository root to sys.path
+# Add repository root and video-editing directory to sys.path
 repo_root = Path(__file__).resolve().parent.parent
+video_editing_dir = repo_root / "video-editing"
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
+if str(video_editing_dir) not in sys.path:
+    sys.path.insert(0, str(video_editing_dir))
 
+from utils import parse_srt_to_text
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
@@ -212,34 +216,6 @@ def run_transcription(audio_path: Path, output_srt_path: Path) -> Path:
 
     logger.info("Transcription completed: %s", output_srt_path)
     return output_srt_path
-
-
-def parse_srt_to_text(srt_path: Path) -> str:
-    """
-    Parses an SRT subtitle file into clean continuous text.
-    """
-    content = srt_path.read_text(encoding="utf-8", errors="replace")
-
-    # Regular expression to match SRT blocks: index, timestamp line, text lines, empty line
-    lines = content.splitlines()
-    text_segments: List[str] = []
-    
-    timestamp_pattern = re.compile(r"^\d{2}:\d{2}:\d{2}[,\.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,\.]\d{3}")
-
-    for line in lines:
-        cleaned = line.strip()
-        if not cleaned:
-            continue
-        if cleaned.isdigit():
-            continue
-        if timestamp_pattern.match(cleaned):
-            continue
-        text_segments.append(cleaned)
-
-    full_text = " ".join(text_segments)
-    # Collapse multiple whitespaces
-    full_text = re.sub(r"\s+", " ", full_text).strip()
-    return full_text
 
 
 def load_system_prompt() -> str:
