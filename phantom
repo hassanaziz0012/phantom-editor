@@ -34,6 +34,8 @@ show_usage() {
     echo "  metadata timestamps [<captions_srt_path>] [arguments]"
     echo "  metadata read [<project_or_video_path>] [--json]"
     echo "  metadata manual <video_path>"
+    echo "  metadata recommend [<project_path>] [arguments]"
+    echo "  metadata prepare-recommendations [<channel>] [arguments]"
     echo "  emails broadcast --title <title> --description <desc> --url <url> [arguments]"
     echo "  reddit analyze-post <url> [--headless] [--json]"
     echo "  tweet [--image] <tweet_content>"
@@ -199,6 +201,10 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/create_metadata.py" "$@"
+        elif [ "$SUBCOMMAND" = "recommend" ] || [ "$SUBCOMMAND" = "recommendations" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/recommendations/recommend.py" "$@"
+        elif [ "$SUBCOMMAND" = "prepare-recommendations" ] || [ "$SUBCOMMAND" = "prepare-yt-recommendations" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/recommendations/prepare_yt_recommendations.py" "$@"
         else
             echo "Unknown metadata subcommand: $SUBCOMMAND"
             echo "Usage: phantom metadata create [<project_path>] [arguments]"
@@ -207,6 +213,8 @@ case "$COMMAND" in
             echo "       phantom metadata timestamps [<captions_srt_path>] [arguments]"
             echo "       phantom metadata read [<project_or_video_path>] [--json]"
             echo "       phantom metadata manual <video_path>"
+            echo "       phantom metadata recommend [<project_path>] [arguments]"
+            echo "       phantom metadata prepare-recommendations [<channel>] [arguments]"
             exit 1
         fi
         ;;

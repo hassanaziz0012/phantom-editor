@@ -115,15 +115,51 @@ def format_timestamps_for_description(raw_timestamps: Any) -> str:
     return ""
 
 
+def format_recommendations_for_description(raw_recommendations: Any) -> str:
+    """Formats recommendations from metadata.json into a multiline string of URLs for the YouTube description."""
+    if not raw_recommendations:
+        return ""
+
+    if isinstance(raw_recommendations, str):
+        return raw_recommendations.strip()
+
+    if isinstance(raw_recommendations, (list, tuple, set)):
+        items = list(raw_recommendations)
+        if all(isinstance(item, dict) for item in items):
+            try:
+                items.sort(key=lambda x: int(x.get("rank", 999)))
+            except (ValueError, TypeError):
+                pass
+
+        lines: list[str] = []
+        for item in items:
+            if isinstance(item, dict):
+                url = str(item.get("url") or item.get("link") or "").strip()
+                if not url and item.get("video_id"):
+                    url = f"https://www.youtube.com/watch?v={item['video_id']}"
+                if url:
+                    lines.append(url)
+                elif (title := str(item.get("title") or item.get("topic") or item.get("name") or "").strip()):
+                    lines.append(title)
+            elif isinstance(item, str) and item.strip():
+                lines.append(item.strip())
+        return "\n".join(lines).strip()
+
+    return ""
+
+
 def validate_metadata_for_upload(
     metadata: Union[VideoMetadata, dict],
     require_timestamps: bool = True,
-) -> tuple[str, str]:
+    require_recommendations: bool = True,
+) -> tuple[str, str, str]:
     """
     Validates metadata fields before uploading.
-    Ensures 'timestamps' exist and are non-empty if require_timestamps is True.
-    Returns (raw_description, formatted_timestamps).
+    Ensures 'timestamps' and 'recommendations' exist and are non-empty if required.
+    Returns (raw_description, formatted_timestamps, formatted_recommendations).
     """
+    raw_description = metadata.get("description", "")
+
     raw_timestamps = metadata.get("timestamps")
     formatted_timestamps = format_timestamps_for_description(raw_timestamps)
 
@@ -134,8 +170,17 @@ def validate_metadata_for_upload(
             "   Please run `phantom metadata timestamps <target>` or `phantom metadata auto <target>` to generate them."
         )
 
-    raw_description = metadata.get("description", "")
-    return raw_description, formatted_timestamps
+    raw_recommendations = metadata.get("recommendations")
+    formatted_recommendations = format_recommendations_for_description(raw_recommendations)
+
+    if require_recommendations and not formatted_recommendations:
+        raise ValueError(
+            "Missing or empty 'recommendations' in metadata.json.\n"
+            "   Video recommendations are required before uploading to YouTube.\n"
+            "   Please run `phantom metadata recommend <target>` or `phantom metadata auto <target>` to generate them."
+        )
+
+    return raw_description, formatted_timestamps, formatted_recommendations
 
 
 # ---------------------------------------------------------------------------
@@ -147,15 +192,19 @@ def upload_video(
     video_path: Path,
     metadata: Union[VideoMetadata, dict],
     require_timestamps: bool = True,
+    require_recommendations: bool = True,
 ) -> str:
     """Upload the video and return its YouTube video ID."""
 
-    raw_description, formatted_timestamps = validate_metadata_for_upload(
-        metadata, require_timestamps=require_timestamps
+    raw_description, formatted_timestamps, formatted_recommendations = validate_metadata_for_upload(
+        metadata,
+        require_timestamps=require_timestamps,
+        require_recommendations=require_recommendations,
     )
     full_description = config.DESCRIPTION_TEMPLATE.format(
         video_description=raw_description,
         timestamps=formatted_timestamps,
+        recommended=formatted_recommendations,
     )
 
     body = {
@@ -251,12 +300,18 @@ def main():
         print(f"❌ Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Pre-check metadata requirements (timestamps) before authentication or uploading
+    # Pre-check metadata requirements (timestamps & recommendations) before authentication or uploading
     print("🔍 Validating metadata...")
     try:
-        _, formatted_timestamps = validate_metadata_for_upload(metadata, require_timestamps=True)
-        count = len(formatted_timestamps.splitlines())
-        print(f"✅ Found {count} timestamps for video chapters.")
+        _, formatted_timestamps, formatted_recommendations = validate_metadata_for_upload(
+            metadata,
+            require_timestamps=True,
+            require_recommendations=True,
+        )
+        ts_count = len(formatted_timestamps.splitlines())
+        rec_count = len(formatted_recommendations.splitlines())
+        print(f"✅ Found {ts_count} timestamps for video chapters.")
+        print(f"✅ Found {rec_count} recommended videos for 'WATCH THESE NEXT'.")
     except ValueError as e:
         print(f"\n❌ Error: {e}\n", file=sys.stderr)
         sys.exit(1)
@@ -266,7 +321,13 @@ def main():
     youtube = get_authenticated_service()
 
     # Upload video
-    video_id = upload_video(youtube, video_path, metadata, require_timestamps=True)
+    video_id = upload_video(
+        youtube,
+        video_path,
+        metadata,
+        require_timestamps=True,
+        require_recommendations=True,
+    )
 
     # Set thumbnail
     set_thumbnail(youtube, video_id, video_path)

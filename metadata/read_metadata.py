@@ -143,6 +143,7 @@ class VideoMetadata:
     made_for_kids: bool = False
     tweet_template: str = "🎬 New video just dropped! {url}"
     timestamps: list[Any] = field(default_factory=list)
+    recommendations: list[dict[str, Any]] = field(default_factory=list)
     url: Optional[str] = None
     publish_date: Optional[str] = None
     uploaded_date: Optional[str] = None
@@ -223,6 +224,7 @@ class VideoMetadata:
             "tweetTemplate": self.tweet_template,
             "tweet_template": self.tweet_template,
             "timestamps": self.timestamps,
+            "recommendations": self.recommendations,
             "url": self.url,
             "publishDate": self.publish_date,
             "publish_date": self.publish_date,
@@ -252,6 +254,8 @@ class VideoMetadata:
             self.tweet_template = str(value)
         elif key == "timestamps":
             self.timestamps = list(value) if isinstance(value, (list, tuple, set)) else (value if value else [])
+        elif key == "recommendations":
+            self.recommendations = list(value) if isinstance(value, list) else []
         elif key == "url":
             self.url = str(value) if value is not None else None
         elif key in ("publishDate", "publish_date"):
@@ -272,7 +276,7 @@ class VideoMetadata:
         standard_keys = {
             "title", "description", "tags", "categoryId", "category_id",
             "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-            "tweetTemplate", "tweet_template", "timestamps", "url", "publishDate", "publish_date",
+            "tweetTemplate", "tweet_template", "timestamps", "recommendations", "url", "publishDate", "publish_date",
             "uploadedDate", "uploaded_date"
         }
         return key in standard_keys or key in self.raw_data
@@ -301,6 +305,8 @@ class VideoMetadata:
         }
         if self.timestamps:
             out["timestamps"] = self.timestamps
+        if self.recommendations:
+            out["recommendations"] = self.recommendations
         if self.url:
             out["url"] = self.url
         if self.publish_date:
@@ -393,6 +399,14 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
     else:
         timestamps = []
 
+    raw_recommendations = data.get("recommendations", [])
+    if isinstance(raw_recommendations, list):
+        recommendations = raw_recommendations
+    elif raw_recommendations:
+        recommendations = [raw_recommendations]
+    else:
+        recommendations = []
+
     url = data.get("url")
     if url is not None:
         url = str(url).strip() or None
@@ -408,7 +422,7 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
     standard_keys = {
         "title", "description", "tags", "categoryId", "category_id",
         "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-        "tweetTemplate", "tweet_template", "timestamps", "url", "publishDate", "publish_date",
+        "tweetTemplate", "tweet_template", "timestamps", "recommendations", "url", "publishDate", "publish_date",
         "uploadedDate", "uploaded_date"
     }
     raw_data = {k: v for k, v in data.items() if k not in standard_keys}
@@ -422,6 +436,7 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
         made_for_kids=made_for_kids,
         tweet_template=tweet_template,
         timestamps=timestamps,
+        recommendations=recommendations,
         url=url,
         publish_date=publish_date,
         uploaded_date=uploaded_date,
