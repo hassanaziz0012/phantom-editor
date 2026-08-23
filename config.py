@@ -6,6 +6,8 @@ DESCRIPTION_TEMPLATE = """Book a call: https://calendly.com/itshassanaziz/discus
 
 {video_description}
 
+Like, subscribe, & leave me a comment if you have a specific request. Thanks.
+
 ==== ==== ====
 
 LINKS
