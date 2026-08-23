@@ -20,7 +20,7 @@ repo_root = Path(__file__).resolve().parent.parent
 if str(repo_root) not in sys.path:
     sys.path.append(str(repo_root))
 import config
-from youtube_api.read_metadata import read_metadata, VideoMetadata
+from metadata.read_metadata import read_metadata, VideoMetadata
 
 
 import httplib2
@@ -87,14 +87,76 @@ def get_authenticated_service():
 
 
 # ---------------------------------------------------------------------------
+# Timestamp & Description Formatting
+# ---------------------------------------------------------------------------
+
+def format_timestamps_for_description(raw_timestamps: Any) -> str:
+    """Formats timestamps from metadata.json into a multiline string for the YouTube description."""
+    if not raw_timestamps:
+        return ""
+
+    if isinstance(raw_timestamps, str):
+        return raw_timestamps.strip()
+
+    if isinstance(raw_timestamps, (list, tuple, set)):
+        lines: list[str] = []
+        for item in raw_timestamps:
+            if isinstance(item, dict):
+                ts = str(item.get("timestamp") or item.get("time") or "").strip()
+                topic = str(item.get("topic") or item.get("title") or "").strip()
+                if ts and topic:
+                    lines.append(f"{ts} {topic}")
+                elif ts or topic:
+                    lines.append(f"{ts}{topic}".strip())
+            elif isinstance(item, str) and item.strip():
+                lines.append(item.strip())
+        return "\n".join(lines).strip()
+
+    return ""
+
+
+def validate_metadata_for_upload(
+    metadata: Union[VideoMetadata, dict],
+    require_timestamps: bool = True,
+) -> tuple[str, str]:
+    """
+    Validates metadata fields before uploading.
+    Ensures 'timestamps' exist and are non-empty if require_timestamps is True.
+    Returns (raw_description, formatted_timestamps).
+    """
+    raw_timestamps = metadata.get("timestamps")
+    formatted_timestamps = format_timestamps_for_description(raw_timestamps)
+
+    if require_timestamps and not formatted_timestamps:
+        raise ValueError(
+            "Missing or empty 'timestamps' in metadata.json.\n"
+            "   Timestamps/chapters are required before uploading to YouTube.\n"
+            "   Please run `phantom metadata timestamps <target>` or `phantom metadata auto <target>` to generate them."
+        )
+
+    raw_description = metadata.get("description", "")
+    return raw_description, formatted_timestamps
+
+
+# ---------------------------------------------------------------------------
 # Upload helpers
 # ---------------------------------------------------------------------------
 
-def upload_video(youtube, video_path: Path, metadata: Union[VideoMetadata, dict]) -> str:
+def upload_video(
+    youtube,
+    video_path: Path,
+    metadata: Union[VideoMetadata, dict],
+    require_timestamps: bool = True,
+) -> str:
     """Upload the video and return its YouTube video ID."""
 
-    raw_description = metadata.get("description", "")
-    full_description = config.DESCRIPTION_TEMPLATE.format(video_description=raw_description)
+    raw_description, formatted_timestamps = validate_metadata_for_upload(
+        metadata, require_timestamps=require_timestamps
+    )
+    full_description = config.DESCRIPTION_TEMPLATE.format(
+        video_description=raw_description,
+        timestamps=formatted_timestamps,
+    )
 
     body = {
         "snippet": {
@@ -183,14 +245,28 @@ def main():
 
     # Load metadata
     print("📋 Loading metadata…")
-    metadata = read_metadata(video_path)
+    try:
+        metadata = read_metadata(video_path)
+    except FileNotFoundError as e:
+        print(f"❌ Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Pre-check metadata requirements (timestamps) before authentication or uploading
+    print("🔍 Validating metadata...")
+    try:
+        _, formatted_timestamps = validate_metadata_for_upload(metadata, require_timestamps=True)
+        count = len(formatted_timestamps.splitlines())
+        print(f"✅ Found {count} timestamps for video chapters.")
+    except ValueError as e:
+        print(f"\n❌ Error: {e}\n", file=sys.stderr)
+        sys.exit(1)
 
     # Authenticate
     print("🔐 Authenticating with YouTube…")
     youtube = get_authenticated_service()
 
     # Upload video
-    video_id = upload_video(youtube, video_path, metadata)
+    video_id = upload_video(youtube, video_path, metadata, require_timestamps=True)
 
     # Set thumbnail
     set_thumbnail(youtube, video_id, video_path)
