@@ -8,34 +8,27 @@ The script calculates a "Similarity Score" (up to 1.0 or 100%) between a target 
 video and every other candidate video in the channel. Videos with the highest scores 
 are recommended.
 
-The final score is built by adding up seven different matching factors. Each factor 
+The final score is built by adding up five different matching factors. Each factor 
 has a specific weight representing its importance:
 
-1. Title Match (38% weight): 
+1. Title Match (60% weight): 
    Calculates how many meaningful words are shared between both titles. It divides the 
    number of shared words by the total unique words across both titles (ignoring common 
    stop words like "the", "and"). This is known as Jaccard similarity.
 
-2. Tags Match (28% weight): 
-   Similar to the title match, it calculates the overlapping words in the tags of both videos.
+2. Description Match (30% weight): 
+   Calculates the overlapping words in the descriptions of both videos using Jaccard similarity.
 
-3. Description Match (18% weight): 
-   Calculates the overlapping words in the descriptions of both videos.
-
-4. Category Match (8% weight): 
-   Gives the full 8% boost if both videos belong to the exact same YouTube category, 
-   otherwise it gives 0%.
-
-5. Duration Match (5% weight): 
+3. Duration Match (6% weight): 
    Compares video lengths by dividing the shorter duration by the longer duration. 
    (For example, comparing a 5-minute video and a 10-minute video gives a 50% match, 
-   which contributes 2.5% to the final score).
+   which contributes 3% to the final score).
 
-6. Recency Boost (2% weight): 
+4. Recency Boost (3% weight): 
    A small mathematical boost (using a logarithmic curve) given to newer videos. It 
    slightly favors recent uploads without penalizing older evergreen videos too harshly.
 
-7. Popularity Boost (1% weight): 
+5. Popularity Boost (1% weight): 
    A tiny boost based on the candidate video's view count. It scales logarithmically, 
    meaning the boost slowly maxes out as a video approaches 10 million views.
 
@@ -59,11 +52,10 @@ if root_dir not in sys.path:
 
 # Import shared models and fetchers
 from youtube_api.models import Video, VideoSeed, RankedVideo
-from youtube_api.read_metadata import read_metadata, VideoMetadata
+from metadata.read_metadata import read_metadata, VideoMetadata
 from youtube_api.fetch_videos import fetch_channel_videos
 from youtube_api.utils import (
     tokenize,
-    normalize_tags,
     overlap_score,
     parse_iso8601_duration,
     duration_similarity,
@@ -100,20 +92,16 @@ def build_seed_from_existing_video(video: Video) -> VideoSeed:
 def score_video(seed: VideoSeed, candidate: Video) -> RankedVideo:
     title_tokens = tokenize(seed.title)
     description_tokens = tokenize(seed.description)
-    tag_tokens = normalize_tags(seed.tags)
 
     candidate_title_tokens = tokenize(candidate.title)
     candidate_description_tokens = tokenize(candidate.description)
-    candidate_tag_tokens = normalize_tags(candidate.tags)
     candidate_duration_seconds = parse_iso8601_duration(candidate.duration)
 
     reasons = {
-        "title": overlap_score(title_tokens, candidate_title_tokens) * 0.38,
-        "tags": overlap_score(tag_tokens, candidate_tag_tokens) * 0.28,
-        "description": overlap_score(description_tokens, candidate_description_tokens) * 0.18,
-        "category": 0.08 if seed.category_id and seed.category_id == candidate.category_id else 0.0,
-        "duration": duration_similarity(seed.duration_seconds, candidate_duration_seconds) * 0.05,
-        "recency": recency_score(candidate.published_at) * 0.02,
+        "title": overlap_score(title_tokens, candidate_title_tokens) * 0.60,
+        "description": overlap_score(description_tokens, candidate_description_tokens) * 0.30,
+        "duration": duration_similarity(seed.duration_seconds, candidate_duration_seconds) * 0.06,
+        "recency": recency_score(candidate.published_at) * 0.03,
         "popularity": popularity_score(candidate.view_count) * 0.01,
     }
 
