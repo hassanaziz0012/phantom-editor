@@ -130,7 +130,7 @@ phantom pipeline newvideo "How to Build AI Agents"
 
 ## ⚡ Video Processing Engine: [`process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)
 
-The video processing engine executes an automated 5-step media pipeline that transforms raw webcam and screen recordings into a polished review video (`to-review.mp4`).
+The video processing engine executes an automated 6-step media pipeline that transforms raw webcam and screen recordings into a polished review video (`to-review.mp4`) and automatically generates YouTube metadata (`metadata.json`).
 
 ```mermaid
 flowchart TD
@@ -141,7 +141,8 @@ flowchart TD
     Step4 -->|Yes| Step4Run[Mix BGM via add_bgm_to_video.sh]
     Step4 -->|No / Skipped| Step5[Step 5: Finalize Review File]
     Step4Run -->|after-audio-processing-bgm.mp4| Step5
-    Step5 --> Output[to-review.mp4]
+    Step5 -->|to-review.mp4| Step6[Step 6: Auto-Create Metadata]
+    Step6 --> Output[metadata.json & to-review.mp4]
 ```
 
 ### Pipeline Steps in Detail
@@ -162,6 +163,9 @@ flowchart TD
    - Skipped automatically if no `--bgm` flag is passed.
 5. **Step 5: File Finalization**
    - Safely copies the latest generated video file to `to-review.mp4`, preparing the cut for manual review.
+6. **Step 6: Automatic Metadata Generation ([`auto_create_metadata.py`](file:///home/hassan/Desktop/programming/phantom-editor/metadata/auto_create_metadata.py))**
+   - Automatically inspects the project transcript (`.srt`) and generates chapters/timestamps, an engaging video description, and a promotional tweet template into `metadata.json`.
+   - Uses the provided `--title` if specified, or defaults to the formatted project folder name.
 
 ### Smart Resumption & Caching
 
@@ -177,6 +181,7 @@ phantom pipeline process <webcam_video> [screen_video] [options]
 | :--- | :--- | :--- | :--- | :--- |
 | `webcam` | | Positional / Flag | | Path to webcam or main video file. |
 | `screen` | | Positional / Flag | `webcam` | Path to screen recording video (defaults to webcam if omitted). |
+| `--title` | `-t` | str | `None` | Optional custom title for the video project (defaults to folder name). |
 | `--preset` | | `portrait` \| `landscape` | `portrait` | Preset overlay mode (portrait: 400px width; landscape: 550px width). |
 | `--width` | `-w` | int | | Explicit width of webcam overlay in pixels. |
 | `--all` | `-a` | flag | `False` | Display webcam overlay continuously across the entire video. |

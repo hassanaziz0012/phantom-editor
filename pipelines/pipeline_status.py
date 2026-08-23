@@ -116,6 +116,7 @@ def get_pipeline_outputs(webcam_path: Path, video_dir: Path, bgm: str | None) ->
         "step4_needed": step4_needed,
         "step4_output": video_dir / "after-audio-processing-bgm.mp4",
         "final_output": video_dir / f"to-review{ext}",
+        "metadata_output": video_dir / "metadata.json",
     }
 
 
@@ -130,6 +131,7 @@ def compute_pipeline_status(outputs: dict, force: bool) -> tuple[dict[int, bool]
     step5_complete = is_valid_file(outputs["final_output"]) and (
         not is_valid_file(latest_output) or outputs["final_output"].stat().st_mtime >= latest_output.stat().st_mtime
     )
+    step6_complete = is_valid_file(outputs["metadata_output"])
 
     statuses = {
         1: step1_complete,
@@ -137,17 +139,19 @@ def compute_pipeline_status(outputs: dict, force: bool) -> tuple[dict[int, bool]
         3: step3_complete,
         4: step4_complete,
         5: step5_complete,
+        6: step6_complete,
     }
 
     if force:
-        run_plan = {1: True, 2: True, 3: True, 4: outputs["step4_needed"], 5: True}
+        run_plan = {1: True, 2: True, 3: True, 4: outputs["step4_needed"], 5: True, 6: True}
     else:
         run1 = not step1_complete
         run2 = run1 or not step2_complete
         run3 = run2 or not step3_complete
         run4 = outputs["step4_needed"] and (run3 or not step4_complete)
         run5 = (run4 if outputs["step4_needed"] else run3) or not step5_complete
-        run_plan = {1: run1, 2: run2, 3: run3, 4: run4, 5: run5}
+        run6 = run5 or not step6_complete
+        run_plan = {1: run1, 2: run2, 3: run3, 4: run4, 5: run5, 6: run6}
 
     return statuses, run_plan
 
@@ -190,6 +194,12 @@ def print_pipeline_overview(
         print(f" Overlay mode:     {'Continuous (--all)' if getattr(args, 'all', False) else 'Dynamic voice commands'}")
 
     print(f" Output directory: {video_dir}")
+    if getattr(args, "title", None):
+        print(f" Project title:    {args.title}")
+    else:
+        default_title = video_dir.name.replace("-", " ").replace("_", " ").title()
+        print(f" Project title:    {default_title} (default from folder name)")
+
     if args.bgm:
         print(f" BGM track:        {args.bgm} (Volume: {args.volume}%)")
     else:
@@ -209,6 +219,7 @@ def print_pipeline_overview(
     s3_str = format_status(True, run_plan[3], statuses[3], args.force)
     s4_str = format_status(bool(args.bgm), run_plan[4], statuses[4], args.force, "No BGM specified")
     s5_str = format_status(True, run_plan[5], statuses[5], args.force)
+    s6_str = format_status(True, run_plan[6], statuses[6], args.force)
 
     step2_name = (
         "Trim Silences via Silero VAD (trim_silences.py)"
@@ -221,6 +232,7 @@ def print_pipeline_overview(
     print(f" 3. Process audio via process_audio.sh                       {s3_str}")
     print(f" 4. Add background music (add_bgm_to_video.sh)               {s4_str}")
     print(f" 5. Rename final video file to 'to-review{ext}'               {s5_str}")
+    print(f" 6. Auto-generate project metadata (metadata.json)           {s6_str}")
     print_info("============================================================")
 
 

@@ -100,6 +100,12 @@ def parse_cli_args() -> argparse.Namespace:
         help="BGM track file path or track name in BGM directory for background music step."
     )
     parser.add_argument(
+        "--title", "-t",
+        type=str,
+        default=None,
+        help="Optional custom title for the video project (default: project folder name)."
+    )
+    parser.add_argument(
         "--volume",
         type=int,
         default=10,
@@ -171,6 +177,7 @@ def validate_pipeline_inputs(args: argparse.Namespace) -> tuple[Path, Path | Non
 def verify_script_dependencies(pipeline_dir: Path, repo_root: Path) -> dict[str, Path]:
     """Verify all required scripts exist and return a dictionary of their paths."""
     v_dir = repo_root / "video-editing"
+    m_dir = repo_root / "metadata"
     scripts = {
         "downscale_py": v_dir / "downscale.py",
         "auto_attach_webcam_py": v_dir / "auto_attach_webcam_mask.py",
@@ -179,6 +186,7 @@ def verify_script_dependencies(pipeline_dir: Path, repo_root: Path) -> dict[str,
         "trim_silences_py": v_dir / "trim_silences.py",
         "add_bgm_sh": v_dir / "add_bgm_to_video.sh",
         "single_pass_mask_trim_py": pipeline_dir / "single_pass_mask_trim.py",
+        "auto_create_metadata_py": m_dir / "auto_create_metadata.py",
     }
 
     for name, script_path in scripts.items():
@@ -197,7 +205,7 @@ def run_step1_transcription(
     force_run: bool
 ) -> bool:
     """Step 1: Transcribe Video using Groq Cloud."""
-    print_info("\n--- [Step 1/5] Transcribing Video using Groq Cloud ---")
+    print_info("\n--- [Step 1/6] Transcribing Video using Groq Cloud ---")
     if not force_run and is_valid_file(step1_1word_srt) and is_valid_file(step1_srt_output):
         print_success(f"[SKIP] Step 1 complete: Transcribed SRT file already exists -> {step1_1word_srt.name}")
         return force_run
@@ -228,7 +236,7 @@ def run_step2_trim_silences_raw(
     force_run: bool
 ) -> bool:
     """Step 2 (Raw Mode): Silence Trimming on pre-composed video (skips webcam mask attachment)."""
-    print_info("\n--- [Step 2/5] Silence Trimming on Raw Video ---")
+    print_info("\n--- [Step 2/6] Silence Trimming on Raw Video ---")
     if not force_run and is_valid_file(step2_output):
         print_success(f"[SKIP] Step 2 complete: Trimmed video file already exists -> {step2_output.name}")
         return force_run
@@ -312,7 +320,7 @@ def run_step3_process_audio(
     force_run: bool
 ) -> bool:
     """Step 3: Process Audio."""
-    print_info("\n--- [Step 3/5] Processing Audio ---")
+    print_info("\n--- [Step 3/6] Processing Audio ---")
     if not force_run and is_valid_file(step3_output):
         print_success(f"[SKIP] Step 3 complete: Audio processed video file already exists -> {step3_output.name}")
         return force_run
@@ -341,7 +349,7 @@ def run_step4_add_bgm(
     force_run: bool
 ) -> tuple[Path, bool]:
     """Step 4: Add Background Music."""
-    print_info("\n--- [Step 4/5] Adding Background Music ---")
+    print_info("\n--- [Step 4/6] Adding Background Music ---")
     if not bgm:
         print_warning("[WARNING] Step 4 skipped: No BGM track specified with --bgm.")
         return step3_output, force_run
@@ -378,7 +386,7 @@ def run_step5_finalize(
     force_run: bool
 ) -> None:
     """Step 5: Finalize Output File Name."""
-    print_info("\n--- [Step 5/5] Finalizing Output File Name ---")
+    print_info("\n--- [Step 5/6] Finalizing Output File Name ---")
     if not force_run and is_valid_file(final_output) and (not is_valid_file(current_latest_video) or final_output.stat().st_mtime >= current_latest_video.stat().st_mtime):
         print_success(f"[SKIP] Step 5 complete: Final review video file already exists -> {final_output.name}")
     else:
@@ -391,6 +399,42 @@ def run_step5_finalize(
 
         shutil.copy2(str(current_latest_video), str(final_output))
         print_success(f"[SUCCESS] Step 5 complete: Copied final video file to -> {final_output.name}")
+
+
+def run_step6_create_metadata(
+    video_dir: Path,
+    metadata_output: Path,
+    title: str | None,
+    auto_create_metadata_py: Path,
+    force_run: bool
+) -> bool:
+    """Step 6: Generate Project Metadata (metadata.json)."""
+    print_info("\n--- [Step 6/6] Generating Project Metadata ---")
+    if not force_run and is_valid_file(metadata_output):
+        print_success(f"[SKIP] Step 6 complete: Metadata file already exists -> {metadata_output.name}")
+        return force_run
+
+    cmd_step6 = [
+        sys.executable,
+        str(auto_create_metadata_py),
+        str(video_dir)
+    ]
+    if title:
+        cmd_step6.extend(["--title", title])
+
+    print(f"Executing: {' '.join(cmd_step6)}")
+    try:
+        subprocess.run(cmd_step6, check=True)
+    except subprocess.CalledProcessError as e:
+        print_error(f"[ERROR] Step 6 failed with exit code {e.returncode}")
+        sys.exit(e.returncode)
+
+    if not is_valid_file(metadata_output):
+        print_error(f"[ERROR] Step 6 output metadata file invalid or missing at '{metadata_output}'")
+        sys.exit(1)
+
+    print_success(f"[SUCCESS] Step 6 complete: Generated metadata -> {metadata_output.name}")
+    return True
 
 
 def main():
@@ -481,6 +525,17 @@ def main():
     )
     step5_duration = time.perf_counter() - step5_start
 
+    # Step 6: Generate Project Metadata
+    step6_start = time.perf_counter()
+    run_step6_create_metadata(
+        video_dir=video_dir,
+        metadata_output=outputs["metadata_output"],
+        title=args.title,
+        auto_create_metadata_py=scripts["auto_create_metadata_py"],
+        force_run=force_run
+    )
+    step6_duration = time.perf_counter() - step6_start
+
     total_duration = time.perf_counter() - pipeline_start_time
 
     step2_label = "Step 2 (Silence Trimming):" if is_raw_mode else "Step 2 (Mask & Silence Trim):"
@@ -489,6 +544,7 @@ def main():
     print_success("============================================================")
     print_success(" 🎉 FULL VIDEO PROCESSING PIPELINE COMPLETED SUCCESSFULLY!")
     print_success(f" Final review video saved at: {outputs['final_output']}")
+    print_success(f" Project metadata saved at:   {outputs['metadata_output']}")
     print_info("------------------------------------------------------------")
     print_info(" Step Execution Timing Summary:")
     print(f"  Step 1 (Transcription):        {format_duration(step1_duration)}")
@@ -496,6 +552,7 @@ def main():
     print(f"  Step 3 (Audio Processing):      {format_duration(step3_duration)}")
     print(f"  Step 4 (Background Music):      {format_duration(step4_duration)}")
     print(f"  Step 5 (Finalize File):         {format_duration(step5_duration)}")
+    print(f"  Step 6 (Auto Create Metadata):  {format_duration(step6_duration)}")
     print_info("------------------------------------------------------------")
     print_success(f" Total Execution Time:            {format_duration(total_duration)}")
     print_success("============================================================")
@@ -503,4 +560,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
