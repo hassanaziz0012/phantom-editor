@@ -58,7 +58,7 @@ def main():
 
     print("Found video metadata in shorts.json.")
     short_desc = metadata.get("description", "")
-    caption = config.DESCRIPTION_TEMPLATE.format(video_description=short_desc)
+    caption = config.DESCRIPTION_TEMPLATE.format(video_description=short_desc, timestamps="")
 
     thumbnail_path = None
     if metadata.get("thumbnail"):
