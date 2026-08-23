@@ -301,70 +301,17 @@ def build_outlier_prompt(
     return prompt
 
 
+from agentic.ask_browserllm import ask_claude
+
+
 # ── Query BrowserLLM (Claude - Headful Mode) ──────────────────────────────────
 
-def query_browserllm_claude(
-    prompt_text: str,
-    profile: Optional[str] = None,
-    profile_dir: Optional[str] = None,
-    chrome: bool = True,
-) -> str:
+def query_browserllm_claude(prompt_text: str, **kwargs: Any) -> str:
     """
-    Executes BrowserLLM with provider Claude in headful mode.
-    Passes prompt via temporary file for safe handling of multi-line texts.
+    Executes BrowserLLM with provider Claude via agentic.ask_browserllm.
     """
-    browserllm_bin = shutil.which("browserllm")
-    if not browserllm_bin:
-        local_bin = Path.home() / ".local" / "bin" / "browserllm"
-        if local_bin.exists():
-            browserllm_bin = str(local_bin)
-        else:
-            raise FileNotFoundError("browserllm executable not found in PATH or ~/.local/bin/browserllm.")
-
-    with tempfile.NamedTemporaryFile(mode="w+", suffix=".txt", delete=False, encoding="utf-8") as prompt_file, \
-         tempfile.NamedTemporaryFile(mode="r+", suffix=".json", delete=False, encoding="utf-8") as output_file:
-        prompt_path = prompt_file.name
-        output_path = output_file.name
-        prompt_file.write(prompt_text)
-        prompt_file.flush()
-
-    try:
-        cmd = [
-            browserllm_bin,
-            "-p", prompt_path,
-            "-P", "claude",
-            "-o", output_path,
-        ]
-
-        if profile:
-            cmd.extend(["--profile", profile])
-        if profile_dir:
-            cmd.extend(["--profile-dir", profile_dir])
-        if not chrome:
-            cmd.append("--no-chrome")
-
-        logger.info("Executing BrowserLLM Claude query (headful mode)...")
-        res = subprocess.run(cmd, capture_output=True, text=True)
-
-        output_content = ""
-        if Path(output_path).exists():
-            output_content = Path(output_path).read_text(encoding="utf-8").strip()
-
-        if not output_content:
-            output_content = res.stdout.strip()
-
-        if res.returncode != 0 and not output_content:
-            err_msg = res.stderr.strip() or res.stdout.strip() or f"BrowserLLM failed with exit code {res.returncode}"
-            raise RuntimeError(f"BrowserLLM Claude query failed: {err_msg}")
-
-        return output_content
-    finally:
-        for p in (prompt_path, output_path):
-            try:
-                if os.path.exists(p):
-                    os.remove(p)
-            except Exception:
-                pass
+    logger.info("Executing BrowserLLM Claude query...")
+    return str(ask_claude(user_prompt=prompt_text))
 
 
 # ── Parse Claude Response ─────────────────────────────────────────────────────
