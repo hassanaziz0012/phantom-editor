@@ -55,7 +55,6 @@ show_usage() {
     echo "  shorts add-thumbnail [arguments] <video_path>"
     echo "  shorts trim [arguments]"
     echo "  review inspect <video_path> [arguments]"
-    echo "  review find-bad-takes <transcript_path> [arguments]"
     echo "  record start"
     echo "  record stop"
     echo "  docs open"
@@ -391,16 +390,9 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/review/video_inspector.py" "$@"
-        elif [ "$SUBCOMMAND" = "find-bad-takes" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom review find-bad-takes <transcript_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/review/find_bad_takes.py" "$@"
         else
             echo "Unknown review subcommand: $SUBCOMMAND"
             echo "Usage: phantom review inspect <video_path> [arguments]"
-            echo "       phantom review find-bad-takes <transcript_path> [arguments]"
             exit 1
         fi
         ;;

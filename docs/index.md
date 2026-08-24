@@ -33,9 +33,9 @@ Automating timeline composition and video editing workflows in Wondershare Filmo
 Synchronize screen recording with Wondershare Filmora and external Pixel Camera app using hotkeys and ADB commands.
 
 ### 🔍 [Video Quality Review](review.md)
-Inspect final videos for aspect ratio, resolution, and glitchy frames (black screen and freeze frames) prior to distribution, or automatically detect duplicate takes using LLM-based embeddings.
+Inspect final videos for aspect ratio, resolution, and glitchy frames (black screen and freeze frames) prior to distribution.
 
-* **Main Scripts**: [video_inspector.py](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py) and [find_bad_takes.py](file:///home/hassan/Desktop/programming/phantom-editor/review/find_bad_takes.py)
+* **Main Script**: [video_inspector.py](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py)
 
 ---
 
