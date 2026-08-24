@@ -37,12 +37,13 @@ The `inspect` subcommand accepts several options to customize filter thresholds:
 | `--black-pix-th` | `-bx` | float | `0.10` | Threshold for pixel luminance below which it is considered black. |
 | `--black-pic-th` | `-bp` | float | `0.98` | Minimum ratio of pixels below the luminance threshold to count as black. |
 | `--freeze-duration` | `-fd` | float | `0.5` | Minimum duration in seconds of frozen video to trigger a warning. |
+| `--tail-freeze-duration` | `-tfd` | float | `2.0` | Minimum duration in seconds of frozen video at the very end (EOF) before flagging. |
 | `--freeze-noise` | `-fn` | float | `0.003` | Noise tolerance threshold for freeze detection. |
 
 ### Example custom run:
 
 ```bash
-phantom review inspect my_video.mp4 -bd 0.5 -fd 1.0 -fn 0.005
+phantom review inspect my_video.mp4 -bd 0.5 -fd 1.0 -tfd 3.0 -fn 0.005
 ```
 
 ---

@@ -171,7 +171,8 @@ def run_inspection(video_path: str, args) -> tuple:
     # Check for a freeze frame that was in progress when the video ended
     if active_freeze_start is not None and total_duration > active_freeze_start:
         dur = total_duration - active_freeze_start
-        freeze_glitches.append((active_freeze_start, total_duration, dur))
+        if dur >= args.tail_freeze_duration:
+            freeze_glitches.append((active_freeze_start, total_duration, dur))
 
     return black_glitches, freeze_glitches
 
@@ -242,7 +243,7 @@ def print_report(video_path: str, meta: dict, black_glitches: list, freeze_glitc
     print("-" * 80)
     print(colorize("Scan Parameters:", Colors.BOLD + Colors.CYAN))
     print(f"  • Black Detect:  min_duration={args.black_duration}s, pixel_th={args.black_pix_th}, pic_th={args.black_pic_th}")
-    print(f"  • Freeze Detect: min_duration={args.freeze_duration}s, noise_tolerance={args.freeze_noise}")
+    print(f"  • Freeze Detect: min_duration={args.freeze_duration}s (tail_threshold={args.tail_freeze_duration}s), noise_tolerance={args.freeze_noise}")
     print("-" * 80)
 
     # 2. Detailed glitches
@@ -283,6 +284,7 @@ def main():
     parser.add_argument("--black-pix-th", "-bx", type=float, default=0.10, help="Pixel luminance threshold to count as black (default: 0.10).")
     parser.add_argument("--black-pic-th", "-bp", type=float, default=0.98, help="Threshold ratio of pixels below pixel threshold to count as black (default: 0.98).")
     parser.add_argument("--freeze-duration", "-fd", type=float, default=0.5, help="Minimum duration of frozen video in seconds (default: 0.5).")
+    parser.add_argument("--tail-freeze-duration", "-tfd", type=float, default=2.0, help="Minimum duration of frozen video at the very end of video in seconds before flagging (default: 2.0).")
     parser.add_argument("--freeze-noise", "-fn", type=float, default=0.003, help="Noise tolerance threshold for freeze detection (default: 0.003).")
     
     args = parser.parse_args()
