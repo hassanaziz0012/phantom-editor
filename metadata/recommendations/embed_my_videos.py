@@ -44,6 +44,7 @@ DEFAULT_INPUT_PATH = REPO_ROOT / "metadata" / "recommendations" / "my_videos.jso
 DEFAULT_OUTPUT_PATH = REPO_ROOT / "metadata" / "recommendations" / "my_videos_embeddings.npy"
 MODEL_NAME = "gemini-embedding-2"
 DEFAULT_BATCH_SIZE = 50
+DEFAULT_DELAY_SECONDS = 30.0
 
 
 def build_embedding_text(video: Dict[str, Any]) -> str:
@@ -112,7 +113,8 @@ def fetch_embeddings_batch(
                 raise RuntimeError(
                     f"Gemini Embedding API failed with HTTP {e.code} ({e.reason}): {error_body}"
                 ) from e
-            time.sleep(2 * attempt)
+            sleep_time = 30.0 if e.code == 429 else (2.0 * attempt)
+            time.sleep(sleep_time)
 
         except Exception as e:
             logger.warning("Error on attempt %d/%d: %s", attempt, max_retries, e)
@@ -127,6 +129,7 @@ def generate_video_embeddings(
     input_path: Path = DEFAULT_INPUT_PATH,
     output_path: Path = DEFAULT_OUTPUT_PATH,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    delay_seconds: float = DEFAULT_DELAY_SECONDS,
     api_key: Optional[str] = None,
 ) -> np.ndarray:
     """Loads video records, builds embedding texts, batches API requests, and saves to .npy."""
@@ -164,6 +167,13 @@ def generate_video_embeddings(
     )
 
     for batch_idx in range(total_batches):
+        if batch_idx > 0 and delay_seconds > 0:
+            logger.info(
+                "Waiting %.1fs before next batch to respect Gemini API rate limits...",
+                delay_seconds,
+            )
+            time.sleep(delay_seconds)
+
         start_idx = batch_idx * batch_size
         end_idx = min(start_idx + batch_size, total_videos)
         batch_texts = texts[start_idx:end_idx]
@@ -223,6 +233,12 @@ def main() -> None:
         help=f"Batch size for Gemini API requests (default: {DEFAULT_BATCH_SIZE}).",
     )
     parser.add_argument(
+        "--delay", "-d",
+        type=float,
+        default=DEFAULT_DELAY_SECONDS,
+        help=f"Delay in seconds between batch requests to respect rate limits (default: {DEFAULT_DELAY_SECONDS}s).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Preview formatted texts without calling the Gemini API.",
@@ -246,6 +262,7 @@ def main() -> None:
             input_path=input_file,
             output_path=output_file,
             batch_size=args.batch_size,
+            delay_seconds=args.delay,
         )
     except Exception as e:
         logger.error("Failed to generate and save video embeddings: %s", e)
