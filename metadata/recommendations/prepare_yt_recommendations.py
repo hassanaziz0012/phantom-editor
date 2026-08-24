@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 
 from metadata.recommendations.embed_my_videos import (
     DEFAULT_BATCH_SIZE,
+    DEFAULT_DELAY_SECONDS,
     DEFAULT_INPUT_PATH as DEFAULT_VIDEOS_JSON,
     DEFAULT_OUTPUT_PATH as DEFAULT_EMBEDDINGS_NPY,
     generate_video_embeddings,
@@ -54,6 +55,7 @@ def prepare_recommendations(
     force: bool = False,
     reverse: bool = False,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    delay_seconds: float = DEFAULT_DELAY_SECONDS,
 ) -> None:
     """Runs channel video summarization followed by semantic video embeddings generation."""
     logger.info("=" * 60)
@@ -78,6 +80,7 @@ def prepare_recommendations(
         input_path=videos_json_path,
         output_path=embeddings_npy_path,
         batch_size=batch_size,
+        delay_seconds=delay_seconds,
     )
 
     logger.info("")
@@ -133,6 +136,12 @@ def main() -> None:
         default=DEFAULT_BATCH_SIZE,
         help=f"Batch size for Gemini embedding requests (default: {DEFAULT_BATCH_SIZE}).",
     )
+    parser.add_argument(
+        "--delay", "-d",
+        type=float,
+        default=DEFAULT_DELAY_SECONDS,
+        help=f"Delay in seconds between embedding batch requests (default: {DEFAULT_DELAY_SECONDS}s).",
+    )
 
     args = parser.parse_args()
 
@@ -146,6 +155,7 @@ def main() -> None:
             force=args.force,
             reverse=args.reverse,
             batch_size=args.batch_size,
+            delay_seconds=args.delay,
         )
     except Exception as e:
         logger.error("Preparation pipeline failed: %s", e)
