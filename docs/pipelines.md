@@ -62,6 +62,15 @@ The status tracker scans project folders, validates required assets, connects to
 # View human-readable terminal dashboard
 phantom pipeline status
 
+# Filter by stages
+phantom pipeline status --new
+phantom pipeline status --scripted
+phantom pipeline status --pending
+phantom pipeline status --finished
+
+# Show concise one-line summary
+phantom pipeline status --less
+
 # Show detailed file listings per project
 phantom pipeline status --verbose
 

@@ -456,6 +456,16 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
     print(f"\n{COLOR_BOLD}{COLOR_CYAN}{'=' * width}{COLOR_RESET}\n")
 
 
+def print_concise_summary(projects: List[VideoProject]) -> None:
+    """Print a concise one-line-per-project summary."""
+    if not projects:
+        print(f"{COLOR_YELLOW}No matching project folders found.{COLOR_RESET}")
+        return
+    for idx, proj in enumerate(projects, 1):
+        color = proj.status_color
+        print(f"{idx}. {proj.name} ({color}Stage {proj.stage_num}/10: {proj.stage_name}{COLOR_RESET})")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Display summary of current YouTube video projects and pipeline stage."
@@ -466,9 +476,34 @@ def main():
         help="Path to YouTube projects directory (default: ~/Videos/YT Projects)."
     )
     parser.add_argument(
+        "--new",
+        action="store_true",
+        help="Display only new stage projects (Stage 1).",
+    )
+    parser.add_argument(
+        "--scripted",
+        action="store_true",
+        help="Display only scripted stage projects (Stage 2).",
+    )
+    parser.add_argument(
+        "--pending",
+        action="store_true",
+        help="Display in-progress stages (Stages 3-7: Recorded through Added Thumbnail).",
+    )
+    parser.add_argument(
+        "--finished",
+        action="store_true",
+        help="Display ready to schedule, scheduled, or uploaded projects (Stages 8-10).",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Output summary in JSON format."
+    )
+    parser.add_argument(
+        "--less", "-l",
+        action="store_true",
+        help="Display a concise one-line-per-project summary."
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -483,7 +518,22 @@ def main():
     args = parser.parse_args()
 
     projects_dir = Path(args.dir).expanduser().resolve()
-    projects = get_all_projects(projects_dir)
+    all_projects = get_all_projects(projects_dir)
+
+    filter_stages = set()
+    if args.new:
+        filter_stages.add(1)
+    if args.scripted:
+        filter_stages.add(2)
+    if args.pending:
+        filter_stages.update([3, 4, 5, 6, 7])
+    if args.finished:
+        filter_stages.update([8, 9, 10])
+
+    if filter_stages:
+        projects = [p for p in all_projects if p.stage_num in filter_stages]
+    else:
+        projects = all_projects
 
     if args.json:
         data = {
@@ -492,25 +542,33 @@ def main():
             "projects": [p.to_dict() for p in projects]
         }
         print(json.dumps(data, indent=2))
+    elif args.less:
+        print_concise_summary(projects)
     else:
         print_terminal_summary(projects, projects_dir, verbose=args.verbose)
 
     # Automatically synchronize project statuses with Google Sheets
     if not args.no_sync and sync_projects_to_sheet is not None:
-        try:
-            print(f"{COLOR_CYAN}🔄 Syncing video projects with Google Sheets Content Calendar...{COLOR_RESET}", end="", flush=True)
-            stats = sync_projects_to_sheet(projects)
-            details = []
-            if stats.get("added"):
-                details.append(f"{stats['added']} added")
-            if stats.get("updated"):
-                details.append(f"{stats['updated']} updated")
-            if stats.get("removed"):
-                details.append(f"{stats['removed']} removed")
-            detail_str = f" ({', '.join(details)})" if details else " (all up to date)"
-            print(f"\r{COLOR_GREEN}✓ Synced {stats['total']} project(s) with Google Sheets{detail_str}.{COLOR_RESET}\n")
-        except Exception as e:
-            print(f"\r{COLOR_YELLOW}⚠️ Note: Could not sync with Google Sheets: {e}{COLOR_RESET}\n")
+        if args.json:
+            try:
+                sync_projects_to_sheet(all_projects)
+            except Exception:
+                pass
+        else:
+            try:
+                print(f"{COLOR_CYAN}🔄 Syncing video projects with Google Sheets Content Calendar...{COLOR_RESET}", end="", flush=True)
+                stats = sync_projects_to_sheet(all_projects)
+                details = []
+                if stats.get("added"):
+                    details.append(f"{stats['added']} added")
+                if stats.get("updated"):
+                    details.append(f"{stats['updated']} updated")
+                if stats.get("removed"):
+                    details.append(f"{stats['removed']} removed")
+                detail_str = f" ({', '.join(details)})" if details else " (all up to date)"
+                print(f"\r{COLOR_GREEN}✓ Synced {stats['total']} project(s) with Google Sheets{detail_str}.{COLOR_RESET}\n")
+            except Exception as e:
+                print(f"\r{COLOR_YELLOW}⚠️ Note: Could not sync with Google Sheets: {e}{COLOR_RESET}\n")
 
 
 if __name__ == "__main__":
