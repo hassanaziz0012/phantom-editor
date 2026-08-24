@@ -103,9 +103,12 @@ def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
 
     while start_time < total_duration:
         chunk_duration = min(default_chunk_duration, total_duration - start_time)
+        if chunk_duration <= 0.1:
+            break
+
         chunk_file = f"temp_chunk_{temp_id}_{chunk_index:03d}.flac"
 
-        while chunk_duration > 10.0:
+        while True:
             split_cmd = [
                 "ffmpeg", "-y",
                 "-threads", "0",
@@ -120,22 +123,24 @@ def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
             ]
             subprocess.run(split_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            c_size = os.path.getsize(chunk_file)
-            if c_size <= SAFE_CHUNK_BYTES:
+            c_size = os.path.getsize(chunk_file) if os.path.exists(chunk_file) else 0
+            if c_size <= SAFE_CHUNK_BYTES or chunk_duration <= 10.0:
                 break
 
-            # If chunk is larger than safe threshold, halve duration and retry
+            # If chunk is larger than safe threshold and can be halved, retry
             if os.path.exists(chunk_file):
                 os.remove(chunk_file)
             chunk_duration /= 2.0
 
-        temp_files.append(chunk_file)
-        audio_chunks.append({
-            "index": chunk_index,
-            "path": chunk_file,
-            "offset": start_time
-        })
-        chunk_index += 1
+        if os.path.exists(chunk_file) and os.path.getsize(chunk_file) > 0:
+            temp_files.append(chunk_file)
+            audio_chunks.append({
+                "index": chunk_index,
+                "path": chunk_file,
+                "offset": start_time
+            })
+            chunk_index += 1
+
         start_time += chunk_duration
 
     return audio_chunks
