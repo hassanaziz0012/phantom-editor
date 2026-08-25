@@ -53,6 +53,8 @@ __all__ = [
 ]
 
 
+
+
 def parse_srt_to_timestamped_transcript(srt_path: str | Path) -> str:
     """Parses an SRT subtitle file into a formatted transcript with [MM:SS] cues."""
     path = Path(srt_path).resolve()
@@ -112,12 +114,7 @@ def resolve_project_paths(target: str | Path | None = None) -> tuple[Path, Path,
     if target_path.is_file():
         if target_path.suffix.lower() == ".srt":
             project_dir = target_path.parent
-            trimmed_srt = project_dir / "trimmed.srt"
-            # If trimmed.srt exists in the project and the target was a raw untrimmed srt, prioritize trimmed.srt
-            if trimmed_srt.is_file() and trimmed_srt.stat().st_size > 0 and target_path.name.lower() != "trimmed.srt" and "trim" not in target_path.stem.lower():
-                captions_path = trimmed_srt
-            else:
-                captions_path = target_path
+            captions_path = target_path
         elif target_path.name.lower() == "metadata.json" or target_path.suffix.lower() == ".json":
             project_dir = target_path.parent
         else:
@@ -146,55 +143,14 @@ def resolve_project_paths(target: str | Path | None = None) -> tuple[Path, Path,
     return project_dir, metadata_path, captions_path, title
 
 
-def ensure_trimmed_captions(project_dir: Path) -> Path | None:
-    """Ensures trimmed.srt exists in the project directory. If missing, transcribes the trimmed video."""
-    trimmed_path = project_dir / "trimmed.srt"
-    if trimmed_path.is_file() and trimmed_path.stat().st_size > 0:
-        return trimmed_path
-
-    # Search for trimmed video candidates
-    trimmed_video_candidates = [
-        project_dir / "after-trim-silences.mp4",
-        project_dir / "after-audio-processing.mp4",
-        project_dir / "to-review.mp4",
-        project_dir / "final.mp4",
-    ]
-
-    video_to_transcribe = None
-    for candidate in trimmed_video_candidates:
-        if candidate.is_file() and candidate.stat().st_size > 0:
-            video_to_transcribe = candidate
-            break
-
-    if video_to_transcribe:
-        print(f"⚡ 'trimmed.srt' not found in project folder. Automatically transcribing '{video_to_transcribe.name}' via Groq Cloud...")
-        transcribe_script = REPO_ROOT / "video-editing" / "transcribe_cloud.py"
-        if transcribe_script.is_file():
-            cmd = [
-                sys.executable,
-                str(transcribe_script),
-                str(video_to_transcribe),
-                "--output", str(trimmed_path)
-            ]
-            try:
-                subprocess.run(cmd, check=True)
-                if trimmed_path.is_file() and trimmed_path.stat().st_size > 0:
-                    print(f"✓ Successfully generated trimmed subtitles at {trimmed_path.name}")
-                    return trimmed_path
-            except Exception as e:
-                print(f"⚠️ Failed to auto-generate trimmed.srt: {e}")
-
-    return None
-
-
 def find_captions_file(project_dir: Path) -> Path | None:
-    """Finds best phrase-level .srt captions file in the project directory, strictly prioritizing trimmed subtitles."""
+    """Finds best phrase-level .srt captions file in the project directory."""
     if not project_dir.is_dir():
         return None
 
-    # 1. Exact priority: trimmed.srt (or auto-generate if trimmed video exists)
-    trimmed_path = ensure_trimmed_captions(project_dir)
-    if trimmed_path and trimmed_path.is_file() and trimmed_path.stat().st_size > 0:
+    # 1. Exact check for trimmed.srt if it already exists
+    trimmed_path = project_dir / "trimmed.srt"
+    if trimmed_path.is_file() and trimmed_path.stat().st_size > 0:
         return trimmed_path
 
     srt_files = list(project_dir.glob("*.srt"))

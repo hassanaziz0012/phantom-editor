@@ -30,9 +30,11 @@ phantom metadata manual <video_path>
 
 ### [auto_create_metadata.py](../metadata/auto_create_metadata.py)
 Automatically creates or updates `metadata.json` in a YouTube video project folder. When phrase-level `.srt` captions are present, it orchestrates:
-1. Generating video topics and chapters (`timestamps`)
-2. Generating a concise, deslopified video description (`description`)
-3. Generating a promotional tweet template with `{url}` placeholder (`tweetTemplate`)
+1. Generating a concise, deslopified video description (`description`)
+2. Generating a promotional tweet template with `{url}` placeholder (`tweetTemplate`)
+3. Generating video recommendations from channel archive (`recommendations`)
+
+*Note: Timestamps/chapters are generated separately using `phantom metadata timestamps` after manual video review cuts are finalized.*
 
 * **CLI Command**: `phantom metadata create [<project_path>] [--title <title>] [--tags <tags>] [--skip-ai]`
 

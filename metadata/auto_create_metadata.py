@@ -4,10 +4,12 @@ Automatic YouTube Metadata Generator
 ====================================
 Automatically creates or updates `metadata.json` in a YouTube video project folder.
 If captions (.srt) are found, automatically generates:
-1. Video chapters & timestamps
-2. Human-like 2-3 sentence video description
-3. Promotional tweet template
-4. Video recommendations from channel archive
+1. Human-like 2-3 sentence video description
+2. Promotional tweet template
+3. Video recommendations from channel archive
+
+Note: Video chapters & timestamps are generated separately via `metadata/generate_timestamps.py`
+after video review cuts are finalized.
 """
 
 from __future__ import annotations
@@ -27,13 +29,11 @@ try:
     import metadata.utils as utils
     from metadata.auto_gen_desc import generate_description_for_project
     from metadata.auto_gen_tweet import generate_tweet_for_project
-    from metadata.generate_timestamps import generate_timestamps_for_project
     from metadata.recommendations.recommend import recommend_videos_for_project
 except ImportError:
     import utils  # noqa: E402
     from auto_gen_desc import generate_description_for_project  # noqa: E402
     from auto_gen_tweet import generate_tweet_for_project  # noqa: E402
-    from generate_timestamps import generate_timestamps_for_project  # noqa: E402
     from recommendations.recommend import recommend_videos_for_project  # noqa: E402
 
 
@@ -71,42 +71,34 @@ def auto_create_metadata(
     metadata["madeForKids"] = made_for_kids if made_for_kids is not None else metadata.get("madeForKids", False)
     metadata.setdefault("tweetTemplate", "🎬 New video just dropped! {url}")
     metadata.setdefault("recommendations", metadata.get("recommendations", []))
+    metadata.setdefault("timestamps", metadata.get("timestamps", []))
 
     if not skip_ai:
         if captions_path and captions_path.is_file():
             print(f"\n📂 Found captions file: {captions_path.name}")
 
-            # 1. Generate Timestamps
+            # 1. Generate Description
             try:
-                print("\n[1/4] Generating Timestamps...")
-                timestamps = generate_timestamps_for_project(captions_path, metadata_path=metadata_path)
-                metadata["timestamps"] = timestamps
-                print(f"✓ Generated {len(timestamps)} timestamps.")
-            except Exception as e:
-                print(f"⚠️  Failed to generate timestamps: {e}")
-
-            # 2. Generate Description
-            try:
-                print("\n[2/4] Generating Description...")
+                print("\n[1/3] Generating Description...")
                 desc = generate_description_for_project(captions_path, metadata_path=metadata_path)
                 metadata["description"] = desc
                 print("✓ Generated video description.")
             except Exception as e:
                 print(f"⚠️  Failed to generate description: {e}")
 
-            # 3. Generate Tweet Template
+            # 2. Generate Tweet Template
             try:
-                print("\n[3/4] Generating Promotional Tweet Template...")
+                print("\n[2/3] Generating Promotional Tweet Template...")
                 tweet = generate_tweet_for_project(captions_path, metadata_path=metadata_path)
                 metadata["tweetTemplate"] = tweet
                 print("✓ Generated promotional tweet template.")
             except Exception as e:
                 print(f"⚠️  Failed to generate tweet template: {e}")
 
-            # 4. Generate Recommendations
+            # 3. Generate Recommendations
             if not skip_recommendations:
                 try:
-                    print("\n[4/4] Generating Video Recommendations...")
+                    print("\n[3/3] Generating Video Recommendations...")
                     recs = recommend_videos_for_project(target=project_dir, metadata_path=metadata_path)
                     metadata["recommendations"] = recs
                     print(f"✓ Generated {len(recs)} recommendations.")
@@ -115,7 +107,7 @@ def auto_create_metadata(
 
         else:
             print("\n⚠️  No phrase-level .srt captions file found in project folder.")
-            print("   Skipping AI generation of timestamps, description, tweet template, and recommendations.")
+            print("   Skipping AI generation of description, tweet template, and recommendations.")
             print("   Run `phantom edit transcribe <video>` to generate captions first if needed.")
 
     # Save to disk
@@ -163,7 +155,7 @@ def main():
         "--skip-ai",
         action="store_true",
         default=False,
-        help="Skip AI generation of timestamps, description, tweet template, and recommendations.",
+        help="Skip AI generation of description, tweet template, and recommendations.",
     )
     parser.add_argument(
         "--skip-recommendations",

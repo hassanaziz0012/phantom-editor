@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -60,11 +61,35 @@ def generate_timestamps_for_project(
     metadata_path: Path | None = None,
 ) -> list[dict[str, str]]:
     """Generates timestamps and saves them to metadata.json for the targeted project."""
-    project_dir, default_meta_path, captions_path, title = utils.resolve_project_paths(target)
-    save_meta_path = metadata_path or default_meta_path
+    target_path = Path(target).expanduser().resolve() if target else Path.cwd()
+    project_dir = target_path if target_path.is_dir() else target_path.parent
+    save_meta_path = metadata_path or (project_dir / "metadata.json")
 
-    if not captions_path or not captions_path.is_file():
-        raise FileNotFoundError(f"Captions file (.srt) not found for target '{target or project_dir}'")
+    # If target is explicitly an existing .srt captions file, use it
+    if target_path.is_file() and target_path.suffix.lower() == ".srt":
+        captions_path = target_path
+    else:
+        captions_path = project_dir / "trimmed.srt"
+        if not captions_path.is_file():
+            final_mp4 = project_dir / "final.mp4"
+            if not final_mp4.is_file():
+                raise FileNotFoundError(f"Neither 'trimmed.srt' nor 'final.mp4' found in {project_dir}")
+
+            print(f"⚡ Transcribing final.mp4 to generate trimmed.srt...")
+            transcribe_script = repo_root / "video-editing" / "transcribe_cloud.py"
+            subprocess.run([sys.executable, str(transcribe_script), str(final_mp4), "--output", str(captions_path)], check=True)
+
+    # Determine title
+    title = ""
+    if save_meta_path.is_file():
+        try:
+            data = json.loads(save_meta_path.read_text(encoding="utf-8"))
+            title = data.get("title", "")
+        except Exception:
+            pass
+
+    if not title:
+        title = project_dir.name.replace("-", " ").replace("_", " ").title()
 
     print(f"📖 Reading captions from {captions_path.name}...")
     transcript = utils.parse_srt_to_timestamped_transcript(captions_path)
@@ -101,7 +126,7 @@ def main():
         "target",
         nargs="?",
         default=None,
-        help="Path to the .srt captions file, video file, or project folder (default: current directory).",
+        help="Path to the .srt captions file, final video file (.mp4), or project folder (default: current directory).",
     )
     parser.add_argument(
         "--metadata", "-m",
