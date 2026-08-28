@@ -40,6 +40,8 @@ show_usage() {
     echo "  reddit analyze-post <url> [--headless] [--json]"
     echo "  reddit scrape <url> [--headless] [--max-comments <int>] [--json]"
     echo "  reddit scrapesub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
+    echo "  skool scrape <url> [--max-comments <int>] [--headless] [--json]"
+    echo "  skool scrapecommunity <url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
     echo "  tweet [--image] [--substack] [--threads] <tweet_content>"
     echo "  ideas generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
     echo "  ideas generate-from-outlier <video> [--no-export] [--fresh-summary] [--json]"
@@ -246,6 +248,20 @@ case "$COMMAND" in
             echo "Usage: phantom reddit analyze-post <url> [--headless] [--json]"
             echo "       phantom reddit scrape <url> [--headless] [--max-comments <int>] [--json]"
             echo "       phantom reddit scrapesub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
+            exit 1
+        fi
+        ;;
+    skool)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "scrape" ] || [ "$SUBCOMMAND" = "scrape-post" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/skool/scrape_post.py" "$@"
+        elif [ "$SUBCOMMAND" = "scrapecommunity" ] || [ "$SUBCOMMAND" = "scrape-community" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/skool/scrape_community.py" "$@"
+        else
+            echo "Unknown skool subcommand: $SUBCOMMAND"
+            echo "Usage: phantom skool scrape <url> [--max-comments <int>] [--headless] [--json]"
+            echo "       phantom skool scrapecommunity <url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
             exit 1
         fi
         ;;
