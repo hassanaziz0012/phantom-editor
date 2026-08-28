@@ -38,6 +38,8 @@ show_usage() {
     echo "  metadata prepare-recommendations [<channel>] [arguments]"
     echo "  emails broadcast --title <title> --description <desc> --url <url> [arguments]"
     echo "  reddit analyze-post <url> [--headless] [--json]"
+    echo "  reddit scrape <url> [--headless] [--max-comments <int>] [--json]"
+    echo "  reddit scrapesub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
     echo "  tweet [--image] <tweet_content>"
     echo "  ideas generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
     echo "  ideas generate-from-outlier <video> [--no-export] [--fresh-summary] [--json]"
@@ -233,9 +235,15 @@ case "$COMMAND" in
         shift
         if [ "$SUBCOMMAND" = "analyze-post" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/analyze_post.py" "$@"
+        elif [ "$SUBCOMMAND" = "scrape" ] || [ "$SUBCOMMAND" = "scrape-post" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_reddit_post.py" "$@"
+        elif [ "$SUBCOMMAND" = "scrapesub" ] || [ "$SUBCOMMAND" = "scrape-sub" ] || [ "$SUBCOMMAND" = "scrape-subreddit" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_subreddit.py" "$@"
         else
             echo "Unknown reddit subcommand: $SUBCOMMAND"
             echo "Usage: phantom reddit analyze-post <url> [--headless] [--json]"
+            echo "       phantom reddit scrape <url> [--headless] [--max-comments <int>] [--json]"
+            echo "       phantom reddit scrapesub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
             exit 1
         fi
         ;;
