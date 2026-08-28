@@ -11,11 +11,12 @@ Launches a non-headless browser session to allow manual login to X.com.
 * **Output**: Saves authentication state to `auth.json` (used for subsequent automated actions).
 
 ### [post_tweet.py](../twitter/post_tweet.py)
-Automates tweeting by launching Playwright with saved credentials from `auth.json`. Supports attaching an image from the clipboard.
+Automates tweeting by launching Playwright with saved credentials from `auth.json`. Supports attaching an image from the clipboard and cross-posting to Substack Notes and Threads.
 
-* **Usage**: `uv run twitter/post_tweet.py [--image] "tweet content"`
+* **Usage**: `uv run twitter/post_tweet.py [--image] [--substack] [--threads] "tweet content"`
 
 ### [tweet.sh](../twitter/tweet.sh)
 A shell script wrapper to easily post a tweet using the Python automation script.
 
-* **Usage**: `./twitter/tweet.sh [--image] "tweet content"`
+* **Usage**: `./twitter/tweet.sh [--image] [--substack] [--threads] "tweet content"`
+
