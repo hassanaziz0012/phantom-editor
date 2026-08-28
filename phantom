@@ -40,7 +40,7 @@ show_usage() {
     echo "  reddit analyze-post <url> [--headless] [--json]"
     echo "  reddit scrape <url> [--headless] [--max-comments <int>] [--json]"
     echo "  reddit scrapesub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
-    echo "  tweet [--image] <tweet_content>"
+    echo "  tweet [--image] [--substack] [--threads] <tweet_content>"
     echo "  ideas generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
     echo "  ideas generate-from-outlier <video> [--no-export] [--fresh-summary] [--json]"
     echo "  ideas export [--file <path> | --idea <text>] [arguments]"
@@ -251,7 +251,7 @@ case "$COMMAND" in
         ;;
     tweet)
         if [ $# -eq 0 ]; then
-            echo "Usage: phantom tweet [--image] <tweet_content>"
+            echo "Usage: phantom tweet [--image] [--substack] [--threads] <tweet_content>"
             exit 1
         fi
         "$BASE_DIR/twitter/tweet.sh" "$@"
