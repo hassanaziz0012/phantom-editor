@@ -56,6 +56,8 @@ show_usage() {
     echo "  shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
     echo "  shorts add-thumbnail [arguments] <video_path>"
     echo "  shorts trim [arguments]"
+    echo "  substack note [<text>] [-i <images>...] [-v <video>] [--headless]"
+    echo "  threads post [<text>] [--posts <file...>] [-i <images>...] [--headless]"
     echo "  review inspect <video_path> [arguments]"
     echo "  record start"
     echo "  record stop"
@@ -401,6 +403,28 @@ case "$COMMAND" in
         else
             echo "Unknown review subcommand: $SUBCOMMAND"
             echo "Usage: phantom review inspect <video_path> [arguments]"
+            exit 1
+        fi
+        ;;
+    substack)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "note" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/substack/post_note.py" "$@"
+        else
+            echo "Unknown substack subcommand: $SUBCOMMAND"
+            echo "Usage: phantom substack note [<text>] [-i <images>...] [-v <video>] [--headless]"
+            exit 1
+        fi
+        ;;
+    threads)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "post" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/threads/post_thread.py" "$@"
+        else
+            echo "Unknown threads subcommand: $SUBCOMMAND"
+            echo "Usage: phantom threads post [<text>] [--posts <file...>] [-i <images>...] [--headless]"
             exit 1
         fi
         ;;
