@@ -48,6 +48,8 @@ Automatic publishing and uploading scripts to distribute finalized content acros
 * 🎵 **[TikTok](tiktok.md)**: CLI-based automated TikTok video publishing.
 * 🐦 **[Twitter / X](twitter.md)**: Post scheduling and media tweeting workflows.
 * 💼 **[LinkedIn](linkedin.md)**: Share posts and updates automatically.
+* 🧵 **[Threads](threads.md)**: Publish single posts and multi-part threads with image attachments.
+* 📝 **[Substack](substack.md)**: Post Substack Notes with optional images and video.
 * 📱 **[Shorts Workflow](shorts.md)**: Multi-platform short-form video uploader and tracker.
 
 ---
