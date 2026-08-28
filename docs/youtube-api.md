@@ -21,7 +21,7 @@ Core retrieval module that handles fetching all videos for a channel and caching
 Defines shared dataclasses (`Video`, `VideoSeed`, `RankedVideo`, `VideoMetadata`) for storing video metadata, stats, and recommendation rankings.
 
 ### [upload_video.py](../youtube_api/upload_video.py)
-Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a custom `thumbnail.png`, shares the link on Twitter (X), and sends an email broadcast to subscribers via Resend.
+Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a custom `thumbnail.png`, shares the link on Twitter (X), Substack Notes, and Threads, and sends an email broadcast to subscribers via Resend.
 
 * **Usage**: `python youtube_api/upload_video.py /path/to/video.mp4` or via `phantom yt upload <video_path>`
 
