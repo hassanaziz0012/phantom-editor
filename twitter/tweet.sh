@@ -2,7 +2,7 @@
 
 # Check if an argument is provided
 if [ $# -eq 0 ]; then
-    echo "Usage: tweet <your_tweet_content>"
+    echo "Usage: tweet [--image] [--substack] [--threads] <your_tweet_content>"
     exit 1
 fi
 

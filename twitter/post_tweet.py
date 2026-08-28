@@ -1,10 +1,15 @@
+import argparse
 import asyncio
 import os
 import sys
-import argparse
 import tempfile
 
 from playwright.async_api import async_playwright
+
+# Setup import path for sibling modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from substack.post_note import post_substack_note
+from threads.post_thread import post_thread
 
 # Get the absolute path to the data/auth.json file relative to this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -113,7 +118,7 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {{
                 except Exception:
                     pass
 
-async def post_tweet(content: str, use_image: bool = False):
+async def post_tweet(content: str, use_image: bool = False, substack: bool = False, threads: bool = False):
     status = {"posted": False}
     try:
         print("Launching browser in headless mode...")
@@ -125,9 +130,17 @@ async def post_tweet(content: str, use_image: bool = False):
         print("Restarting browser in headed mode...")
         await _run_post_tweet(content, use_image, headless=False, status=status)
 
+    if substack:
+        await post_substack_note(text=content)
+
+    if threads:
+        await post_thread(posts_text=[content])
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Post a tweet via Playwright.")
     parser.add_argument('--image', action='store_true', help="Attach an image from the clipboard")
+    parser.add_argument('--substack', action='store_true', help="Also post to Substack")
+    parser.add_argument('--threads', action='store_true', help="Also post to Threads")
     parser.add_argument('text', nargs='+', help="The tweet text content")
     
     args = parser.parse_args()
@@ -137,4 +150,4 @@ if __name__ == "__main__":
         print("Error: Tweet is longer than 280 characters.", file=sys.stderr)
         sys.exit(1)
         
-    asyncio.run(post_tweet(tweet_content, use_image=args.image))
+    asyncio.run(post_tweet(tweet_content, use_image=args.image, substack=args.substack, threads=args.threads))
