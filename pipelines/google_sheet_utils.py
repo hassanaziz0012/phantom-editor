@@ -28,9 +28,6 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 DEFAULT_SHEET_NAME = "Pipeline"
 DEFAULT_HEADERS = ["Project", "Title", "Status", "URL", "Publish Date", "Platform"]
 
-TOKEN_DIR = Path(__file__).resolve().parent / "tokens"
-TOKEN_FILE = TOKEN_DIR / "sheets_token.json"
-
 
 @dataclass
 class CalendarRecord:
@@ -70,21 +67,6 @@ class CalendarRecord:
         return values
 
 
-def find_client_secrets() -> Path:
-    """Locate client_secret.json across common project paths."""
-    candidates = [
-        Path(__file__).resolve().parent / "tokens/client_secret.json",
-        repo_root / "youtube_api/tokens/client_secret.json",
-        repo_root / "tokens/client_secret.json",
-        repo_root / "video-editing/tokens/client_secret.json",
-        repo_root / "client_secret.json",
-    ]
-    for p in candidates:
-        if p.exists():
-            return p
-    return candidates[0]
-
-
 def get_spreadsheet_id(spreadsheet_id: Optional[str] = None) -> str:
     """Get spreadsheet ID from argument, environment, or raise error."""
     sheet_id = spreadsheet_id or os.getenv("CONTENT_CALENDAR_SHEET_ID")
@@ -96,59 +78,64 @@ def get_spreadsheet_id(spreadsheet_id: Optional[str] = None) -> str:
     return sheet_id.strip()
 
 
-def get_sheets_service(
-    credentials_file: Optional[Path] = None,
-    token_file: Optional[Path] = None
+def get_service_account_credentials(
+    service_account_email: Optional[str] = None,
+    private_key: Optional[str] = None,
+    scopes: Optional[List[str]] = None,
 ):
     """
-    Authenticate and return an authorized Google Sheets API service resource.
-    Refreshes credentials or prompts OAuth local server authentication as needed.
+    Constructs Google Service Account Credentials from environment variables or arguments.
     """
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.oauth2 import service_account
+
+    email = (service_account_email or os.getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL") or "").strip()
+    key = private_key or os.getenv("GOOGLE_PRIVATE_KEY") or ""
+
+    if not email:
+        raise ValueError(
+            "Google Service Account Email is missing. "
+            "Set GOOGLE_SERVICE_ACCOUNT_EMAIL in .env."
+        )
+    if not key:
+        raise ValueError(
+            "Google Service Account Private Key is missing. "
+            "Set GOOGLE_PRIVATE_KEY in .env."
+        )
+
+    # Format key properly (handle wrapping quotes and escaped newlines)
+    key = key.strip()
+    if (key.startswith('"') and key.endswith('"')) or (key.startswith("'") and key.endswith("'")):
+        key = key[1:-1]
+    key = key.replace("\\n", "\n")
+
+    info = {
+        "client_email": email,
+        "private_key": key,
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    return service_account.Credentials.from_service_account_info(
+        info, scopes=scopes or SCOPES
+    )
+
+
+def get_sheets_service(
+    service_account_email: Optional[str] = None,
+    private_key: Optional[str] = None,
+    credentials=None,
+):
+    """
+    Authenticate and return an authorized Google Sheets API service resource
+    using Google Cloud Service Account credentials.
+    """
     from googleapiclient.discovery import build
 
-    if token_file is None:
-        token_file = TOKEN_FILE
-    if credentials_file is None:
-        credentials_file = find_client_secrets()
+    if credentials is None:
+        credentials = get_service_account_credentials(
+            service_account_email=service_account_email,
+            private_key=private_key,
+        )
 
-    creds = None
-    if token_file.exists():
-        try:
-            creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
-        except Exception as e:
-            print(f"⚠️ Warning: Error reading token file {token_file}: {e}. Re-authenticating...")
-            creds = None
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-            except Exception as e:
-                print(f"⚠️ Warning: Failed to refresh token: {e}. Re-running auth flow...")
-                creds = None
-
-        if not creds:
-            if not credentials_file.exists():
-                raise FileNotFoundError(
-                    f"Google client_secret.json credentials file not found.\n"
-                    f"Searched paths:\n"
-                    f" - {Path(__file__).resolve().parent / 'tokens/client_secret.json'}\n"
-                    f" - {repo_root / 'youtube_api/tokens/client_secret.json'}\n"
-                    f" - {repo_root / 'tokens/client_secret.json'}\n"
-                    f"Please verify client_secret.json exists."
-                )
-
-            token_file.parent.mkdir(parents=True, exist_ok=True)
-            flow = InstalledAppFlow.from_client_secrets_file(str(credentials_file), SCOPES)
-            creds = flow.run_local_server(port=0)
-
-        with open(token_file, "w") as f:
-            f.write(creds.to_json())
-
-    return build("sheets", "v4", credentials=creds)
+    return build("sheets", "v4", credentials=credentials)
 
 
 def get_sheet_tab_info(service, spreadsheet_id: str, sheet_name: str = DEFAULT_SHEET_NAME) -> Dict[str, Any]:
