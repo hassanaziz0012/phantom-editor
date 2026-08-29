@@ -17,6 +17,7 @@ import math
 import os
 import re
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -33,6 +34,7 @@ from googleapiclient.discovery import build
 import requests
 
 from ideas.outliers_db.channels import get_channel, upsert_channel
+from ideas.outliers_db.connection import get_db_connection
 from ideas.outliers_db.models import ChannelRecord, VideoRecord
 from ideas.outliers_db.queries import get_outlier_videos
 from ideas.outliers_db.schema import init_db
@@ -48,6 +50,99 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("phantom.ideas.scraper")
+
+
+class IssueCaptureHandler(logging.Handler):
+    """Captures warning, error, and critical log messages into a list for JSON output."""
+
+    def __init__(self, level: int = logging.WARNING) -> None:
+        super().__init__(level)
+        self.issues: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+        except Exception:
+            msg = record.getMessage()
+        if msg and msg not in self.issues:
+            self.issues.append(msg)
+
+
+def get_existing_channel_video_ids(channel_id: str) -> set[str]:
+    """Retrieves the set of video IDs already stored in PostgreSQL for a given channel."""
+    sql = "SELECT video_id FROM videos WHERE channel_id = %s;"
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (channel_id,))
+            rows = cur.fetchall()
+            return {r["video_id"] if isinstance(r, dict) else r[0] for r in rows}
+
+
+def serialize_video(v: VideoRecord) -> dict[str, Any]:
+    """Serializes a VideoRecord dataclass into a JSON-serializable dictionary."""
+    return {
+        "video_id": v.video_id,
+        "channel_id": v.channel_id,
+        "title": v.title,
+        "description": v.description,
+        "published_at": v.published_at.isoformat() if v.published_at else None,
+        "duration": v.duration,
+        "duration_seconds": v.duration_seconds,
+        "thumbnail_url": v.thumbnail_url,
+        "tags": v.tags,
+        "category_id": v.category_id,
+        "url": v.url,
+        "view_count": v.view_count,
+        "like_count": v.like_count,
+        "comment_count": v.comment_count,
+        "is_short": v.is_short,
+        "view_score": round(v.view_score, 4),
+        "like_score": round(v.like_score, 4),
+        "base_score": round(v.base_score, 4),
+        "score": round(v.score, 4),
+        "is_outlier": v.is_outlier,
+        "last_scraped_at": v.last_scraped_at.isoformat() if v.last_scraped_at else None,
+    }
+
+
+def serialize_video_summary(v: VideoRecord) -> dict[str, Any]:
+    """Serializes a compact summary of a VideoRecord for lists."""
+    return {
+        "video_id": v.video_id,
+        "channel_id": v.channel_id,
+        "title": v.title,
+        "url": v.url,
+        "published_at": v.published_at.isoformat() if v.published_at else None,
+        "duration_seconds": v.duration_seconds,
+        "is_short": v.is_short,
+        "view_count": v.view_count,
+        "like_count": v.like_count,
+        "comment_count": v.comment_count,
+        "view_score": round(v.view_score, 4),
+        "like_score": round(v.like_score, 4),
+        "base_score": round(v.base_score, 4),
+        "score": round(v.score, 4),
+        "is_outlier": v.is_outlier,
+    }
+
+
+def serialize_channel(c: ChannelRecord) -> dict[str, Any]:
+    """Serializes a ChannelRecord dataclass into a JSON-serializable dictionary."""
+    return {
+        "channel_id": c.channel_id,
+        "title": c.title,
+        "description": c.description,
+        "custom_url": c.custom_url,
+        "published_at": c.published_at.isoformat() if c.published_at else None,
+        "subscriber_count": c.subscriber_count,
+        "video_count": c.video_count,
+        "total_view_count": c.total_view_count,
+        "avg_views": round(c.avg_views, 2),
+        "avg_likes": round(c.avg_likes, 2),
+        "thumbnail_url": c.thumbnail_url,
+        "country": c.country,
+        "last_scraped_at": c.last_scraped_at.isoformat() if c.last_scraped_at else None,
+    }
 
 # Default paths
 DEFAULT_TOKEN_FILE = repo_root / "youtube_api" / "tokens" / "token.json"
@@ -468,23 +563,26 @@ def scrape_and_save_channel_videos(
     api_key: Optional[str] = None,
     token_path: Optional[Path | str] = None,
     youtube_service: Optional[Any] = None,
-) -> tuple[ChannelRecord, list[VideoRecord]]:
+    quiet: bool = False,
+) -> tuple[ChannelRecord, list[VideoRecord], dict[str, Any]]:
     """
     Full pipeline for a single channel:
     1. Authenticate with YouTube API (or reuse existing youtube_service)
     2. Resolve channel ID and fetch channel metadata
-    3. Fetch all videos uploaded in the past 12 months
-    4. Fetch video details and stats in batch
-    5. Compute channel average views and likes
-    6. Calculate video scores:
+    3. Check existing channel stats & stored video IDs in PostgreSQL
+    4. Fetch all videos uploaded in the past 12 months
+    5. Fetch video details and stats in batch
+    6. Compute channel average views and likes
+    7. Calculate video scores:
        - view_score = video views / avg views
        - like_score = video likes / avg likes
        - base_score = 0.75 * view_score + 0.25 * like_score
        - 10% recency boost for videos uploaded within the last 30 days (0% boost otherwise)
        - final_score = base_score * recency_boost
        - is_outlier = (view_score >= outlier_threshold OR score >= outlier_threshold)
-    7. Save channel and all videos into PostgreSQL database
-    8. Trigger score recalculation to keep database perfectly consistent
+    8. Save channel and all videos into PostgreSQL database
+    9. Trigger score recalculation to keep database perfectly consistent
+    10. Return channel record, video records, and detailed channel summary data
     """
     # 1. Initialize DB schema
     init_db()
@@ -496,23 +594,70 @@ def scrape_and_save_channel_videos(
     channel_id = resolve_channel_id(youtube, channel_input)
     logger.info("Resolved target channel ID: %s", channel_id)
 
-    # 4. Fetch Channel Metadata
+    # 4. Check existing channel & stored video IDs before scraping
+    existing_channel = get_channel(channel_id)
+    existing_video_ids = get_existing_channel_video_ids(channel_id)
+    is_new_channel = (existing_channel is None)
+
+    # 5. Fetch Channel Metadata from YouTube
     channel_dict, uploads_playlist_id = fetch_channel_details(youtube, channel_id)
     logger.info("Fetched channel metadata: '%s' (%s subscribers)", channel_dict["title"], f"{channel_dict['subscriber_count']:,}")
 
-    # 5. Fetch Video IDs from past 12 months
+    # 6. Fetch Video IDs from past months
     video_ids = fetch_recent_video_ids(youtube, uploads_playlist_id, months=months)
     if not video_ids:
         logger.warning("No videos found in the last %d months for channel '%s'.", months, channel_dict["title"])
         channel_record = ChannelRecord(**channel_dict)
         upsert_channel(channel_record)
-        return channel_record, []
+        empty_report = {
+            "channel_id": channel_record.channel_id,
+            "title": channel_record.title,
+            "custom_url": channel_record.custom_url,
+            "subscriber_count": channel_record.subscriber_count,
+            "video_count": channel_record.video_count,
+            "total_view_count": channel_record.total_view_count,
+            "avg_views": round(channel_record.avg_views, 2),
+            "avg_likes": round(channel_record.avg_likes, 2),
+            "thumbnail_url": channel_record.thumbnail_url,
+            "country": channel_record.country,
+            "is_new_channel": is_new_channel,
+            "changes": {
+                "subscriber_count_delta": (
+                    channel_record.subscriber_count - existing_channel["subscriber_count"]
+                    if existing_channel and existing_channel.get("subscriber_count") is not None
+                    else None
+                ),
+                "avg_views_delta": 0.0,
+                "avg_likes_delta": 0.0,
+                "total_view_count_delta": (
+                    channel_record.total_view_count - existing_channel["total_view_count"]
+                    if existing_channel and existing_channel.get("total_view_count") is not None
+                    else None
+                ),
+                "previous_last_scraped_at": (
+                    existing_channel["last_scraped_at"].isoformat()
+                    if existing_channel and existing_channel.get("last_scraped_at") and hasattr(existing_channel["last_scraped_at"], "isoformat")
+                    else str(existing_channel["last_scraped_at"])
+                    if existing_channel and existing_channel.get("last_scraped_at")
+                    else None
+                ),
+            },
+            "stats": {
+                "videos_scraped": 0,
+                "new_videos_added": 0,
+                "existing_videos_updated": 0,
+                "shorts_count": 0,
+                "long_form_count": 0,
+                "outliers_count": 0,
+            },
+        }
+        return channel_record, [], empty_report
 
-    # 6. Fetch Full Video Details
+    # 7. Fetch Full Video Details
     raw_videos = fetch_video_details_batch(youtube, video_ids, channel_id)
     logger.info("Retrieved complete metadata and metrics for %d videos.", len(raw_videos))
 
-    # 7. Calculate Channel Averages (from the 12-month period)
+    # 8. Calculate Channel Averages (from the scrape window)
     total_views = sum(v["view_count"] for v in raw_videos)
     total_likes = sum(v["like_count"] for v in raw_videos)
     video_count = len(raw_videos)
@@ -524,8 +669,11 @@ def scrape_and_save_channel_videos(
     channel_dict["avg_likes"] = avg_likes
     channel_record = ChannelRecord(**channel_dict)
 
-    # 8. Compute Performance & Outlier Scores for Each Video
+    # 9. Compute Performance & Outlier Scores for Each Video
     video_records: list[VideoRecord] = []
+    new_videos: list[VideoRecord] = []
+    updated_videos: list[VideoRecord] = []
+
     for raw_v in raw_videos:
         scores = compute_video_score_components(
             view_count=raw_v["view_count"],
@@ -537,20 +685,95 @@ def scrape_and_save_channel_videos(
         )
 
         video_data = {**raw_v, **scores}
-        video_records.append(VideoRecord(**video_data))
+        v_record = VideoRecord(**video_data)
+        video_records.append(v_record)
 
-    # 9. Upsert Channel & Videos into PostgreSQL
+        if v_record.video_id not in existing_video_ids:
+            new_videos.append(v_record)
+        else:
+            updated_videos.append(v_record)
+
+    # 10. Upsert Channel & Videos into PostgreSQL
     logger.info("Saving channel record to PostgreSQL database...")
     upsert_channel(channel_record)
 
-    logger.info("Batch saving %d video records to PostgreSQL database...", len(video_records))
+    logger.info(
+        "Batch saving %d video records to PostgreSQL database (%d new, %d updated)...",
+        len(video_records),
+        len(new_videos),
+        len(updated_videos),
+    )
     upsert_videos_batch(video_records)
 
-    # 10. Update SQL-side scores for database triggers and indexes
+    # 11. Update SQL-side scores for database triggers and indexes
     update_video_scores(channel_id=channel_id, outlier_threshold=outlier_threshold)
 
     logger.info("Successfully scraped, scored, and stored %d videos for '%s'.", len(video_records), channel_record.title)
-    return channel_record, video_records
+
+    # 12. Calculate Changes and Summary Stats
+    outliers = [v for v in video_records if v.is_outlier or v.score >= outlier_threshold]
+    outliers.sort(key=lambda v: (v.score, v.view_score), reverse=True)
+    shorts_count = sum(1 for v in video_records if v.is_short)
+    long_count = len(video_records) - shorts_count
+
+    sub_delta = (
+        channel_record.subscriber_count - existing_channel["subscriber_count"]
+        if existing_channel and existing_channel.get("subscriber_count") is not None
+        else None
+    )
+    avg_views_delta = (
+        round(channel_record.avg_views - float(existing_channel["avg_views"]), 2)
+        if existing_channel and existing_channel.get("avg_views") is not None
+        else None
+    )
+    avg_likes_delta = (
+        round(channel_record.avg_likes - float(existing_channel["avg_likes"]), 2)
+        if existing_channel and existing_channel.get("avg_likes") is not None
+        else None
+    )
+    total_views_delta = (
+        channel_record.total_view_count - existing_channel["total_view_count"]
+        if existing_channel and existing_channel.get("total_view_count") is not None
+        else None
+    )
+    prev_scraped_at = (
+        existing_channel["last_scraped_at"].isoformat()
+        if existing_channel and existing_channel.get("last_scraped_at") and hasattr(existing_channel["last_scraped_at"], "isoformat")
+        else str(existing_channel["last_scraped_at"])
+        if existing_channel and existing_channel.get("last_scraped_at")
+        else None
+    )
+
+    channel_report = {
+        "channel_id": channel_record.channel_id,
+        "title": channel_record.title,
+        "custom_url": channel_record.custom_url,
+        "subscriber_count": channel_record.subscriber_count,
+        "video_count": channel_record.video_count,
+        "total_view_count": channel_record.total_view_count,
+        "avg_views": round(channel_record.avg_views, 2),
+        "avg_likes": round(channel_record.avg_likes, 2),
+        "thumbnail_url": channel_record.thumbnail_url,
+        "country": channel_record.country,
+        "is_new_channel": is_new_channel,
+        "changes": {
+            "subscriber_count_delta": sub_delta,
+            "avg_views_delta": avg_views_delta,
+            "avg_likes_delta": avg_likes_delta,
+            "total_view_count_delta": total_views_delta,
+            "previous_last_scraped_at": prev_scraped_at,
+        },
+        "stats": {
+            "videos_scraped": len(video_records),
+            "new_videos_added": len(new_videos),
+            "existing_videos_updated": len(updated_videos),
+            "shorts_count": shorts_count,
+            "long_form_count": long_count,
+            "outliers_count": len(outliers),
+        },
+    }
+
+    return channel_record, video_records, channel_report
 
 
 def scrape_channels_bulk(
@@ -560,20 +783,21 @@ def scrape_channels_bulk(
     api_key: Optional[str] = None,
     token_path: Optional[Path | str] = None,
     stop_on_error: bool = False,
+    quiet: bool = False,
 ) -> tuple[list[dict[str, Any]], list[tuple[str, str]], list[VideoRecord]]:
     """
     Bulk pipeline:
     Iterates over multiple channels, scrapes metadata and videos from the last 12 months,
     computes outlier performance, and saves all channels and videos to PostgreSQL.
     Returns:
-      - results: list of dicts with channel summary stats
+      - channel_reports: list of dicts with channel summary stats and details
       - failed_channels: list of (channel_input, error_message)
-      - all_outliers: combined list of outlier VideoRecords sorted by score descending
+      - all_outliers: combined list of outlier VideoRecords sorted by score descending (used for terminal report)
     """
     init_db()
     youtube = get_youtube_service(token_path=token_path, api_key=api_key)
 
-    results: list[dict[str, Any]] = []
+    channel_reports: list[dict[str, Any]] = []
     failed_channels: list[tuple[str, str]] = []
     all_outliers: list[VideoRecord] = []
 
@@ -581,31 +805,27 @@ def scrape_channels_bulk(
     logger.info("Starting bulk scraping for %d channels...", total_count)
 
     for index, ch_input in enumerate(channel_inputs, 1):
-        print("\n" + "=" * 80)
-        print(f"🚀 [{index}/{total_count}] Scraping: {ch_input}")
-        print("=" * 80)
+        if not quiet:
+            print("\n" + "=" * 80)
+            print(f"🚀 [{index}/{total_count}] Scraping: {ch_input}")
+            print("=" * 80)
 
         try:
-            channel_record, video_records = scrape_and_save_channel_videos(
+            channel_record, video_records, report = scrape_and_save_channel_videos(
                 channel_input=ch_input,
                 months=months,
                 outlier_threshold=outlier_threshold,
                 youtube_service=youtube,
+                quiet=quiet,
             )
 
             outliers = [v for v in video_records if v.is_outlier or v.score >= outlier_threshold]
             all_outliers.extend(outliers)
+            channel_reports.append(report)
 
-            results.append({
-                "channel_record": channel_record,
-                "video_count": len(video_records),
-                "shorts_count": sum(1 for v in video_records if v.is_short),
-                "long_count": sum(1 for v in video_records if not v.is_short),
-                "outliers_count": len(outliers),
-            })
-
-            # Print single channel report
-            print_scrape_summary(channel_record, video_records, outlier_threshold=outlier_threshold)
+            if not quiet:
+                # Print single channel report
+                print_scrape_summary(channel_record, video_records, outlier_threshold=outlier_threshold)
 
         except Exception as err:
             logger.error("Failed to scrape channel '%s': %s", ch_input, err)
@@ -614,7 +834,7 @@ def scrape_channels_bulk(
                 raise
 
     all_outliers.sort(key=lambda v: (v.score, v.view_score), reverse=True)
-    return results, failed_channels, all_outliers
+    return channel_reports, failed_channels, all_outliers
 
 
 # ── Terminal Display Utilities ──────────────────────────────────────────────────
@@ -797,8 +1017,27 @@ def main() -> None:
         action="store_true",
         help="Stop immediately if any channel fails during bulk scraping (default: continue to next channel).",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Suppress all text logs and output a structured JSON summary.",
+    )
 
     args = parser.parse_args()
+
+    start_time = time.time()
+    issue_handler = IssueCaptureHandler(level=logging.WARNING)
+
+    # If in JSON mode, suppress all text logging to stdout/stderr and capture warnings/errors
+    if args.json:
+        root_logger = logging.getLogger()
+        root_logger.handlers = [issue_handler]
+        root_logger.setLevel(logging.WARNING)
+        logging.getLogger("googleapiclient").setLevel(logging.ERROR)
+        logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
+        logging.getLogger("urllib3").setLevel(logging.ERROR)
+        logging.getLogger("phantom").setLevel(logging.WARNING)
+        logger.setLevel(logging.WARNING)
 
     # Determine channel(s) or file to process
     is_bulk = False
@@ -809,53 +1048,199 @@ def main() -> None:
         try:
             channels_to_scrape = read_channels_from_file(args.channels_file)
         except Exception as e:
-            print(f"Error reading channels file: {e}", file=sys.stderr)
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "success": False,
+                            "status": "error",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "error": f"Error reading channels file: {e}",
+                            "issues": issue_handler.issues,
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                )
+            else:
+                print(f"Error reading channels file: {e}", file=sys.stderr)
             sys.exit(1)
     elif args.channel and Path(args.channel).is_file():
         is_bulk = True
         try:
             channels_to_scrape = read_channels_from_file(args.channel)
         except Exception as e:
-            print(f"Error reading channels file: {e}", file=sys.stderr)
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "success": False,
+                            "status": "error",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "error": f"Error reading channels file: {e}",
+                            "issues": issue_handler.issues,
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                )
+            else:
+                print(f"Error reading channels file: {e}", file=sys.stderr)
             sys.exit(1)
     elif args.channel:
         channels_to_scrape = [args.channel]
 
     if not channels_to_scrape:
-        print("Error: No YouTube channel or channel list file specified.", file=sys.stderr)
-        print("Usage:", file=sys.stderr)
-        print("  Single Channel: python ideas/scrape_videos.py <channel_handle_or_id>", file=sys.stderr)
-        print("  Bulk File:      python ideas/scrape_videos.py ideas/tech_channels.txt", file=sys.stderr)
-        print("                  python ideas/scrape_videos.py --channels ideas/tech_channels.txt", file=sys.stderr)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "status": "error",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "error": "No YouTube channel or channel list file specified.",
+                        "usage": "Single Channel: phantom ideas scrape <channel> [--json] | Bulk File: phantom ideas scrape ideas/channels.txt [--json]",
+                        "issues": issue_handler.issues,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                    default=str,
+                )
+            )
+        else:
+            print("Error: No YouTube channel or channel list file specified.", file=sys.stderr)
+            print("Usage:", file=sys.stderr)
+            print("  Single Channel: python ideas/scrape_videos.py <channel_handle_or_id>", file=sys.stderr)
+            print("  Bulk File:      python ideas/scrape_videos.py ideas/tech_channels.txt", file=sys.stderr)
+            print("                  python ideas/scrape_videos.py --channels ideas/tech_channels.txt", file=sys.stderr)
         sys.exit(1)
 
     try:
         if is_bulk or len(channels_to_scrape) > 1:
-            results, failed_channels, all_outliers = scrape_channels_bulk(
+            channel_reports, failed_channels, all_outliers = scrape_channels_bulk(
                 channel_inputs=channels_to_scrape,
                 months=args.months,
                 outlier_threshold=args.threshold,
                 api_key=args.api_key,
                 token_path=args.token_file,
                 stop_on_error=args.stop_on_error,
+                quiet=args.json,
             )
-            print_bulk_summary(
-                results=results,
-                failed_channels=failed_channels,
-                all_outliers=all_outliers,
-                outlier_threshold=args.threshold,
-            )
+            if not args.json:
+                results = [
+                    {
+                        "channel_record": ChannelRecord(
+                            channel_id=r["channel_id"],
+                            title=r["title"],
+                            custom_url=r["custom_url"],
+                            subscriber_count=r["subscriber_count"],
+                            video_count=r["video_count"],
+                            total_view_count=r["total_view_count"],
+                            avg_views=r["avg_views"],
+                            avg_likes=r["avg_likes"],
+                        ),
+                        "video_count": r["stats"]["videos_scraped"],
+                        "shorts_count": r["stats"]["shorts_count"],
+                        "long_count": r["stats"]["long_form_count"],
+                        "outliers_count": r["stats"]["outliers_count"],
+                    }
+                    for r in channel_reports
+                ]
+                print_bulk_summary(
+                    results=results,
+                    failed_channels=failed_channels,
+                    all_outliers=all_outliers,
+                    outlier_threshold=args.threshold,
+                )
         else:
-            channel_record, video_records = scrape_and_save_channel_videos(
-                channel_input=channels_to_scrape[0],
+            ch_input = channels_to_scrape[0]
+            channel_record, video_records, channel_report = scrape_and_save_channel_videos(
+                channel_input=ch_input,
                 months=args.months,
                 outlier_threshold=args.threshold,
                 api_key=args.api_key,
                 token_path=args.token_file,
+                quiet=args.json,
             )
-            print_scrape_summary(channel_record, video_records, outlier_threshold=args.threshold)
+            channel_reports = [channel_report]
+            failed_channels = []
+
+            if not args.json:
+                print_scrape_summary(channel_record, video_records, outlier_threshold=args.threshold)
+
+        if args.json:
+            duration_sec = round(time.time() - start_time, 2)
+            total_channels = len(channels_to_scrape)
+            succeeded_count = len(channel_reports)
+            failed_count = len(failed_channels)
+
+            total_videos_scraped = sum(c["stats"]["videos_scraped"] for c in channel_reports)
+            total_new_videos_count = sum(c["stats"]["new_videos_added"] for c in channel_reports)
+            total_updated_videos_count = sum(c["stats"]["existing_videos_updated"] for c in channel_reports)
+            total_shorts_count = sum(c["stats"]["shorts_count"] for c in channel_reports)
+            total_long_count = sum(c["stats"]["long_form_count"] for c in channel_reports)
+            total_outliers_count = sum(c["stats"]["outliers_count"] for c in channel_reports)
+
+            status = "success" if failed_count == 0 else "partial_success" if succeeded_count > 0 else "error"
+            success = succeeded_count > 0
+
+            summary_str = (
+                f"Scraped {succeeded_count}/{total_channels} channel(s): {total_videos_scraped} videos processed "
+                f"({total_new_videos_count} new videos added, {total_updated_videos_count} updated), "
+                f"{total_outliers_count} outliers found in {duration_sec}s."
+            )
+
+            payload = {
+                "success": success,
+                "status": status,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "duration_seconds": duration_sec,
+                "summary": summary_str,
+                "parameters": {
+                    "months": args.months,
+                    "threshold": args.threshold,
+                    "channels_requested": channels_to_scrape,
+                },
+                "stats": {
+                    "total_channels_requested": total_channels,
+                    "channels_succeeded": succeeded_count,
+                    "channels_failed": failed_count,
+                    "total_videos_scraped": total_videos_scraped,
+                    "new_videos_added": total_new_videos_count,
+                    "existing_videos_updated": total_updated_videos_count,
+                    "shorts_count": total_shorts_count,
+                    "long_form_count": total_long_count,
+                    "outliers_count": total_outliers_count,
+                },
+                "channels": channel_reports,
+                "failed_channels": [
+                    {"channel_input": ch, "error": err}
+                    for ch, err in failed_channels
+                ],
+                "issues": list(issue_handler.issues),
+            }
+            print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
+
     except Exception as e:
-        logger.exception("Scraping execution failed: %s", e)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "status": "error",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "error": str(e),
+                        "issues": issue_handler.issues if "issue_handler" in locals() else [],
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                    default=str,
+                )
+            )
+        else:
+            logger.exception("Scraping execution failed: %s", e)
         sys.exit(1)
 
 
