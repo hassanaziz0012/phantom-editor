@@ -238,12 +238,7 @@ async def get_cdp_browser_context(
 
 
 async def get_clean_page(context: BrowserContext) -> Page:
-    """Reuses an existing blank page or opens a new tab to avoid collisions."""
-    for page in context.pages:
-        if page.url in ("about:blank", "chrome://newtab/", "chrome://new-tab-page/"):
-            await page.add_init_script(STEALTH_INIT_SCRIPT)
-            await page.add_init_script(EXTRA_STEALTH_JS)
-            return page
+    """Always opens a dedicated new tab for the worker process to avoid tab collisions."""
     page = await context.new_page()
     await page.add_init_script(STEALTH_INIT_SCRIPT)
     await page.add_init_script(EXTRA_STEALTH_JS)
