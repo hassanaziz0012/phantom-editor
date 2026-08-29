@@ -69,6 +69,70 @@ class IssueCaptureHandler(logging.Handler):
             self.issues.append(msg)
 
 
+@contextlib.contextmanager
+def suppress_all_output():
+    """Redirects file descriptors 1 (stdout) and 2 (stderr) and Python sys.stdout/stderr to /dev/null."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    null_fd = None
+    orig_stdout_fd = None
+    orig_stderr_fd = None
+
+    try:
+        null_fd = os.open(os.devnull, os.O_RDWR)
+        orig_stdout_fd = os.dup(1)
+        orig_stderr_fd = os.dup(2)
+        os.dup2(null_fd, 1)
+        os.dup2(null_fd, 2)
+    except Exception:
+        if orig_stdout_fd is not None:
+            try:
+                os.close(orig_stdout_fd)
+            except Exception:
+                pass
+            orig_stdout_fd = None
+        if orig_stderr_fd is not None:
+            try:
+                os.close(orig_stderr_fd)
+            except Exception:
+                pass
+            orig_stderr_fd = None
+        if null_fd is not None:
+            try:
+                os.close(null_fd)
+            except Exception:
+                pass
+            null_fd = None
+
+    captured_out = io.StringIO()
+    captured_err = io.StringIO()
+
+    try:
+        with contextlib.redirect_stdout(captured_out), contextlib.redirect_stderr(captured_err):
+            yield captured_err
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        if null_fd is not None:
+            if orig_stdout_fd is not None:
+                try:
+                    os.dup2(orig_stdout_fd, 1)
+                    os.close(orig_stdout_fd)
+                except Exception:
+                    pass
+            if orig_stderr_fd is not None:
+                try:
+                    os.dup2(orig_stderr_fd, 2)
+                    os.close(orig_stderr_fd)
+                except Exception:
+                    pass
+            try:
+                os.close(null_fd)
+            except Exception:
+                pass
+
+
 def prepare_recommendations(
     channel: Optional[str] = None,
     videos_json_path: Path = DEFAULT_VIDEOS_JSON,
@@ -90,7 +154,15 @@ def prepare_recommendations(
     issue_handler = IssueCaptureHandler(level=logging.WARNING)
     issue_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
     root_logger = logging.getLogger()
-    root_logger.addHandler(issue_handler)
+    saved_handlers = list(root_logger.handlers)
+
+    if quiet:
+        root_logger.handlers = [issue_handler]
+        logging.getLogger("googleapiclient").setLevel(logging.ERROR)
+        logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
+        logging.getLogger("urllib3").setLevel(logging.ERROR)
+    else:
+        root_logger.addHandler(issue_handler)
 
     try:
         initial_existing_videos = load_existing_videos(videos_json_path)
@@ -213,7 +285,7 @@ def prepare_recommendations(
         return report
 
     finally:
-        root_logger.removeHandler(issue_handler)
+        root_logger.handlers = saved_handlers
 
 
 def main() -> None:
@@ -280,11 +352,13 @@ def main() -> None:
     embeddings_npy = Path(args.output_embeddings).resolve()
 
     if args.json:
-        captured_stdout = io.StringIO()
-        captured_stderr = io.StringIO()
         start_time = time.time()
+        report = None
+        error_caught = None
+        captured_err_text = ""
+
         try:
-            with contextlib.redirect_stdout(captured_stdout), contextlib.redirect_stderr(captured_stderr):
+            with suppress_all_output() as err_stream:
                 report = prepare_recommendations(
                     channel=args.channel,
                     videos_json_path=videos_json,
@@ -297,21 +371,23 @@ def main() -> None:
                     delay_seconds=args.delay,
                     quiet=True,
                 )
-            print(json.dumps(report, indent=2, ensure_ascii=False))
+                captured_err_text = err_stream.getvalue().strip() if err_stream else ""
         except Exception as e:
+            error_caught = e
+
+        if error_caught is not None:
             duration_sec = round(time.time() - start_time, 2)
-            issues = [str(e)]
-            err_log = captured_stderr.getvalue().strip()
-            if err_log and err_log not in issues:
-                issues.append(err_log)
+            issues = [str(error_caught)]
+            if captured_err_text and captured_err_text not in issues:
+                issues.append(captured_err_text)
 
             error_report: Dict[str, Any] = {
                 "success": False,
                 "status": "error",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "channel": args.channel or os.getenv("YOUTUBE_CHANNEL_ID"),
-                "summary": f"Preparation pipeline failed: {e}",
-                "error": str(e),
+                "summary": f"Preparation pipeline failed: {error_caught}",
+                "error": str(error_caught),
                 "files": {
                     "videos_json": str(videos_json),
                     "embeddings_npy": str(embeddings_npy),
@@ -332,6 +408,8 @@ def main() -> None:
             }
             print(json.dumps(error_report, indent=2, ensure_ascii=False))
             sys.exit(1)
+
+        print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
         try:
             prepare_recommendations(
