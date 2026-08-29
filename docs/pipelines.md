@@ -303,18 +303,23 @@ phantom pipeline calendar remove 4
 
 The backend driver powering the calendar CLI:
 
-* **OAuth 2.0 Flow & Token Management**: Automatically handles Google OAuth authentication and caches tokens in `pipelines/tokens/sheets_token.json`. Looks for `client_secret.json` in project token folders.
+* **Google Service Account Authentication**: Authenticates securely and permanently using headless Google Cloud Service Account credentials (`GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_PRIVATE_KEY`), eliminating the need for expiring user tokens or interactive browser logins.
 * **Dynamic Header & Schema Mapping**: Detects existing sheet headers (`Title`, `Description`, `URL`, `Publish Date`, `Platform`) or initializes default columns if the sheet is empty.
 * **Data Model**: Uses the `CalendarRecord` dataclass for type safety and easy conversion between API rows and Python objects.
 * **CRUD API**: Exposes `list_records()`, `add_record()`, `remove_record()`, and `update_record()`.
 
 ### Configuration
 
-Ensure your `.env` file contains your Google Sheet ID:
+Ensure your `.env` file contains your Google Service Account credentials and Google Sheet ID:
 
 ```bash
+GOOGLE_SERVICE_ACCOUNT_EMAIL=your-service-account@<project>.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 CONTENT_CALENDAR_SHEET_ID=your_google_sheet_id_here
 ```
+
+> [!NOTE]
+> Make sure the target Google Sheet is shared with `GOOGLE_SERVICE_ACCOUNT_EMAIL` as an **Editor**.
 
 ---
 
