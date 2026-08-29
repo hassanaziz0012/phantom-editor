@@ -75,6 +75,13 @@ Parses, discovers, and reads `metadata.json` files for YouTube projects into typ
 
 ---
 
+### [prepare_yt_recommendations.py](../metadata/recommendations/prepare_yt_recommendations.py)
+Orchestrates YouTube channel video summarization and vector embedding generation with Google Gemini. Supports `--json` mode for machine-readable JSON summaries with suppressed logging.
+
+* **CLI Command**: `phantom metadata prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]` or `python metadata/recommendations/prepare_yt_recommendations.py [<channel>] [--json]`
+
+---
+
 ### [utils.py](../metadata/utils.py)
 Shared helper module containing:
 - `query_claude(prompt_text)`: Invokes `browserllm -p <file> --provider claude -o <file>`.
