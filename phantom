@@ -46,7 +46,7 @@ show_usage() {
     echo "  ideas generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
     echo "  ideas generate-from-outlier <video> [--no-export] [--fresh-summary] [--json]"
     echo "  ideas export [--file <path> | --idea <text>] [arguments]"
-    echo "  ideas scrape (<channel_or_file> | --channels <path>) [arguments]"
+    echo "  ideas scrape (<channel_or_file> | --channels <path>) [--months <int>] [--threshold <float>] [--json] [arguments]"
     echo "  ideas outliers [arguments]"
     echo "  yt upload <video_path>"
     echo "  yt count-uploads [<channel>] [--fresh]"
@@ -298,7 +298,7 @@ case "$COMMAND" in
             echo "Usage: phantom ideas generate-from-comments <video> [arguments]"
             echo "       phantom ideas generate-from-outlier <video> [arguments]"
             echo "       phantom ideas export [--file <path> | --idea <text>] [arguments]"
-            echo "       phantom ideas scrape (<channel_or_file> | --channels <path>) [arguments]"
+            echo "       phantom ideas scrape (<channel_or_file> | --channels <path>) [--months <int>] [--threshold <float>] [--json] [arguments]"
             echo "       phantom ideas outliers [arguments]"
             exit 1
         fi
