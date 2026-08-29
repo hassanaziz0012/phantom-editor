@@ -35,7 +35,7 @@ show_usage() {
     echo "  metadata read [<project_or_video_path>] [--json]"
     echo "  metadata manual <video_path>"
     echo "  metadata recommend [<project_path>] [arguments]"
-    echo "  metadata prepare-recommendations [<channel>] [arguments]"
+    echo "  metadata prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]"
     echo "  emails broadcast --title <title> --description <desc> --url <url> [arguments]"
     echo "  reddit analyze-post <url> [--headless] [--json]"
     echo "  reddit scrape <url> [--headless] [--max-comments <int>] [--json]"
@@ -219,7 +219,7 @@ case "$COMMAND" in
             echo "       phantom metadata read [<project_or_video_path>] [--json]"
             echo "       phantom metadata manual <video_path>"
             echo "       phantom metadata recommend [<project_path>] [arguments]"
-            echo "       phantom metadata prepare-recommendations [<channel>] [arguments]"
+            echo "       phantom metadata prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]"
             exit 1
         fi
         ;;
