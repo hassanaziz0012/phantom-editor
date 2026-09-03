@@ -371,15 +371,6 @@ def main():
         print(f"⚠️  Substack note step failed or browser closed: {e}")
         print("⏭  Moving on gracefully...")
 
-    # Post to Threads
-    print(f"\n🧵 Posting to Threads:\n   {tweet_content}")
-    try:
-        subprocess.run(["phantom", "threads", "post", tweet_content], check=True)
-        print("✅ Threads post published!")
-    except Exception as e:
-        print(f"⚠️  Threads post step failed or browser closed: {e}")
-        print("⏭  Moving on gracefully...")
-
     # Send email broadcast
     title = metadata.get("title", video_path.stem)
     description = metadata.get("description", "")
