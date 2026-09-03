@@ -8,6 +8,9 @@ else
     BASE_DIR="/home/hassan/Desktop/programming/phantom-editor"
 fi
 
+# Clean up external VIRTUAL_ENV so uv targets the project environment without warnings
+unset VIRTUAL_ENV
+
 show_usage() {
     echo "Usage: phantom <command> [arguments]"
     echo "Commands:"
