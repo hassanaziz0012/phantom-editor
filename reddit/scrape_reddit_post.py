@@ -309,7 +309,39 @@ async def scrape_reddit_post(
         try:
             if not quiet:
                 print(f"[*] Navigating to: {url}")
-            await page.goto(url, wait_until="domcontentloaded")
+
+            # Navigate with retry logic for rate limits & transient HTTP/network failures
+            max_nav_retries = 3
+            nav_success = False
+            last_err = None
+
+            for attempt in range(1, max_nav_retries + 1):
+                try:
+                    if not quiet and attempt > 1:
+                        print(f"[*] Retry attempt {attempt}/{max_nav_retries} for {url}...")
+                    response = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    if response and response.status in (429, 502, 503, 504):
+                        if not quiet:
+                            print(f"[!] Warning: Received HTTP {response.status} on attempt {attempt}")
+                        if attempt < max_nav_retries:
+                            await asyncio.sleep(2.0 * attempt + 0.5)
+                            continue
+                    nav_success = True
+                    break
+                except Exception as e:
+                    last_err = e
+                    err_str = str(e)
+                    if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_str or "timeout" in err_str.lower() or "net::" in err_str:
+                        if attempt < max_nav_retries:
+                            backoff = 2.0 * attempt + 0.5
+                            if not quiet:
+                                print(f"[!] Warning: Transient navigation failure ({err_str[:60]}...). Retrying in {backoff:.1f}s...")
+                            await asyncio.sleep(backoff)
+                            continue
+                    raise e
+
+            if not nav_success and last_err:
+                raise last_err
 
             # Wait for the main post component to be available
             try:
@@ -648,18 +680,26 @@ def parse_arguments():
 async def main():
     args = parse_arguments()
 
-    scraped_data = await scrape_reddit_post(
-        url=args.url,
-        headless=args.headless,
-        max_comments=args.max_comments,
-        port=args.port,
-        quiet=args.json,
-    )
+    try:
+        scraped_data = await scrape_reddit_post(
+            url=args.url,
+            headless=args.headless,
+            max_comments=args.max_comments,
+            port=args.port,
+            quiet=args.json,
+        )
 
-    if args.json:
-        print(json.dumps(scraped_data.model_dump(), indent=2))
-    else:
-        print_scraped_post_data(scraped_data)
+        if args.json:
+            print(json.dumps(scraped_data.model_dump(), indent=2))
+        else:
+            print_scraped_post_data(scraped_data)
+    except Exception as e:
+        if args.json:
+            print(json.dumps({"error": f"Failed to scrape post: {e}", "url": args.url}))
+            sys.exit(0)
+        else:
+            print(f"[!] Error scraping post: {e}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
