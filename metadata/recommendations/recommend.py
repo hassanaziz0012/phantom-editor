@@ -24,7 +24,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from dotenv import load_dotenv
@@ -46,6 +46,7 @@ from metadata.recommendations.embed_my_videos import (
     MODEL_NAME as EMBEDDING_MODEL_NAME,
     build_embedding_text,
     fetch_embeddings_batch,
+    resolve_api_key,
 )
 
 logging.basicConfig(
@@ -119,17 +120,13 @@ def compute_video_embedding(
     api_key: Optional[str] = None,
 ) -> np.ndarray:
     """Generates a semantic embedding vector for the current video using Gemini."""
-    resolved_api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not resolved_api_key:
-        raise ValueError(
-            "GEMINI_API_KEY (or GOOGLE_API_KEY) is not set in environment or .env file."
-        )
+    resolved_key = resolve_api_key(api_key=api_key)
 
     embed_text = build_embedding_text({"title": title, "ai_summary": description})
     logger.info("Generating embedding for current video using '%s'...", EMBEDDING_MODEL_NAME)
     embeddings = fetch_embeddings_batch(
         texts=[embed_text],
-        api_key=resolved_api_key,
+        api_key=resolved_key,
         model=EMBEDDING_MODEL_NAME,
     )
     if not embeddings:
