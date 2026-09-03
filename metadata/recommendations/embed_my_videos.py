@@ -14,12 +14,13 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 from dotenv import load_dotenv
@@ -45,6 +46,45 @@ DEFAULT_OUTPUT_PATH = REPO_ROOT / "metadata" / "recommendations" / "my_videos_em
 MODEL_NAME = "gemini-embedding-2"
 DEFAULT_BATCH_SIZE = 50
 DEFAULT_DELAY_SECONDS = 30.0
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_RETRY_DELAY_SECONDS = 30.0
+
+
+def mask_api_key(key: str) -> str:
+    """Masks an API key for safe logging (e.g. '...ABCD')."""
+    if not key:
+        return "EMPTY"
+    if len(key) <= 8:
+        return "***"
+    return f"...{key[-6:]}"
+
+
+def resolve_api_key(api_key: Optional[str] = None) -> str:
+    """
+    Resolves and returns the Gemini API key.
+
+    Sources checked in order:
+    1. Explicit `api_key` argument.
+    2. GEMINI_API_KEY_1 environment variable.
+    3. GEMINI_API_KEY / GOOGLE_API_KEY fallback.
+    """
+    key = api_key or os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not key:
+        raise ValueError(
+            "GEMINI_API_KEY_1 is not set in environment or .env file."
+        )
+    return key.strip()
+
+
+def resolve_api_keys(
+    api_keys: Optional[Union[str, List[str]]] = None,
+    api_key: Optional[Union[str, List[str]]] = None,
+) -> List[str]:
+    """Compatibility wrapper returning the single resolved Gemini API key in a list."""
+    val = api_key or api_keys
+    if isinstance(val, (list, tuple)) and val:
+        val = val[0]
+    return [resolve_api_key(val if isinstance(val, str) else None)]
 
 
 def build_embedding_text(video: Dict[str, Any]) -> str:
@@ -63,11 +103,17 @@ def build_embedding_text(video: Dict[str, Any]) -> str:
 
 def fetch_embeddings_batch(
     texts: List[str],
-    api_key: str,
+    api_key: Optional[str] = None,
     model: str = MODEL_NAME,
-    max_retries: int = 3,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    retry_delay: float = DEFAULT_RETRY_DELAY_SECONDS,
 ) -> List[List[float]]:
-    """Fetches text embeddings for a single batch using Google's Gemini API."""
+    """
+    Fetches text embeddings for a single batch using Google's Gemini API with retry logic.
+    """
+    resolved_key = resolve_api_key(api_key=api_key)
+    masked_key = mask_api_key(resolved_key)
+
     requests_list = [
         {
             "model": f"models/{model}",
@@ -77,9 +123,9 @@ def fetch_embeddings_batch(
     ]
 
     payload = {"requests": requests_list}
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents?key={api_key}"
-
     req_data = json.dumps(payload).encode("utf-8")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents?key={resolved_key}"
     req = urllib.request.Request(
         url,
         data=req_data,
@@ -102,10 +148,11 @@ def fetch_embeddings_batch(
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
             logger.warning(
-                "HTTP %d error on attempt %d/%d: %s. Response: %s",
+                "HTTP %d error on attempt %d/%d (API key %s): %s. Response: %s",
                 e.code,
                 attempt,
                 max_retries,
+                masked_key,
                 e.reason,
                 error_body[:200],
             )
@@ -113,14 +160,31 @@ def fetch_embeddings_batch(
                 raise RuntimeError(
                     f"Gemini Embedding API failed with HTTP {e.code} ({e.reason}): {error_body}"
                 ) from e
-            sleep_time = 30.0 if e.code == 429 else (2.0 * attempt)
-            time.sleep(sleep_time)
+            logger.info(
+                "Waiting %.1fs before retry attempt %d/%d...",
+                retry_delay,
+                attempt + 1,
+                max_retries,
+            )
+            time.sleep(retry_delay)
 
         except Exception as e:
-            logger.warning("Error on attempt %d/%d: %s", attempt, max_retries, e)
+            logger.warning(
+                "Error on attempt %d/%d (API key %s): %s",
+                attempt,
+                max_retries,
+                masked_key,
+                e,
+            )
             if attempt == max_retries:
                 raise
-            time.sleep(2 * attempt)
+            logger.info(
+                "Waiting %.1fs before retry attempt %d/%d...",
+                retry_delay,
+                attempt + 1,
+                max_retries,
+            )
+            time.sleep(retry_delay)
 
     raise RuntimeError("Failed to retrieve embeddings after maximum retries.")
 
@@ -132,12 +196,9 @@ def generate_video_embeddings(
     delay_seconds: float = DEFAULT_DELAY_SECONDS,
     api_key: Optional[str] = None,
 ) -> np.ndarray:
-    """Loads video records, builds embedding texts, batches API requests, and saves to .npy."""
-    resolved_api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not resolved_api_key:
-        raise ValueError(
-            "GEMINI_API_KEY (or GOOGLE_API_KEY) is not set in environment or .env file."
-        )
+    """Loads video records, builds embedding texts, batches API requests with retry logic, and saves to .npy."""
+    resolved_key = resolve_api_key(api_key=api_key)
+    logger.info("Using Gemini API key (%s) for embeddings generation.", mask_api_key(resolved_key))
 
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
@@ -189,7 +250,7 @@ def generate_video_embeddings(
 
         batch_results = fetch_embeddings_batch(
             texts=batch_texts,
-            api_key=resolved_api_key,
+            api_key=resolved_key,
             model=MODEL_NAME,
         )
         all_embeddings.extend(batch_results)
@@ -239,6 +300,11 @@ def main() -> None:
         help=f"Delay in seconds between batch requests to respect rate limits (default: {DEFAULT_DELAY_SECONDS}s).",
     )
     parser.add_argument(
+        "--api-key", "-k",
+        default=None,
+        help="Gemini API key (default: GEMINI_API_KEY_1 in .env).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Preview formatted texts without calling the Gemini API.",
@@ -263,6 +329,7 @@ def main() -> None:
             output_path=output_file,
             batch_size=args.batch_size,
             delay_seconds=args.delay,
+            api_key=args.api_key,
         )
     except Exception as e:
         logger.error("Failed to generate and save video embeddings: %s", e)
