@@ -139,7 +139,7 @@ phantom pipeline newvideo "How to Build AI Agents"
 
 ## ⚡ Video Processing Engine: [`process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)
 
-The video processing engine executes an automated 6-step media pipeline that transforms raw webcam and screen recordings into a polished review video (`to-review.mp4`) and automatically generates YouTube metadata (`metadata.json`).
+The video processing engine executes an automated 7-step media pipeline that transforms raw webcam and screen recordings into a polished review video (`to-review.mp4`), conducts automated audio and video quality reviews, and automatically generates YouTube metadata (`metadata.json`).
 
 ```mermaid
 flowchart TD
@@ -150,9 +150,10 @@ flowchart TD
     Step4 -->|Yes| Step4Run[Mix BGM via add_bgm_to_video.sh]
     Step4 -->|No / Skipped| Step5[Step 5: Finalize Review File]
     Step4Run -->|after-audio-processing-bgm.mp4| Step5
-    Step5 -->|to-review.mp4| Step6[Step 6: Auto-Create Metadata]
-    Step1 -.->|*.srt| Step6
-    Step6 --> Output[metadata.json & to-review.mp4]
+    Step5 -->|to-review.mp4| Step6[Step 6: Review Audio & Video Inspection]
+    Step6 --> Step7[Step 7: Auto-Create Metadata]
+    Step1 -.->|*.srt| Step7
+    Step7 --> Output[metadata.json & to-review.mp4]
 ```
 
 ### Pipeline Steps in Detail
@@ -173,7 +174,11 @@ flowchart TD
    - Skipped automatically if no `--bgm` flag is passed.
 5. **Step 5: File Finalization**
    - Safely copies the latest generated video file to `to-review.mp4`, preparing the cut for manual review.
-6. **Step 6: Automatic Metadata Generation ([`auto_create_metadata.py`](file:///home/hassan/Desktop/programming/phantom-editor/metadata/auto_create_metadata.py))**
+6. **Step 6: Quality Review & Inspection ([`audio_review.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/audio_review.py) & [`video_inspector.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py))**
+   - Runs `audio_review.py` using PANNs (Cnn14) inference to flag vocal bloopers, mouth noises, mic impacts, and unwanted sounds with timestamps and confidence ratings.
+   - Runs `video_inspector.py` scanning for black frames, freeze frames, and bad cuts.
+   - Displays all inspection findings directly in the terminal for manual verification.
+7. **Step 7: Automatic Metadata Generation ([`auto_create_metadata.py`](file:///home/hassan/Desktop/programming/phantom-editor/metadata/auto_create_metadata.py))**
    - Automatically inspects the project's transcript and generates an engaging video description, promotional tweet template, and video recommendations into `metadata.json`. (Video timestamps/chapters can be generated after manual review cuts via `phantom metadata timestamps`).
    - Uses the provided `--title` if specified, or defaults to the formatted project folder name.
 
