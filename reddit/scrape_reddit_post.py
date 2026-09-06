@@ -310,38 +310,67 @@ async def scrape_reddit_post(
             if not quiet:
                 print(f"[*] Navigating to: {url}")
 
-            # Navigate with retry logic for rate limits & transient HTTP/network failures
-            max_nav_retries = 3
+            # Navigate with retry logic for rate limits (HTTP 429) & transient HTTP/network failures
+            max_retries = 3
+            retry_delay = 180  # seconds to sleep before each retry
+            max_nav_attempts = 1 + max_retries
             nav_success = False
             last_err = None
 
-            for attempt in range(1, max_nav_retries + 1):
+            for attempt in range(1, max_nav_attempts + 1):
                 try:
                     if not quiet and attempt > 1:
-                        print(f"[*] Retry attempt {attempt}/{max_nav_retries} for {url}...")
+                        print(f"[*] Retry attempt {attempt - 1}/{max_retries} for {url}...")
                     response = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     if response and response.status in (429, 502, 503, 504):
+                        retry_after = response.headers.get("retry-after") if response else None
+                        attempt_desc = "initial attempt" if attempt == 1 else f"retry {attempt - 1}/{max_retries}"
                         if not quiet:
-                            print(f"[!] Warning: Received HTTP {response.status} on attempt {attempt}")
-                        if attempt < max_nav_retries:
-                            await asyncio.sleep(2.0 * attempt + 0.5)
+                            print(f"[!] Warning: Received HTTP {response.status} on {attempt_desc}")
+                            if retry_after:
+                                print(f"[*] Reddit 'Retry-After' header: {retry_after}")
+                            else:
+                                print("[*] Reddit 'Retry-After' header: None (not present)")
+                        else:
+                            print(
+                                f"[!] Warning: Received HTTP {response.status} on {attempt_desc}. "
+                                f"Retry-After: {retry_after or 'None'}",
+                                file=sys.stderr,
+                            )
+
+                        if attempt < max_nav_attempts:
+                            if not quiet:
+                                print(f"[*] Sleeping {retry_delay}s before retry {attempt}/{max_retries}...")
+                            else:
+                                print(f"[*] Sleeping {retry_delay}s before retry {attempt}/{max_retries}...", file=sys.stderr)
+                            await asyncio.sleep(retry_delay)
                             continue
+                        else:
+                            last_err = RuntimeError(
+                                f"Failed to navigate to {url}: Received HTTP {response.status} "
+                                f"(Retry-After: {retry_after or 'None'}) after {max_retries} retries."
+                            )
+                            break
+
                     nav_success = True
                     break
                 except Exception as e:
                     last_err = e
                     err_str = str(e)
                     if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_str or "timeout" in err_str.lower() or "net::" in err_str:
-                        if attempt < max_nav_retries:
-                            backoff = 2.0 * attempt + 0.5
+                        if attempt < max_nav_attempts:
                             if not quiet:
-                                print(f"[!] Warning: Transient navigation failure ({err_str[:60]}...). Retrying in {backoff:.1f}s...")
-                            await asyncio.sleep(backoff)
+                                print(f"[!] Warning: Transient navigation failure ({err_str[:60]}...). Sleeping {retry_delay}s before retry {attempt}/{max_retries}...")
+                            else:
+                                print(f"[!] Warning: Transient navigation failure ({err_str[:60]}...). Sleeping {retry_delay}s before retry {attempt}/{max_retries}...", file=sys.stderr)
+                            await asyncio.sleep(retry_delay)
                             continue
                     raise e
 
-            if not nav_success and last_err:
-                raise last_err
+            if not nav_success:
+                if last_err:
+                    raise last_err
+                raise RuntimeError(f"Failed to navigate to {url}: Navigation was not successful.")
 
             # Wait for the main post component to be available
             try:
