@@ -121,6 +121,11 @@ def parse_cli_args() -> argparse.Namespace:
         action="store_true",
         help="Force re-execution of all pipeline steps, ignoring existing step files."
     )
+    parser.add_argument(
+        "--skip-review",
+        action="store_true",
+        help="Skip audio and video inspection review step."
+    )
 
     args = parser.parse_args()
 
@@ -178,6 +183,7 @@ def verify_script_dependencies(pipeline_dir: Path, repo_root: Path) -> dict[str,
     """Verify all required scripts exist and return a dictionary of their paths."""
     v_dir = repo_root / "video-editing"
     m_dir = repo_root / "metadata"
+    r_dir = repo_root / "review"
     scripts = {
         "downscale_py": v_dir / "downscale.py",
         "auto_attach_webcam_py": v_dir / "auto_attach_webcam_mask.py",
@@ -187,6 +193,8 @@ def verify_script_dependencies(pipeline_dir: Path, repo_root: Path) -> dict[str,
         "add_bgm_sh": v_dir / "add_bgm_to_video.sh",
         "single_pass_mask_trim_py": pipeline_dir / "single_pass_mask_trim.py",
         "auto_create_metadata_py": m_dir / "auto_create_metadata.py",
+        "audio_review_py": r_dir / "audio_review.py",
+        "video_inspector_py": r_dir / "video_inspector.py",
     }
 
     for name, script_path in scripts.items():
@@ -205,7 +213,7 @@ def run_step1_transcription(
     force_run: bool
 ) -> bool:
     """Step 1: Transcribe Video using Groq Cloud."""
-    print_info("\n--- [Step 1/6] Transcribing Video using Groq Cloud ---")
+    print_info("\n--- [Step 1/7] Transcribing Video using Groq Cloud ---")
     if not force_run and is_valid_file(step1_1word_srt) and is_valid_file(step1_srt_output):
         print_success(f"[SKIP] Step 1 complete: Transcribed SRT file already exists -> {step1_1word_srt.name}")
         return force_run
@@ -236,7 +244,7 @@ def run_step2_trim_silences_raw(
     force_run: bool
 ) -> bool:
     """Step 2 (Raw Mode): Silence Trimming on pre-composed video (skips webcam mask attachment)."""
-    print_info("\n--- [Step 2/6] Silence Trimming on Raw Video ---")
+    print_info("\n--- [Step 2/7] Silence Trimming on Raw Video ---")
     if not force_run and is_valid_file(step2_output):
         print_success(f"[SKIP] Step 2 complete: Trimmed video file already exists -> {step2_output.name}")
         return force_run
@@ -320,7 +328,7 @@ def run_step3_process_audio(
     force_run: bool
 ) -> bool:
     """Step 3: Process Audio."""
-    print_info("\n--- [Step 3/6] Processing Audio ---")
+    print_info("\n--- [Step 3/7] Processing Audio ---")
     if not force_run and is_valid_file(step3_output):
         print_success(f"[SKIP] Step 3 complete: Audio processed video file already exists -> {step3_output.name}")
         return force_run
@@ -349,7 +357,7 @@ def run_step4_add_bgm(
     force_run: bool
 ) -> tuple[Path, bool]:
     """Step 4: Add Background Music."""
-    print_info("\n--- [Step 4/6] Adding Background Music ---")
+    print_info("\n--- [Step 4/7] Adding Background Music ---")
     if not bgm:
         print_warning("[WARNING] Step 4 skipped: No BGM track specified with --bgm.")
         return step3_output, force_run
@@ -384,11 +392,12 @@ def run_step5_finalize(
     current_latest_video: Path,
     final_output: Path,
     force_run: bool
-) -> None:
+) -> bool:
     """Step 5: Finalize Output File Name."""
-    print_info("\n--- [Step 5/6] Finalizing Output File Name ---")
+    print_info("\n--- [Step 5/7] Finalizing Output File Name ---")
     if not force_run and is_valid_file(final_output) and (not is_valid_file(current_latest_video) or final_output.stat().st_mtime >= current_latest_video.stat().st_mtime):
         print_success(f"[SKIP] Step 5 complete: Final review video file already exists -> {final_output.name}")
+        return force_run
     else:
         if final_output.exists():
             print_warning(f"Overwriting existing output file: {final_output.name}")
@@ -399,41 +408,86 @@ def run_step5_finalize(
 
         shutil.copy2(str(current_latest_video), str(final_output))
         print_success(f"[SUCCESS] Step 5 complete: Copied final video file to -> {final_output.name}")
+        return True
 
 
-def run_step6_create_metadata(
+def run_step6_review(
+    final_output: Path,
+    audio_review_py: Path,
+    video_inspector_py: Path,
+    force_run: bool,
+    skip_review: bool = False
+) -> bool:
+    """Step 6: Review Final Video (Audio & Video Inspection)."""
+    print_info("\n--- [Step 6/7] Reviewing Final Video (Audio & Video Inspection) ---")
+    if skip_review:
+        print_warning("[SKIP] Step 6 skipped: Review explicitly skipped via --skip-review.")
+        return force_run
+
+    if not force_run:
+        print_success(f"[SKIP] Step 6 complete: Video review skipped (no changes to {final_output.name})")
+        return force_run
+
+    if not is_valid_file(final_output):
+        print_error(f"[ERROR] Step 6 review failed: Final review video file missing or invalid at '{final_output}'")
+        sys.exit(1)
+
+    print_info(f"Running audio review on '{final_output.name}'...")
+    cmd_audio = [sys.executable, str(audio_review_py), str(final_output)]
+    print(f"Executing: {' '.join(cmd_audio)}")
+    try:
+        subprocess.run(cmd_audio, check=True)
+    except subprocess.CalledProcessError as e:
+        print_error(f"[ERROR] Step 6 audio review failed with exit code {e.returncode}")
+        sys.exit(e.returncode)
+
+    print()
+    print_info(f"Running video quality inspector on '{final_output.name}'...")
+    cmd_video = [sys.executable, str(video_inspector_py), str(final_output)]
+    print(f"Executing: {' '.join(cmd_video)}")
+    try:
+        subprocess.run(cmd_video, check=True)
+    except subprocess.CalledProcessError as e:
+        print_error(f"[ERROR] Step 6 video inspection failed with exit code {e.returncode}")
+        sys.exit(e.returncode)
+
+    print_success(f"[SUCCESS] Step 6 complete: Finished audio & video review for -> {final_output.name}")
+    return True
+
+
+def run_step7_create_metadata(
     video_dir: Path,
     metadata_output: Path,
     title: str | None,
     auto_create_metadata_py: Path,
     force_run: bool
 ) -> bool:
-    """Step 6: Generate Project Metadata (metadata.json)."""
-    print_info("\n--- [Step 6/6] Generating Project Metadata ---")
+    """Step 7: Generate Project Metadata (metadata.json)."""
+    print_info("\n--- [Step 7/7] Generating Project Metadata ---")
     if not force_run and is_valid_file(metadata_output):
-        print_success(f"[SKIP] Step 6 complete: Metadata file already exists -> {metadata_output.name}")
+        print_success(f"[SKIP] Step 7 complete: Metadata file already exists -> {metadata_output.name}")
         return force_run
 
-    cmd_step6 = [
+    cmd_step7 = [
         sys.executable,
         str(auto_create_metadata_py),
         str(video_dir)
     ]
     if title:
-        cmd_step6.extend(["--title", title])
+        cmd_step7.extend(["--title", title])
 
-    print(f"Executing: {' '.join(cmd_step6)}")
+    print(f"Executing: {' '.join(cmd_step7)}")
     try:
-        subprocess.run(cmd_step6, check=True)
+        subprocess.run(cmd_step7, check=True)
     except subprocess.CalledProcessError as e:
-        print_error(f"[ERROR] Step 6 failed with exit code {e.returncode}")
+        print_error(f"[ERROR] Step 7 failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
     if not is_valid_file(metadata_output):
-        print_error(f"[ERROR] Step 6 output metadata file invalid or missing at '{metadata_output}'")
+        print_error(f"[ERROR] Step 7 output metadata file invalid or missing at '{metadata_output}'")
         sys.exit(1)
 
-    print_success(f"[SUCCESS] Step 6 complete: Generated metadata -> {metadata_output.name}")
+    print_success(f"[SUCCESS] Step 7 complete: Generated metadata -> {metadata_output.name}")
     return True
 
 
@@ -445,7 +499,7 @@ def main():
 
     video_is_4k = is_4k_video(main_video_path)
     outputs = get_pipeline_outputs(main_video_path, video_dir, args.bgm)
-    statuses, run_plan = compute_pipeline_status(outputs, args.force)
+    statuses, run_plan = compute_pipeline_status(outputs, args.force, getattr(args, "skip_review", False))
 
     ext = main_video_path.suffix or ".mp4"
     print_pipeline_overview(
@@ -518,23 +572,34 @@ def main():
 
     # Step 5: Finalize Output File Name
     step5_start = time.perf_counter()
-    run_step5_finalize(
+    force_run = run_step5_finalize(
         current_latest_video=current_latest_video,
         final_output=outputs["final_output"],
         force_run=force_run
     )
     step5_duration = time.perf_counter() - step5_start
 
-    # Step 6: Generate Project Metadata
+    # Step 6: Review Final Video (Audio & Video Inspection)
     step6_start = time.perf_counter()
-    run_step6_create_metadata(
+    force_run = run_step6_review(
+        final_output=outputs["final_output"],
+        audio_review_py=scripts["audio_review_py"],
+        video_inspector_py=scripts["video_inspector_py"],
+        force_run=force_run,
+        skip_review=getattr(args, "skip_review", False)
+    )
+    step6_duration = time.perf_counter() - step6_start
+
+    # Step 7: Generate Project Metadata
+    step7_start = time.perf_counter()
+    run_step7_create_metadata(
         video_dir=video_dir,
         metadata_output=outputs["metadata_output"],
         title=args.title,
         auto_create_metadata_py=scripts["auto_create_metadata_py"],
         force_run=force_run
     )
-    step6_duration = time.perf_counter() - step6_start
+    step7_duration = time.perf_counter() - step7_start
 
     total_duration = time.perf_counter() - pipeline_start_time
 
@@ -552,7 +617,8 @@ def main():
     print(f"  Step 3 (Audio Processing):      {format_duration(step3_duration)}")
     print(f"  Step 4 (Background Music):      {format_duration(step4_duration)}")
     print(f"  Step 5 (Finalize File):         {format_duration(step5_duration)}")
-    print(f"  Step 6 (Auto Create Metadata):  {format_duration(step6_duration)}")
+    print(f"  Step 6 (Audio & Video Review):  {format_duration(step6_duration)}")
+    print(f"  Step 7 (Auto Create Metadata):  {format_duration(step7_duration)}")
     print_info("------------------------------------------------------------")
     print_success(f" Total Execution Time:            {format_duration(total_duration)}")
     print_success("============================================================")
