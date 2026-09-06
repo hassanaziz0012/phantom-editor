@@ -120,7 +120,7 @@ def get_pipeline_outputs(webcam_path: Path, video_dir: Path, bgm: str | None) ->
     }
 
 
-def compute_pipeline_status(outputs: dict, force: bool) -> tuple[dict[int, bool], dict[int, bool]]:
+def compute_pipeline_status(outputs: dict, force: bool, skip_review: bool = False) -> tuple[dict[int, bool], dict[int, bool]]:
     """Determine step completion statuses and execution plan."""
     step1_complete = is_valid_file(outputs["step1_1word_srt"]) and is_valid_file(outputs["step1_srt"])
     step2_complete = is_valid_file(outputs["step2_output"])
@@ -131,7 +131,8 @@ def compute_pipeline_status(outputs: dict, force: bool) -> tuple[dict[int, bool]
     step5_complete = is_valid_file(outputs["final_output"]) and (
         not is_valid_file(latest_output) or outputs["final_output"].stat().st_mtime >= latest_output.stat().st_mtime
     )
-    step6_complete = is_valid_file(outputs["metadata_output"])
+    step6_complete = step5_complete
+    step7_complete = is_valid_file(outputs["metadata_output"])
 
     statuses = {
         1: step1_complete,
@@ -140,18 +141,20 @@ def compute_pipeline_status(outputs: dict, force: bool) -> tuple[dict[int, bool]
         4: step4_complete,
         5: step5_complete,
         6: step6_complete,
+        7: step7_complete,
     }
 
     if force:
-        run_plan = {1: True, 2: True, 3: True, 4: outputs["step4_needed"], 5: True, 6: True}
+        run_plan = {1: True, 2: True, 3: True, 4: outputs["step4_needed"], 5: True, 6: not skip_review, 7: True}
     else:
         run1 = not step1_complete
         run2 = run1 or not step2_complete
         run3 = run2 or not step3_complete
         run4 = outputs["step4_needed"] and (run3 or not step4_complete)
         run5 = (run4 if outputs["step4_needed"] else run3) or not step5_complete
-        run6 = run5 or not step6_complete
-        run_plan = {1: run1, 2: run2, 3: run3, 4: run4, 5: run5, 6: run6}
+        run6 = not skip_review and run5
+        run7 = run5 or not step7_complete
+        run_plan = {1: run1, 2: run2, 3: run3, 4: run4, 5: run5, 6: run6, 7: run7}
 
     return statuses, run_plan
 
@@ -219,7 +222,8 @@ def print_pipeline_overview(
     s3_str = format_status(True, run_plan[3], statuses[3], args.force)
     s4_str = format_status(bool(args.bgm), run_plan[4], statuses[4], args.force, "No BGM specified")
     s5_str = format_status(True, run_plan[5], statuses[5], args.force)
-    s6_str = format_status(True, run_plan[6], statuses[6], args.force)
+    s6_str = format_status(not getattr(args, "skip_review", False), run_plan[6], statuses[6], args.force, "Skipped via --skip-review")
+    s7_str = format_status(True, run_plan[7], statuses[7], args.force)
 
     step2_name = (
         "Trim Silences via Silero VAD (trim_silences.py)"
@@ -232,7 +236,8 @@ def print_pipeline_overview(
     print(f" 3. Process audio via process_audio.sh                       {s3_str}")
     print(f" 4. Add background music (add_bgm_to_video.sh)               {s4_str}")
     print(f" 5. Rename final video file to 'to-review{ext}'               {s5_str}")
-    print(f" 6. Auto-generate project metadata (metadata.json)           {s6_str}")
+    print(f" 6. Review final video (audio_review.py & video_inspector.py) {s6_str}")
+    print(f" 7. Auto-generate project metadata (metadata.json)           {s7_str}")
     print_info("============================================================")
 
 
