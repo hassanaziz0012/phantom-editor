@@ -64,6 +64,7 @@ show_usage() {
     echo "  substack note [<text>] [-i <images>...] [-v <video>] [--headless]"
     echo "  threads post [<text>] [--posts <file...>] [-i <images>...] [--headless]"
     echo "  review inspect <video_path> [arguments]"
+    echo "  review audio <video_or_audio_path> [arguments]"
     echo "  record start"
     echo "  record stop"
     echo "  docs open"
@@ -419,9 +420,16 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/review/video_inspector.py" "$@"
+        elif [ "$SUBCOMMAND" = "audio" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom review audio <video_or_audio_path> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/review/audio_review.py" "$@"
         else
             echo "Unknown review subcommand: $SUBCOMMAND"
             echo "Usage: phantom review inspect <video_path> [arguments]"
+            echo "       phantom review audio <video_or_audio_path> [arguments]"
             exit 1
         fi
         ;;
