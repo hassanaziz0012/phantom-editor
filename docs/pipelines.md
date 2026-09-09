@@ -40,6 +40,10 @@ phantom pipeline status
 # Create a brand new YouTube video project workspace
 phantom pipeline newvideo "My New Video Title"
 
+# Organize a raw video file into YouTube Videos or Loom Outreach
+phantom pipeline organize /path/to/video.mp4 "My Project Title" --ytlong
+phantom pipeline organize /path/to/loom.mp4 "Outreach Lead" --loom
+
 # Run automated video processing (transcription, masking, silence trim, audio cleanup, BGM)
 phantom pipeline process /path/to/webcam.mp4 /path/to/screen.mp4 --bgm lofi-chill
 
@@ -134,6 +138,31 @@ phantom pipeline newvideo "How to Build AI Agents"
 | :--- | :--- | :--- | :--- | :--- |
 | `name` | | Positional | | Name of the new video project (required). |
 | `--dir` | `-d` | Path | `~/Videos/YT Projects` | Base directory for YouTube projects. |
+
+---
+
+## 📦 Raw Video Organizer: [`organize.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/organize.py)
+
+Organizes raw video recordings into structured project folders inside either `~/Videos/YouTube Videos` (via `--ytlong`) or `~/Videos/Loom Outreach` (via `--loom`). The incoming video is renamed to `raw.<ext>` (preserving its original extension). If the project folder already exists, it moves the file into that existing folder.
+
+### CLI Usage
+
+```bash
+# Organize into YouTube Videos
+phantom pipeline organize /path/to/recording.mp4 "Project Name" --ytlong
+
+# Organize into Loom Outreach
+phantom pipeline organize /path/to/recording.mkv "Lead Name" --loom
+```
+
+### Options
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `video_file` | Positional | Path to the video file to organize (required). |
+| `project_name` | Positional | Name of the target project folder (required). |
+| `--ytlong` | Flag | Organize into `/home/hassan/Videos/YouTube Videos`. |
+| `--loom` | Flag | Organize into `/home/hassan/Videos/Loom Outreach`. |
 
 ---
 
