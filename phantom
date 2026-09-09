@@ -17,6 +17,7 @@ show_usage() {
     echo "  pipeline status [arguments]"
     echo "  pipeline process <webcam_video> [screen_video] [--raw <raw_video>] [arguments]"
     echo "  pipeline newvideo <project_name>"
+    echo "  pipeline organize <video_file> <project_name> (--ytlong | --loom)"
     echo "  pipeline calendar [list] [--platform <youtube|twitter|all>]"
     echo "  pipeline calendar next-date [--platform <youtube|twitter>] [--json]"
     echo "  pipeline calendar add [<project>] [--title <title>] [--url <url>] [--date <date>]"
@@ -97,6 +98,12 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/newvideo.py" "$@"
+        elif [ "$SUBCOMMAND" = "organize" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom pipeline organize <video_file> <project_name> (--ytlong | --loom)"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/organize.py" "$@"
         elif [ "$SUBCOMMAND" = "calendar" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/calendar.py" "$@"
         else
@@ -105,6 +112,7 @@ case "$COMMAND" in
             echo "       phantom pipeline process <webcam_video> [screen_video] [arguments]"
             echo "       phantom pipeline process --raw <raw_video> [arguments]"
             echo "       phantom pipeline newvideo <project_name>"
+            echo "       phantom pipeline organize <video_file> <project_name> (--ytlong | --loom)"
             echo "       phantom pipeline calendar [list|next-date|add|remove] [arguments]"
             exit 1
         fi
