@@ -312,7 +312,7 @@ async def scrape_reddit_post(
 
             # Navigate with retry logic for rate limits (HTTP 429) & transient HTTP/network failures
             max_retries = 3
-            retry_delay = 180  # seconds to sleep before each retry
+            retry_delay = 240  # seconds to sleep before each retry
             max_nav_attempts = 1 + max_retries
             nav_success = False
             last_err = None
