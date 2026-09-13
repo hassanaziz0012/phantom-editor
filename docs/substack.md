@@ -18,7 +18,13 @@ Automates publishing short-form Substack Notes with optional image or video atta
 
 * **CLI Command**:
   ```bash
-  # Text-only note:
+  # Compose note interactively in default $EDITOR:
+  phantom substack note
+
+  # Note from a file:
+  phantom substack note -f ./note.txt
+
+  # Text-only note directly:
   phantom substack note "Just launched our new automation pipeline!"
 
   # Note with an image:
@@ -36,15 +42,17 @@ Automates publishing short-form Substack Notes with optional image or video atta
 
 * **Direct Python Usage**:
   ```bash
-  uv run python substack/post_note.py "Note content" [-i <images>...] [-v <video>] [--headless]
+  uv run python substack/post_note.py [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]
   ```
 
 * **Options**:
-  - `text` *(positional)*: Text content of the note.
+  - `text` *(positional)*: Text content of the note or path to a text file.
+  - `-f, --file`: Path to a text file containing the note content.
   - `-t, --text`: Alternative flag for note text content.
   - `-i, --image, --images`: One or more paths to image files (`.png`, `.jpg`, `.jpeg`, `.webp`).
   - `-v, --video`: Path to a video file (`.mp4`, `.mov`, etc.).
   - `--headless`: Launch Chrome in headless mode if not already running.
+  - *(Interactive $EDITOR)*: If no note file or text is specified, opens your default `$EDITOR` (`$VISUAL` or nano/vim) with a temporary file to write your note.
 
 * **Features & Workflow**:
   - Automatically verifies Chrome CDP availability on port `9222` and starts the instance if needed.

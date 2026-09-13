@@ -10,6 +10,12 @@ Adheres to:
 - Role & Accessibility-first element selectors (get_by_role, get_by_text)
 
 Usage:
+    # Open default $EDITOR to compose note
+    python substack/post_note.py
+
+    # Note from a file
+    python substack/post_note.py -f ./note.txt
+
     # Text-only note
     python substack/post_note.py "Just launched our new automation pipeline!"
 
@@ -27,9 +33,11 @@ import argparse
 import asyncio
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -418,6 +426,47 @@ async def post_substack_note(
             return "https://substack.com/home"
 
 
+def get_editor() -> str:
+    """Finds default editor from environment ($EDITOR / $VISUAL) or common system fallbacks."""
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
+    if editor:
+        return editor
+    for candidate in ["nano", "vim", "vi", "gnome-text-editor", "code"]:
+        if shutil.which(candidate):
+            return candidate
+    return "nano"
+
+
+def get_text_from_editor() -> str:
+    """Opens the user's default $EDITOR with a temporary file and returns the written text."""
+    editor = get_editor()
+    cmd = shlex.split(editor)
+
+    with tempfile.NamedTemporaryFile(suffix=".txt", prefix="substack_note_", delete=False) as tf:
+        temp_path = tf.name
+
+    try:
+        binary_name = Path(cmd[0]).name
+        if binary_name == "gnome-text-editor" and "--standalone" not in cmd:
+            cmd.append("--standalone")
+        elif binary_name == "code" and "-w" not in cmd and "--wait" not in cmd:
+            cmd.append("--wait")
+
+        print(f"Opening {editor}... write your note, then save and close.")
+        subprocess.call(cmd + [temp_path])
+
+        if os.path.exists(temp_path):
+            with open(temp_path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        return ""
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
 # ==============================================================================
 # CLI Entry Point
 # ==============================================================================
@@ -427,23 +476,46 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  python substack/post_note.py
+  python substack/post_note.py -f ./note.txt
   python substack/post_note.py "Hello Substack Notes!"
   python substack/post_note.py "Screenshot from our newest release" -i ./screenshot.png
   python substack/post_note.py "Gallery of images" -i ./img1.png ./img2.png
   python substack/post_note.py "Quick product demo" -v ./demo.mp4
         """,
     )
-    parser.add_argument("text", nargs="?", default="", help="Text content of the Substack note.")
+    parser.add_argument("text", nargs="?", default="", help="Text content of the Substack note, or path to a text file.")
     parser.add_argument("-t", "--text", dest="text_flag", help="Alternative flag for note text.")
+    parser.add_argument("-f", "--file", dest="file", help="Path to a text file containing note content.")
     parser.add_argument("-i", "--image", "--images", dest="images", nargs="+", help="Path(s) to image file(s) to attach.")
     parser.add_argument("-v", "--video", dest="video", help="Path to a video file (.mp4, .mov, etc.) to attach.")
     parser.add_argument("--headless", action="store_true", help="Launch Chrome in headless mode if not already running.")
 
     args = parser.parse_args()
 
-    content = args.text_flag or args.text
+    content = ""
+    if args.file:
+        file_path = Path(args.file)
+        if not file_path.is_file():
+            print(f"Error: File not found: {args.file}", file=sys.stderr)
+            sys.exit(1)
+        content = file_path.read_text(encoding="utf-8").strip()
+    elif args.text_flag:
+        content = args.text_flag.strip()
+    elif args.text:
+        pos_path = Path(args.text)
+        if pos_path.is_file():
+            content = pos_path.read_text(encoding="utf-8").strip()
+        else:
+            content = args.text.strip()
+    elif not sys.stdin.isatty():
+        content = sys.stdin.read().strip()
+    else:
+        content = get_text_from_editor()
+
     if not content and not args.images and not args.video:
-        parser.error("You must provide note text or at least one media file (-i / -v).")
+        print("No text entered and no media attached. Aborting.", file=sys.stderr)
+        sys.exit(0)
 
     try:
         asyncio.run(

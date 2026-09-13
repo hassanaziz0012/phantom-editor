@@ -62,7 +62,7 @@ show_usage() {
     echo "  shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
     echo "  shorts add-thumbnail [arguments] <video_path>"
     echo "  shorts trim [arguments]"
-    echo "  substack note [<text>] [-i <images>...] [-v <video>] [--headless]"
+    echo "  substack note [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
     echo "  threads post [<text>] [--posts <file...>] [-i <images>...] [--headless]"
     echo "  review inspect <video_path> [arguments]"
     echo "  review audio <video_or_audio_path> [arguments]"
@@ -448,7 +448,7 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/substack/post_note.py" "$@"
         else
             echo "Unknown substack subcommand: $SUBCOMMAND"
-            echo "Usage: phantom substack note [<text>] [-i <images>...] [-v <video>] [--headless]"
+            echo "Usage: phantom substack note [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
             exit 1
         fi
         ;;
