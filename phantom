@@ -62,6 +62,7 @@ show_usage() {
     echo "  shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
     echo "  shorts add-thumbnail [arguments] <video_path>"
     echo "  shorts trim [arguments]"
+    echo "  content yap --platform <linkedin|substack>"
     echo "  substack note [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
     echo "  threads post [<text>] [--posts <file...>] [-i <images>...] [--headless]"
     echo "  linkedin post [<text>] [-f <file>] [-i <images>...] [--url <url>]"
@@ -439,6 +440,17 @@ case "$COMMAND" in
             echo "Unknown review subcommand: $SUBCOMMAND"
             echo "Usage: phantom review inspect <video_path> [arguments]"
             echo "       phantom review audio <video_or_audio_path> [arguments]"
+            exit 1
+        fi
+        ;;
+    content)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "yap" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/content/yap_to_post.py" "$@"
+        else
+            echo "Unknown content subcommand: $SUBCOMMAND"
+            echo "Usage: phantom content yap --platform <linkedin|substack>"
             exit 1
         fi
         ;;
