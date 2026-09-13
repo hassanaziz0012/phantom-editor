@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Summarize YouTube Channel Videos
-================================
+Summarize & Categorize YouTube Channel Videos
+=============================================
 Fetches all videos from your YouTube channel, downloads audio via yt-dlp to a
 temporary location, transcribes using Groq Cloud Whisper API, generates AI video
-summaries with ChatGPT via BrowserLLM, and persists results into my_videos.json.
+summaries and categorizes videos with ChatGPT via BrowserLLM, and persists results into my_videos.json.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Union
 
 # Add project root to sys.path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -133,6 +133,61 @@ def summarize_single_video(video: Video) -> str:
         return generate_video_ai_summary(transcript_text)
 
 
+def categorize_video(
+    title: str,
+    ai_summary: str,
+    existing_categories: Union[Set[str], List[str]],
+) -> str:
+    """Categorizes a video using ChatGPT via BrowserLLM based on its title and AI summary."""
+    logger.info("Categorizing video '%s' with ChatGPT via BrowserLLM...", title)
+    categories_list = sorted(list(set(existing_categories)))
+    video_payload = {
+        "title": title,
+        "ai_summary": ai_summary,
+    }
+
+    categories_json = json.dumps(categories_list, indent=2, ensure_ascii=False)
+    video_json = json.dumps(video_payload, indent=2, ensure_ascii=False)
+
+    prompt = load_prompt(
+        "categorize_video.md",
+        EXISTING_CATEGORIES_JSON_ARRAY=categories_json,
+        VIDEO_OBJECT_JSON=video_json,
+    )
+    raw_response = ask_chatgpt(prompt)
+
+    raw_str = str(raw_response).strip()
+    print(f"\n[BrowserLLM Categorization Response]:\n{raw_str}\n", flush=True)
+
+    if "FATAL ERROR" in raw_str or "hard rate limit reached" in raw_str.lower():
+        raise RuntimeError(f"FATAL ERROR: ChatGPT hard rate limit reached: {raw_str}")
+
+    try:
+        parsed = parse_json_response(raw_str)
+    except Exception as e:
+        logger.error("ChatGPT category response is not valid JSON. Response snippet: %r", raw_str[:200])
+        raise ValueError(f"Failed to parse valid JSON from ChatGPT response: {e}") from e
+
+    category = ""
+    if isinstance(parsed, dict):
+        category = str(parsed.get("category") or "").strip()
+        is_new = parsed.get("is_new_category", False)
+        reasoning = parsed.get("reasoning", "")
+        logger.info("Assigned category '%s' (is_new=%s, reasoning=%s)", category, is_new, reasoning)
+    elif isinstance(parsed, str):
+        category = parsed.strip()
+
+    if not category:
+        raise ValueError(f"Parsed JSON did not contain a valid category string: {parsed}")
+
+    # Normalize category casing if it matches an existing category case-insensitively
+    existing_map = {c.lower(): c for c in existing_categories}
+    if category.lower() in existing_map:
+        category = existing_map[category.lower()]
+
+    return category
+
+
 def load_existing_videos(json_path: Path) -> List[Dict[str, Any]]:
     """Loads existing video records from my_videos.json if it exists."""
     if json_path.exists() and json_path.stat().st_size > 0:
@@ -187,13 +242,16 @@ def summarize_channel(
     records_by_id: Dict[str, Dict[str, Any]] = {
         r["video_id"]: r for r in existing_records if "video_id" in r
     }
+    existing_categories: Set[str] = {
+        r["category"] for r in existing_records if r.get("category")
+    }
 
     results: List[Dict[str, Any]] = []
 
     for idx, v in enumerate(videos, start=1):
         existing = records_by_id.get(v.video_id)
-        if existing and existing.get("ai_summary") and not force:
-            logger.info("[%d/%d] Skipping '%s' (%s) - already summarized.", idx, len(videos), v.title, v.video_id)
+        if existing and existing.get("ai_summary") and existing.get("category") and not force:
+            logger.info("[%d/%d] Skipping '%s' (%s) - already summarized and categorized.", idx, len(videos), v.title, v.video_id)
             # Keep view / like stats fresh
             existing["views"] = v.view_count
             existing["likes"] = v.like_count
@@ -203,7 +261,18 @@ def summarize_channel(
 
         logger.info("[%d/%d] Processing video: '%s' (%s)...", idx, len(videos), v.title, v.video_id)
         try:
-            ai_summary = summarize_single_video(v)
+            if existing and existing.get("ai_summary") and not force:
+                ai_summary = existing["ai_summary"]
+            else:
+                ai_summary = summarize_single_video(v)
+
+            category = categorize_video(
+                title=v.title,
+                ai_summary=ai_summary,
+                existing_categories=existing_categories,
+            )
+            existing_categories.add(category)
+
             pub_date = (
                 v.published_at.strftime("%Y-%m-%d")
                 if hasattr(v.published_at, "strftime")
@@ -216,6 +285,7 @@ def summarize_channel(
                 "views": v.view_count,
                 "likes": v.like_count,
                 "url": v.url,
+                "category": category,
                 "ai_summary": ai_summary,
             }
             records_by_id[v.video_id] = record
@@ -235,10 +305,10 @@ def summarize_channel(
                     seen_ids.add(vid_id)
 
             save_videos(output_path, ordered_records)
-            logger.info("Saved summary for '%s' to %s", v.title, output_path)
+            logger.info("Saved summary and category for '%s' to %s", v.title, output_path)
 
         except Exception as e:
-            logger.error("Failed to summarize '%s' (%s): %s", v.title, v.video_id, e)
+            logger.error("Failed to process '%s' (%s): %s", v.title, v.video_id, e)
             err_msg = str(e)
             if "fatal error" in err_msg.lower() or "hard rate limit reached" in err_msg.lower() or "rate limit" in err_msg.lower():
                 logger.critical("Halting channel summarization due to fatal rate limit / error: %s", e)
@@ -252,7 +322,7 @@ def summarize_channel(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Download, transcribe with Groq Whisper, and summarize YouTube channel videos using ChatGPT via BrowserLLM."
+        description="Download, transcribe with Groq Whisper, and summarize/categorize YouTube channel videos using ChatGPT via BrowserLLM."
     )
     parser.add_argument(
         "channel",
