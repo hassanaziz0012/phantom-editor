@@ -25,7 +25,7 @@ load_dotenv(repo_root / ".env")
 # Constants & Scopes
 # ---------------------------------------------------------------------------
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-DEFAULT_SHEET_NAME = "Pipeline"
+DEFAULT_SHEET_NAME = "YouTube"
 DEFAULT_HEADERS = ["Project", "Title", "Status", "URL", "Publish Date", "Platform"]
 
 
@@ -339,7 +339,7 @@ def add_record(
         body={"values": [row_data]}
     ).execute()
 
-    # Determine updated row index from updatedRange e.g. "Pipeline!A10:F10"
+    # Determine updated row index from updatedRange e.g. "YouTube!A10:F10"
     updated_range = append_result.get("updates", {}).get("updatedRange", "")
     new_row_index = -1
     if "!" in updated_range:
