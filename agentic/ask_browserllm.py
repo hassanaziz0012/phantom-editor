@@ -58,6 +58,7 @@ def load_prompt(prompt_name: str, **kwargs: Any) -> str:
         content = content.replace("{deslopify_prompt}", deslopify_text)
 
     for k, v in kwargs.items():
+        content = content.replace(f"{{{{{k}}}}}", str(v))
         content = content.replace(f"{{{k}}}", str(v))
 
     return content
