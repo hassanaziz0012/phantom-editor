@@ -64,6 +64,7 @@ show_usage() {
     echo "  shorts trim [arguments]"
     echo "  substack note [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
     echo "  threads post [<text>] [--posts <file...>] [-i <images>...] [--headless]"
+    echo "  linkedin post [<text>] [-f <file>] [-i <images>...] [--url <url>]"
     echo "  review inspect <video_path> [arguments]"
     echo "  review audio <video_or_audio_path> [arguments]"
     echo "  record start"
@@ -460,6 +461,17 @@ case "$COMMAND" in
         else
             echo "Unknown threads subcommand: $SUBCOMMAND"
             echo "Usage: phantom threads post [<text>] [--posts <file...>] [-i <images>...] [--headless]"
+            exit 1
+        fi
+        ;;
+    linkedin)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "post" ] || [ "$SUBCOMMAND" = "new-post" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/linkedin/new_post.py" "$@"
+        else
+            echo "Unknown linkedin subcommand: $SUBCOMMAND"
+            echo "Usage: phantom linkedin post [<text>] [-f <file>] [-i <images>...] [--url <url>]"
             exit 1
         fi
         ;;

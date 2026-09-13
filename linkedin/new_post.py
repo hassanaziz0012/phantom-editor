@@ -1,6 +1,20 @@
+import argparse
 import os
+import sys
+from pathlib import Path
 import requests
-from authenticate import get_valid_access_token, get_member_urn
+
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+linkedin_dir = Path(__file__).resolve().parent
+if str(linkedin_dir) not in sys.path:
+    sys.path.insert(0, str(linkedin_dir))
+
+try:
+    from authenticate import get_valid_access_token, get_member_urn
+except ImportError:
+    from linkedin.authenticate import get_valid_access_token, get_member_urn
 
 def upload_image_asset(access_token, author_urn, file_path):
     """Registers and uploads a local image to LinkedIn, returning its asset URN."""
@@ -106,20 +120,45 @@ def create_post(text_content, image_paths=None, link_details=None):
         print(f"Failed to create post: {response.status_code} - {response.text}")
         return None
 
+def main():
+    parser = argparse.ArgumentParser(description="Publish a post to LinkedIn.")
+    parser.add_argument("text", nargs="?", default=None, help="Post text content.")
+    parser.add_argument("-f", "--file", help="Path to text file with post content.")
+    parser.add_argument("-i", "--images", nargs="+", help="Path(s) to local image file(s) to attach.")
+    parser.add_argument("--url", help="Rich link URL.")
+    parser.add_argument("--title", default="", help="Rich link title.")
+    parser.add_argument("--description", default="", help="Rich link description.")
+    parser.add_argument("--thumbnail", help="Rich link thumbnail image path.")
+
+    args = parser.parse_args()
+
+    text = args.text
+    if not text and args.file:
+        file_path = Path(args.file)
+        if not file_path.exists():
+            print(f"Error: File not found: {args.file}", file=sys.stderr)
+            sys.exit(1)
+        text = file_path.read_text(encoding="utf-8").strip()
+    elif not text and not sys.stdin.isatty():
+        text = sys.stdin.read().strip()
+
+    if not text:
+        parser.error("Must provide post text as argument, via -f/--file, or via stdin.")
+
+    link_details = None
+    if args.url:
+        link_details = {
+            "url": args.url,
+            "title": args.title,
+            "description": args.description,
+        }
+        if args.thumbnail:
+            link_details["thumbnail_path"] = args.thumbnail
+
+    post_id = create_post(text_content=text, image_paths=args.images, link_details=link_details)
+    if not post_id:
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    # --- Example 1: Multi-Image Post ---
-    print("--- Example 1: Multi-Image Post ---")
-    text_1 = "Hello network! Check out these latest updates from our pipeline."
-    images_1 = ["./linkedin/links-img.png", "./linkedin/links-img.png"]
-    create_post(text_1, image_paths=images_1)
-    
-    # --- Example 2: Rich Link Post ---
-    print("\n--- Example 2: Rich Link Post ---")
-    text_2 = "I highly recommend reading our latest quarterly technical breakdown."
-    rich_link = {
-        "url": "https://example.com/blog/quarterly-report",
-        "title": "Q1 Technical Performance & Infrastructure Milestones",
-        "description": "An in-depth deep dive into design optimizations, latency metrics, and API scaling.",
-        "thumbnail_path": "./linkedin/links-img.png" # Optional local image file
-    }
-    create_post(text_2, link_details=rich_link)
+    main()
