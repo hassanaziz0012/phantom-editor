@@ -49,7 +49,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("phantom.ideas.summarizer")
 
-DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 PROMPT_PATH = repo_root / "agentic" / "prompts" / "summarize_yt_video.md"
 
 
