@@ -367,15 +367,30 @@ def _validate_ideas_list(data: List[Any]) -> List[Dict[str, Any]]:
             source = str(item.get("source", "")).strip()
             idea = str(item.get("idea", "")).strip()
             confidence_score = str(item.get("confidence_score", item.get("confidenceScore", ""))).strip()
+            raw_formats = (
+                item.get("best_formats")
+                if item.get("best_formats") is not None
+                else item.get("best formats")
+                if item.get("best formats") is not None
+                else item.get("bestFormats")
+            )
+            best_formats: Union[List[str], str] = ""
+            if isinstance(raw_formats, list):
+                best_formats = [str(f).strip() for f in raw_formats if str(f).strip()]
+            elif raw_formats is not None and str(raw_formats).strip():
+                best_formats = str(raw_formats).strip()
+
             if source or idea:
                 entry: Dict[str, Any] = {"source": source, "idea": idea}
                 if confidence_score:
                     entry["confidence_score"] = confidence_score
+                if best_formats:
+                    entry["best_formats"] = best_formats
                 results.append(entry)
         elif isinstance(item, str):
             cleaned = item.strip()
             if cleaned:
-                results.append({"source": "", "idea": cleaned, "confidence_score": ""})
+                results.append({"source": "", "idea": cleaned, "confidence_score": "", "best_formats": ""})
     return results
 
 
@@ -429,9 +444,15 @@ def print_terminal_results(
         idea = item.get("idea", "").strip()
         source = item.get("source", "").strip()
         confidence = str(item.get("confidence_score", "")).strip()
+        raw_formats = item.get("best_formats", "")
+        if isinstance(raw_formats, list):
+            formats_str = ", ".join(raw_formats)
+        else:
+            formats_str = str(raw_formats).strip()
 
         score_tag = f" {c.GRAY}[Confidence: {c.BRIGHT_GREEN}{confidence}/10{c.GRAY}]{c.RESET}" if confidence else ""
-        print(f"  {c.BOLD}{c.BRIGHT_YELLOW}Idea #{idx:<2}{c.RESET}  {c.BOLD}{c.BRIGHT_CYAN}{idea}{c.RESET}{score_tag}")
+        formats_tag = f" {c.GRAY}[Formats: {c.BRIGHT_BLUE}{formats_str}{c.GRAY}]{c.RESET}" if formats_str else ""
+        print(f"  {c.BOLD}{c.BRIGHT_YELLOW}Idea #{idx:<2}{c.RESET}  {c.BOLD}{c.BRIGHT_CYAN}{idea}{c.RESET}{score_tag}{formats_tag}")
         if source:
             print(f"  {c.GRAY}Source Element:{c.RESET}")
             for line in source.split("\n"):
@@ -634,6 +655,7 @@ def main():
                     "source": source_formatted,
                     "source_type": "YT Outliers",
                     "confidence_score": item.get("confidence_score", ""),
+                    "best_formats": item.get("best_formats", ""),
                 })
             res = export_ideas_to_sheet(export_payload, spreadsheet_id=args.sheet_id)
             exported_count = res.get("appended_count", len(export_payload))
