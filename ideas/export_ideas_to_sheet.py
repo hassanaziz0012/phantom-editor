@@ -10,6 +10,7 @@ Sheet Columns:
   - Source: Source comment or reference text along with URL
   - Source Type: e.g. "YT Comments", "Reddit", "Twitter", etc.
   - Confidence Score: Optional rating (e.g. 0-10)
+  - Best Formats: e.g. "YT Short, Twitter thread"
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from pipelines.google_sheet_utils import get_sheets_service, get_spreadsheet_id
 logger = logging.getLogger("phantom.ideas.export")
 
 IDEAS_SHEET_NAME = "Ideas"
-DEFAULT_IDEAS_HEADERS = ["Idea", "Source", "Source Type", "Confidence Score"]
+DEFAULT_IDEAS_HEADERS = ["Idea", "Source", "Source Type", "Confidence Score", "Best Formats"]
 
 
 @dataclass
@@ -46,10 +47,17 @@ class ContentIdea:
     source: str = ""
     source_type: str = "YT Comments"
     confidence_score: Union[str, int, float] = ""
+    best_formats: Union[List[str], str] = ""
 
     def to_row(self, headers: Optional[List[str]] = None) -> List[str]:
         if not headers:
             headers = DEFAULT_IDEAS_HEADERS
+
+        formats_str = ""
+        if isinstance(self.best_formats, list):
+            formats_str = ", ".join(str(f).strip() for f in self.best_formats if str(f).strip())
+        elif self.best_formats is not None:
+            formats_str = str(self.best_formats).strip()
 
         row: List[str] = []
         for h in headers:
@@ -62,6 +70,8 @@ class ContentIdea:
                 row.append(str(self.source or "").strip())
             elif "confidence" in h_norm or "score" in h_norm:
                 row.append(str(self.confidence_score if self.confidence_score is not None else "").strip())
+            elif "format" in h_norm:
+                row.append(formats_str)
             else:
                 row.append("")
         return row
@@ -83,7 +93,7 @@ def ensure_ideas_sheet_headers(
     # Check if header row exists
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
-        range=f"{sheet_name}!A1:D1"
+        range=f"{sheet_name}!A1:Z1"
     ).execute()
     rows = result.get("values", [])
 
@@ -97,7 +107,19 @@ def ensure_ideas_sheet_headers(
         ).execute()
         return DEFAULT_IDEAS_HEADERS
 
-    return [str(c).strip() for c in rows[0]]
+    headers = [str(c).strip() for c in rows[0]]
+    if not any("format" in h.lower() for h in headers):
+        col_idx = len(headers)
+        col_letter = chr(ord('A') + col_idx) if col_idx < 26 else "E"
+        service.spreadsheets().values().update(
+            spreadsheetId=sheet_id,
+            range=f"{sheet_name}!{col_letter}1",
+            valueInputOption="USER_ENTERED",
+            body={"values": [["Best Formats"]]}
+        ).execute()
+        headers.append("Best Formats")
+
+    return headers
 
 
 def append_idea(
@@ -105,6 +127,7 @@ def append_idea(
     source: str = "",
     source_type: str = "YT Comments",
     confidence_score: Union[str, int, float] = "",
+    best_formats: Union[List[str], str] = "",
     spreadsheet_id: Optional[str] = None,
     sheet_name: str = IDEAS_SHEET_NAME,
     service=None,
@@ -117,6 +140,7 @@ def append_idea(
         source=source,
         source_type=source_type,
         confidence_score=confidence_score,
+        best_formats=best_formats,
     )
     return export_ideas_to_sheet(
         ideas=[content_idea],
@@ -157,11 +181,19 @@ def export_ideas_to_sheet(
         if isinstance(item, ContentIdea):
             rows_to_append.append(item.to_row(headers))
         elif isinstance(item, dict):
+            raw_formats = (
+                item.get("best_formats")
+                if item.get("best_formats") is not None
+                else item.get("best formats")
+                if item.get("best formats") is not None
+                else item.get("bestFormats")
+            )
             ci = ContentIdea(
                 idea=item.get("idea", ""),
                 source=item.get("source", ""),
                 source_type=item.get("source_type", item.get("sourceType", "YT Comments")),
                 confidence_score=item.get("confidence_score", item.get("confidenceScore", "")),
+                best_formats=raw_formats if raw_formats is not None else "",
             )
             rows_to_append.append(ci.to_row(headers))
 
@@ -170,7 +202,7 @@ def export_ideas_to_sheet(
 
     append_result = service.spreadsheets().values().append(
         spreadsheetId=sheet_id,
-        range=f"{sheet_name}!A:D",
+        range=f"{sheet_name}!A:E",
         valueInputOption="USER_ENTERED",
         insertDataOption="INSERT_ROWS",
         body={"values": rows_to_append},
@@ -215,6 +247,12 @@ def main():
         help="Confidence score (e.g. 0-10).",
     )
     parser.add_argument(
+        "--best-formats",
+        type=str,
+        default="",
+        help="Best formats (e.g. 'YT Short, Twitter thread').",
+    )
+    parser.add_argument(
         "--sheet-id",
         type=str,
         default=None,
@@ -233,12 +271,20 @@ def main():
         raw_list = data.get("ideas", []) if isinstance(data, dict) else data
         for item in raw_list:
             if isinstance(item, dict):
+                raw_formats = (
+                    item.get("best_formats")
+                    if item.get("best_formats") is not None
+                    else item.get("best formats")
+                    if item.get("best formats") is not None
+                    else item.get("bestFormats")
+                )
                 ideas.append(
                     ContentIdea(
                         idea=item.get("idea", ""),
                         source=item.get("source", ""),
                         source_type=item.get("source_type", "YT Comments"),
                         confidence_score=item.get("confidence_score", ""),
+                        best_formats=raw_formats if raw_formats is not None else "",
                     )
                 )
     elif args.idea:
@@ -248,6 +294,7 @@ def main():
                 source=args.source,
                 source_type=args.source_type,
                 confidence_score=args.confidence_score,
+                best_formats=args.best_formats,
             )
         )
     else:
