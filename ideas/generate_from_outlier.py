@@ -311,7 +311,7 @@ def query_browserllm_claude(prompt_text: str, **kwargs: Any) -> str:
     Executes BrowserLLM with provider Claude via agentic.ask_browserllm.
     """
     logger.info("Executing BrowserLLM Claude query...")
-    return str(ask_claude(user_prompt=prompt_text))
+    return str(ask_claude(user_prompt=prompt_text, **kwargs))
 
 
 # ── Parse Claude Response ─────────────────────────────────────────────────────
@@ -473,10 +473,11 @@ def main():
         help="OpenRouter model for summarization if summarization is performed.",
     )
     parser.add_argument(
-        "--profile",
+        "--browserllm-profile", "--profile",
         type=str,
         default=None,
-        help="Browser profile name for browserllm (e.g. cdp, 0012, default).",
+        dest="profile",
+        help="Browser profile name for browserllm (e.g. cdp, p9222, p9223).",
     )
     parser.add_argument(
         "--profile-dir",

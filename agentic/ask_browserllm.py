@@ -71,6 +71,9 @@ def ask_browserllm(
     schema: Optional[Union[Type[T], Dict[str, Any]]] = None,
     image: Optional[Union[str, Path]] = None,
     timeout: Optional[float] = None,
+    profile: Optional[str] = None,
+    headless: bool = False,
+    **kwargs: Any,
 ) -> Union[T, Dict[str, Any], List[Any], str]:
     """Queries a provider (claude, chatgpt, gemini) via BrowserLLM."""
     if isinstance(user_prompt, Path):
@@ -101,6 +104,10 @@ def ask_browserllm(
         cmd = [BROWSERLLM_BIN, "-p", prompt_path, "-P", provider.lower(), "-o", output_path]
         if image:
             cmd.extend(["-i", str(image)])
+        if profile:
+            cmd.extend(["--profile", str(profile)])
+        if headless:
+            cmd.append("--headless")
 
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         combined_logs = f"{res.stdout}\n{res.stderr}".strip()
@@ -162,6 +169,8 @@ def main() -> None:
     parser.add_argument("-P", "--provider", type=str, default="claude", choices=["claude", "chatgpt", "gemini"])
     parser.add_argument("-i", "--image", type=str, help="Image file path or 'clipboard'.")
     parser.add_argument("-o", "--output", type=str, help="Output file path.")
+    parser.add_argument("--profile", "--browserllm-profile", type=str, default=None, dest="profile", help="Browser profile name.")
+    parser.add_argument("--headless", action="store_true", help="Run browser in headless mode.")
 
     args = parser.parse_args()
     if not args.prompt and not args.template:
@@ -172,6 +181,8 @@ def main() -> None:
         user_prompt=prompt_text,
         provider=args.provider,
         image=args.image,
+        profile=args.profile,
+        headless=args.headless,
     )
 
     if args.output:

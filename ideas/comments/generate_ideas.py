@@ -271,7 +271,7 @@ def query_browserllm_claude(prompt_text: str, **kwargs: Any) -> str:
     Calls browserllm with provider 'claude' via agentic.ask_browserllm.
     """
     logger.info("Executing BrowserLLM query with Claude...")
-    return str(ask_claude(user_prompt=prompt_text))
+    return str(ask_claude(user_prompt=prompt_text, **kwargs))
 
 
 # ── Parse Claude Response ─────────────────────────────────────────────────────
@@ -439,10 +439,11 @@ def main():
         help="Run browserllm browser in headless mode.",
     )
     parser.add_argument(
-        "--profile",
+        "--browserllm-profile", "--profile",
         type=str,
         default=None,
-        help="Browser profile name for browserllm (e.g., cdp, 0012, default).",
+        dest="profile",
+        help="Browser profile name for browserllm (e.g., cdp, p9222, p9223).",
     )
     parser.add_argument(
         "--profile-dir",
