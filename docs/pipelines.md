@@ -47,6 +47,9 @@ phantom pipeline organize /path/to/loom.mp4 "Outreach Lead" --loom
 # Run automated video processing (transcription, masking, silence trim, audio cleanup, BGM)
 phantom pipeline process /path/to/webcam.mp4 /path/to/screen.mp4 --bgm lofi-chill
 
+# Process a pre-composed raw video (skips webcam masking; trims silences directly)
+phantom pipeline process --raw /path/to/raw.mp4 --bgm lofi-chill
+
 # Manage the Google Sheets Content Calendar
 phantom pipeline calendar list
 phantom pipeline calendar next-date --platform youtube
@@ -168,12 +171,16 @@ phantom pipeline organize /path/to/recording.mkv "Lead Name" --loom
 
 ## ⚡ Video Processing Engine: [`process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)
 
-The video processing engine executes an automated 7-step media pipeline that transforms raw webcam and screen recordings into a polished review video (`to-review.mp4`), conducts automated audio and video quality reviews, and automatically generates YouTube metadata (`metadata.json`).
+The video processing engine executes an automated 7-step media pipeline that transforms raw footage into a polished review video (`to-review.mp4`), conducts automated audio and video quality reviews, and automatically generates YouTube metadata (`metadata.json`).
+
+It operates in two modes:
+* **Dual-Stream Mode** (`<webcam> [screen]`): Transcribes audio, detects voice triggers (`"webcam start"` / `"webcam stop"`), applies rounded webcam masking over the screen, and trims silences in a single pass.
+* **Raw Mode** (`--raw <raw_video>`): Trims silences directly on a pre-composed video without webcam masking.
 
 ```mermaid
 flowchart TD
-    Raw[Raw Webcam & Screen Footage] --> Step1[Step 1: Groq Cloud Transcription]
-    Step1 -->|*.srt & *-1word.srt| Step2[Step 2: Single-Pass Mask & Silence Trim]
+    Raw[Raw Footage: Dual-Stream or --raw] --> Step1[Step 1: Groq Cloud Transcription]
+    Step1 -->|*.srt & *-1word.srt| Step2[Step 2: Silence Trim ± Masking]
     Step2 -->|after-trim-silences.mp4| Step3[Step 3: Vocal Audio Cleanup & Normalization]
     Step3 -->|after-audio-processing.mp4| Step4{Step 4: Background Music?}
     Step4 -->|Yes| Step4Run[Mix BGM via add_bgm_to_video.sh]
@@ -190,11 +197,9 @@ flowchart TD
 1. **Step 1: Cloud Transcription (`transcribe_cloud.py`)**
    - Transcribes the raw audio track using the Groq Whisper cloud API.
    - Generates both a standard sentence-level `.srt` and a word-level `*-1word.srt` subtitle file.
-2. **Step 2: Single-Pass Masking & Silence Trimming ([`single_pass_mask_trim.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/single_pass_mask_trim.py))**
-   - Analyzes word-level SRT timestamps for voice triggers (`"webcam start"` and `"webcam stop"`).
-   - Generates an anti-aliased rounded-corner mask for the webcam overlay.
-   - Computes speech intervals with Silero VAD (`trim_silences.py`).
-   - Executes webcam overlay positioning and dead-air silence removal inside a single unified FFmpeg filtergraph, avoiding redundant re-encodings (`after-trim-silences.mp4`).
+2. **Step 2: Video Processing & Silence Trimming**
+   - **Dual-Stream Mode** ([`single_pass_mask_trim.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/single_pass_mask_trim.py)): Analyzes word-level SRT timestamps for voice triggers (`"webcam start"` and `"webcam stop"`), generates an anti-aliased rounded-corner mask for the webcam overlay, computes speech intervals with Silero VAD (`trim_silences.py`), and executes webcam overlay positioning and dead-air silence removal inside a single unified FFmpeg filtergraph, avoiding redundant re-encodings (`after-trim-silences.mp4`).
+   - **Raw Mode** (`--raw`): Analyzes speech intervals with Silero VAD and cuts silences directly from the pre-composed video (`after-trim-silences.mp4`).
 3. **Step 3: Vocal Audio Enhancement (`process_audio.sh`)**
    - Strips and processes audio using DeepFilterNet noise suppression.
    - Applies dual-pass EBU R128 `loudnorm` normalization and multiplexes the enhanced track back into the video (`after-audio-processing.mp4`).
@@ -206,7 +211,7 @@ flowchart TD
 6. **Step 6: Quality Review & Inspection ([`audio_review.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/audio_review.py) & [`video_inspector.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py))**
    - Runs `audio_review.py` using PANNs (Cnn14) inference to flag vocal bloopers, mouth noises, mic impacts, and unwanted sounds with timestamps and confidence ratings.
    - Runs `video_inspector.py` scanning for black frames, freeze frames, and bad cuts.
-   - Displays all inspection findings directly in the terminal for manual verification.
+   - Displays all inspection findings directly in the terminal for manual verification (can be bypassed with `--skip-review`).
 7. **Step 7: Automatic Metadata Generation ([`auto_create_metadata.py`](file:///home/hassan/Desktop/programming/phantom-editor/metadata/auto_create_metadata.py))**
    - Automatically inspects the project's transcript and generates an engaging video description, promotional tweet template, and video recommendations into `metadata.json`. (Video timestamps/chapters can be generated after manual review cuts via `phantom metadata timestamps`).
    - Uses the provided `--title` if specified, or defaults to the formatted project folder name.
@@ -218,19 +223,25 @@ flowchart TD
 ### CLI Options
 
 ```bash
+# Dual-stream processing
 phantom pipeline process <webcam_video> [screen_video] [options]
+
+# Raw pre-composed video processing
+phantom pipeline process --raw <raw_video> [options]
 ```
 
 | Option | Short | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `webcam` | | Positional / Flag | | Path to webcam or main video file. |
 | `screen` | | Positional / Flag | `webcam` | Path to screen recording video (defaults to webcam if omitted). |
+| `--raw` | `-r` | Path | `None` | Path to single pre-composed video (skips webcam masking; applies silence trimming directly). |
 | `--title` | `-t` | str | `None` | Optional custom title for the video project (defaults to folder name). |
 | `--preset` | | `portrait` \| `landscape` | `portrait` | Preset overlay mode (portrait: 400px width; landscape: 550px width). |
 | `--width` | `-w` | int | | Explicit width of webcam overlay in pixels. |
 | `--all` | `-a` | flag | `False` | Display webcam overlay continuously across the entire video. |
 | `--bgm` | `--bgm-track` | str | `None` | Background music track name or file path. |
 | `--volume` | | int (1–100) | `10` | Volume percentage for background music. |
+| `--skip-review` | | flag | `False` | Skip audio and video inspection review step. |
 | `--yes` | `-y` | flag | `False` | Skip interactive confirmation prompts and run automatically. |
 | `--force` | `-f` | flag | `False` | Force re-execution of all pipeline steps regardless of cached files. |
 
