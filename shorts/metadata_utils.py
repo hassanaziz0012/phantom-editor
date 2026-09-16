@@ -103,6 +103,85 @@ def update_posted_status(shorts_json_path, video_path, platform, status_val=True
         sys.stderr.write(f"Warning: Failed to update shorts.json: {e}\n")
         raise e
 
+def get_default_shorts_json_path():
+    """Returns the repo-root shorts.json path (shorts/shorts.json)."""
+    repo_root = Path(__file__).resolve().parent.parent
+    return repo_root / "shorts" / "shorts.json"
+
+def get_platform_entry(video_path, platform):
+    """
+    Shared uploader preamble for platform upload scripts (Instagram, TikTok, YouTube Shorts).
+
+    Resolves the default shorts.json, loads it, finds the entry for video_path, and checks
+    whether the video is already marked as posted on the given platform.
+
+    Exits the process (with an error message) if shorts.json is missing or no entry exists.
+    Returns (entry, shorts_json_path) on success; entry is None if already posted (after
+    printing a skip notice).
+    """
+    video_path = Path(video_path)
+    shorts_json_path = get_default_shorts_json_path()
+    if not shorts_json_path.exists():
+        print(f"Error: shorts.json not found at '{shorts_json_path}'", file=sys.stderr)
+        sys.exit(1)
+
+    shorts_data = load_shorts_json(str(shorts_json_path))
+    metadata = find_metadata_entry(shorts_data, video_path)
+
+    if not metadata:
+        print(f"Error: Metadata for video '{video_path}' not found in shorts.json", file=sys.stderr)
+        sys.exit(1)
+
+    # Check if already posted to the target platform
+    posted = metadata.get("posted")
+    if isinstance(posted, dict) and posted.get(platform) is True:
+        print(f"Video '{video_path.name}' is already marked as posted to {platform} in shorts.json. Skipping upload.")
+        return None, shorts_json_path
+
+    print("Found video metadata in shorts.json.")
+    return metadata, shorts_json_path
+
+def resolve_shorts_thumbnail(metadata, video_path):
+    """
+    Resolves the thumbnail path from a shorts.json entry.
+
+    Relative paths are tried against the video's folder first, then the repo root.
+    Prints a warning if a thumbnail is specified but cannot be found.
+    Returns the resolved Path, or None if absent/unresolvable.
+    """
+    video_path = Path(video_path)
+    repo_root = Path(__file__).resolve().parent.parent
+
+    thumbnail_val = metadata.get("thumbnail")
+    if not thumbnail_val:
+        return None
+
+    thumb_cand = Path(thumbnail_val)
+    if not thumb_cand.is_absolute():
+        resolved_thumb = video_path.parent / thumb_cand
+        if not resolved_thumb.exists():
+            resolved_thumb = repo_root / thumb_cand
+    else:
+        resolved_thumb = thumb_cand
+
+    if resolved_thumb.exists() and resolved_thumb.is_file():
+        return resolved_thumb
+
+    print(f"Warning: Thumbnail file specified in metadata not found at '{resolved_thumb}'", file=sys.stderr)
+    return None
+
+def mark_posted(shorts_json_path, video_path, platform):
+    """Marks a video as posted on the platform in shorts.json, with standard logging."""
+    print("Updating posted status in shorts.json...")
+    try:
+        updated = update_posted_status(shorts_json_path, video_path, platform, True)
+        if updated:
+            print(f"Successfully updated posted.{platform} to true in shorts.json.")
+        else:
+            print(f"Warning: Could not find video entry in shorts.json to update posted status.", file=sys.stderr)
+    except Exception as update_err:
+        print(f"Warning: Failed to update shorts.json: {update_err}", file=sys.stderr)
+
 def get_interactive_metadata(video_path):
     """Interactively prompts the user to specify title, description, tags, thumbnail, and scheduled time."""
     video_stem = Path(video_path).stem
