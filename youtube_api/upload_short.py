@@ -23,7 +23,11 @@ if str(youtube_api_dir) not in sys.path:
 
 import upload_video
 from googleapiclient.http import MediaFileUpload
-from shorts.metadata_utils import load_shorts_json, find_metadata_entry, update_posted_status
+from shorts.metadata_utils import (
+    get_platform_entry,
+    mark_posted,
+    resolve_shorts_thumbnail,
+)
 
 
 def main():
@@ -40,27 +44,10 @@ def main():
         print(f"Error: Path '{video_path}' is not a file", file=sys.stderr)
         sys.exit(1)
 
-    # Resolve shorts.json path
-    shorts_json_path = repo_root / "shorts" / "shorts.json"
-    if not shorts_json_path.exists():
-        print(f"Error: shorts.json not found at '{shorts_json_path}'", file=sys.stderr)
-        sys.exit(1)
-
-    # Load metadata from shorts.json
-    shorts_data = load_shorts_json(str(shorts_json_path))
-    metadata = find_metadata_entry(shorts_data, video_path)
-
-    if not metadata:
-        print(f"Error: Metadata for video '{video_path}' not found in shorts.json", file=sys.stderr)
-        sys.exit(1)
-
-    # Check if already posted to YouTube
-    posted = metadata.get("posted")
-    if isinstance(posted, dict) and posted.get("youtube") is True:
-        print(f"Video '{video_path.name}' is already marked as posted to YouTube in shorts.json. Skipping upload.")
+    # Load metadata from shorts.json and check posted status
+    metadata, shorts_json_path = get_platform_entry(video_path, "youtube")
+    if metadata is None:
         sys.exit(0)
-
-    print("Found video metadata in shorts.json.")
 
     # Authenticate with YouTube using helper from upload_video.py
     print("🔐 Authenticating with YouTube…")
@@ -78,42 +65,23 @@ def main():
         sys.exit(1)
 
     # Set custom thumbnail if provided in metadata and file exists (non-blocking)
-    thumbnail_val = metadata.get("thumbnail")
-    if thumbnail_val:
-        thumb_cand = Path(thumbnail_val)
-        if not thumb_cand.is_absolute():
-            resolved_thumb = video_path.parent / thumb_cand
-            if not resolved_thumb.exists():
-                resolved_thumb = repo_root / thumb_cand
-        else:
-            resolved_thumb = thumb_cand
-
-        if resolved_thumb.exists() and resolved_thumb.is_file():
-            print(f"🖼  Setting thumbnail: '{resolved_thumb}'...")
-            mime_type = "image/png"
-            if resolved_thumb.suffix.lower() in [".jpg", ".jpeg"]:
-                mime_type = "image/jpeg"
-            try:
-                youtube.thumbnails().set(
-                    videoId=video_id,
-                    media_body=MediaFileUpload(str(resolved_thumb), mimetype=mime_type),
-                ).execute()
-                print("✅ Thumbnail set.")
-            except Exception as e:
-                print(f"Warning: Failed to set thumbnail: {e}", file=sys.stderr)
-        else:
-            print(f"Warning: Thumbnail file specified in metadata not found at '{resolved_thumb}'", file=sys.stderr)
+    resolved_thumb = resolve_shorts_thumbnail(metadata, video_path)
+    if resolved_thumb:
+        print(f"🖼  Setting thumbnail: '{resolved_thumb}'...")
+        mime_type = "image/png"
+        if resolved_thumb.suffix.lower() in [".jpg", ".jpeg"]:
+            mime_type = "image/jpeg"
+        try:
+            youtube.thumbnails().set(
+                videoId=video_id,
+                media_body=MediaFileUpload(str(resolved_thumb), mimetype=mime_type),
+            ).execute()
+            print("✅ Thumbnail set.")
+        except Exception as e:
+            print(f"Warning: Failed to set thumbnail: {e}", file=sys.stderr)
 
     # Update posted.youtube to True in shorts.json
-    print("Updating posted status in shorts.json...")
-    try:
-        updated = update_posted_status(shorts_json_path, video_path, "youtube", True)
-        if updated:
-            print("Successfully updated posted.youtube to true in shorts.json.")
-        else:
-            print("Warning: Could not find video entry in shorts.json to update posted status.", file=sys.stderr)
-    except Exception as update_err:
-        print(f"Warning: Failed to update shorts.json: {update_err}", file=sys.stderr)
+    mark_posted(shorts_json_path, video_path, "youtube")
 
     print("\n🎉 Short upload task complete!")
 
