@@ -12,7 +12,11 @@ from instagrapi.exceptions import LoginRequired, ChallengeRequired
 repo_root = Path(__file__).resolve().parent.parent
 if str(repo_root) not in sys.path:
     sys.path.append(str(repo_root))
-from shorts.metadata_utils import load_shorts_json, find_metadata_entry, update_posted_status
+from shorts.metadata_utils import (
+    get_platform_entry,
+    mark_posted,
+    resolve_shorts_thumbnail,
+)
 import config
 
 # Load environment variables from .env in the project root
@@ -37,45 +41,17 @@ def main():
     if video_path.suffix.lower() not in ['.mp4', '.mov']:
         print(f"Warning: File extension '{video_path.suffix}' might not be supported. Instagram Reels typically require .mp4 or .mov formats.", file=sys.stderr)
 
-    # Load metadata from shorts.json if it exists
-    shorts_json_path = repo_root / "shorts" / "shorts.json"
-    if not shorts_json_path.exists():
-        print(f"Error: shorts.json not found at '{shorts_json_path}'", file=sys.stderr)
-        sys.exit(1)
-
-    shorts_data = load_shorts_json(str(shorts_json_path))
-    metadata = find_metadata_entry(shorts_data, video_path)
-
-    if not metadata:
-        print(f"Error: Metadata for video '{video_path}' not found in shorts.json", file=sys.stderr)
-        sys.exit(1)
-
-    # Check if already posted to Instagram
-    posted = metadata.get("posted")
-    if isinstance(posted, dict) and posted.get("instagram") is True:
-        print(f"Video '{video_path.name}' is already marked as posted to Instagram in shorts.json. Skipping upload.")
+    # Load metadata from shorts.json and check posted status
+    metadata, shorts_json_path = get_platform_entry(video_path, "instagram")
+    if metadata is None:
         sys.exit(0)
 
-    print("Found video metadata in shorts.json.")
     short_desc = metadata.get("description", "")
     caption = config.DESCRIPTION_TEMPLATE.format(video_description=short_desc, timestamps="", recommended="")
 
-    thumbnail_path = None
-    if metadata.get("thumbnail"):
-        thumb_cand = Path(metadata["thumbnail"])
-        if not thumb_cand.is_absolute():
-            # Resolve relative to video folder or repo root
-            resolved_thumb = video_path.parent / thumb_cand
-            if not resolved_thumb.exists():
-                resolved_thumb = repo_root / thumb_cand
-        else:
-            resolved_thumb = thumb_cand
-
-        if resolved_thumb.exists() and resolved_thumb.is_file():
-            thumbnail_path = resolved_thumb
-            print(f"Using thumbnail: '{thumbnail_path}'")
-        else:
-            print(f"Warning: Thumbnail file specified in metadata not found at '{resolved_thumb}'", file=sys.stderr)
+    thumbnail_path = resolve_shorts_thumbnail(metadata, video_path)
+    if thumbnail_path:
+        print(f"Using thumbnail: '{thumbnail_path}'")
 
     # Load and validate credentials securely from the environment
     username = os.getenv("INSTAGRAM_USERNAME")
@@ -162,15 +138,7 @@ def main():
         print(f"Media ID: {media_id}")
 
         # Update posted.instagram to True in shorts.json
-        print("Updating posted status in shorts.json...")
-        try:
-            updated = update_posted_status(shorts_json_path, video_path, "instagram", True)
-            if updated:
-                print("Successfully updated posted.instagram to true in shorts.json.")
-            else:
-                print("Warning: Could not find video entry in shorts.json to update posted status.", file=sys.stderr)
-        except Exception as update_err:
-            print(f"Warning: Failed to update shorts.json: {update_err}", file=sys.stderr)
+        mark_posted(shorts_json_path, video_path, "instagram")
 
     except Exception as e:
         print(f"Error: Upload failed: {e}", file=sys.stderr)
