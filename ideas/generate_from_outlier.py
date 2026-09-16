@@ -301,17 +301,7 @@ def build_outlier_prompt(
     return prompt
 
 
-from agentic.ask_browserllm import ask_claude
-
-
-# ── Query BrowserLLM (Claude - Headful Mode) ──────────────────────────────────
-
-def query_browserllm_claude(prompt_text: str, **kwargs: Any) -> str:
-    """
-    Executes BrowserLLM with provider Claude via agentic.ask_browserllm.
-    """
-    logger.info("Executing BrowserLLM Claude query...")
-    return str(ask_claude(user_prompt=prompt_text, **kwargs))
+from agentic.ask_browserllm import query_claude
 
 
 # ── Parse Claude Response ─────────────────────────────────────────────────────
@@ -621,7 +611,7 @@ def main():
         print(f"{Colors.CYAN}Querying Claude via BrowserLLM (headful mode)...{Colors.RESET}")
 
     try:
-        claude_raw_response = query_browserllm_claude(
+        claude_raw_response = query_claude(
             prompt_text=prompt_text,
             profile=args.profile,
             profile_dir=args.profile_dir,
