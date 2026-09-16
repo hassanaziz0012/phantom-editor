@@ -487,19 +487,6 @@ case "$COMMAND" in
             exit 1
         fi
         ;;
-    record)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "start" ] || [ "$SUBCOMMAND" = "stop" ]; then
-            SCRIPT_PATH=$(wslpath -w "$BASE_DIR/recording/record_in_sync.py")
-            python.exe "$SCRIPT_PATH" "$SUBCOMMAND" "$@"
-        else
-            echo "Unknown record subcommand: $SUBCOMMAND"
-            echo "Usage: phantom record start"
-            echo "       phantom record stop"
-            exit 1
-        fi
-        ;;
     *)
         echo "Unknown command: $COMMAND"
         show_usage
