@@ -261,17 +261,7 @@ def build_prompt(
     return prompt
 
 
-from agentic.ask_browserllm import ask_claude
-
-
-# ── Query BrowserLLM (Claude) ─────────────────────────────────────────────────
-
-def query_browserllm_claude(prompt_text: str, **kwargs: Any) -> str:
-    """
-    Calls browserllm with provider 'claude' via agentic.ask_browserllm.
-    """
-    logger.info("Executing BrowserLLM query with Claude...")
-    return str(ask_claude(user_prompt=prompt_text, **kwargs))
+from agentic.ask_browserllm import query_claude
 
 
 # ── Parse Claude Response ─────────────────────────────────────────────────────
@@ -576,7 +566,7 @@ def main():
     if not args.json:
         print(f"{Colors.CYAN}Sending {filtered_count} comments to Claude via BrowserLLM...{Colors.RESET}")
     try:
-        claude_raw_response = query_browserllm_claude(
+        claude_raw_response = query_claude(
             prompt_text=prompt_text,
             headless=args.headless,
             profile=args.profile,
