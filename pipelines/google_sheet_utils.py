@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Google Sheets Utility Module for Content Calendar
-=================================================
-Handles authentication, reading, adding, updating, and deleting records
-from the Google Sheets Content Calendar.
+Google Sheets Utility Module
+============================
+Handles authentication and synchronization with Google Sheets.
 """
 
 import os
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -29,50 +27,12 @@ DEFAULT_SHEET_NAME = "YouTube"
 DEFAULT_HEADERS = ["Project", "Title", "Status", "URL", "Publish Date", "Platform"]
 
 
-@dataclass
-class CalendarRecord:
-    row_index: int  # 1-based row index in Google Sheet
-    project: str = ""
-    title: str = ""
-    status: str = "New"
-    url: str = ""
-    publish_date: str = ""
-    platform: str = "YouTube"
-    description: str = ""
-    extra_fields: Dict[str, Any] = field(default_factory=dict)
-
-    def to_row_values(self, headers: Optional[List[str]] = None) -> List[str]:
-        if not headers:
-            headers = DEFAULT_HEADERS
-
-        values = []
-        for h in headers:
-            h_norm = h.strip().lower()
-            if "proj" in h_norm:
-                values.append(self.project)
-            elif "title" in h_norm:
-                values.append(self.title)
-            elif "stat" in h_norm or "state" in h_norm:
-                values.append(self.status)
-            elif "url" in h_norm or "link" in h_norm:
-                values.append(self.url)
-            elif "date" in h_norm or "publish" in h_norm:
-                values.append(self.publish_date)
-            elif "plat" in h_norm or "channel" in h_norm:
-                values.append(self.platform)
-            elif "desc" in h_norm:
-                values.append(self.description)
-            else:
-                values.append(self.extra_fields.get(h, ""))
-        return values
-
-
 def get_spreadsheet_id(spreadsheet_id: Optional[str] = None) -> str:
     """Get spreadsheet ID from argument, environment, or raise error."""
     sheet_id = spreadsheet_id or os.getenv("CONTENT_CALENDAR_SHEET_ID")
     if not sheet_id:
         raise ValueError(
-            "Google Sheets Content Calendar ID is missing. "
+            "Google Sheets Spreadsheet ID is missing. "
             "Set CONTENT_CALENDAR_SHEET_ID in .env or pass --sheet-id."
         )
     return sheet_id.strip()
@@ -227,264 +187,6 @@ def parse_header_mapping(headers: List[str]) -> Dict[str, int]:
     return mapping
 
 
-def list_records(
-    spreadsheet_id: Optional[str] = None,
-    sheet_name: str = DEFAULT_SHEET_NAME,
-    service=None
-) -> List[CalendarRecord]:
-    """
-    Fetches all calendar records from Google Sheet.
-    Returns a list of CalendarRecord objects.
-    """
-    sheet_id = get_spreadsheet_id(spreadsheet_id)
-    if service is None:
-        service = get_sheets_service()
-
-    headers = ensure_sheet_headers(service, sheet_id, sheet_name)
-    col_map = parse_header_mapping(headers)
-
-    result = service.spreadsheets().values().get(
-        spreadsheetId=sheet_id,
-        range=f"{sheet_name}!A2:Z"
-    ).execute()
-    rows = result.get("values", [])
-
-    records = []
-    for idx, row in enumerate(rows, start=2):  # Row 1 is header, data starts at row 2
-        # Skip completely empty rows
-        if not row or not any(str(c).strip() for c in row):
-            continue
-
-        def get_col(col_idx: int) -> str:
-            if 0 <= col_idx < len(row):
-                return str(row[col_idx]).strip()
-            return ""
-
-        project = get_col(col_map["project"])
-        title = get_col(col_map["title"])
-        status = get_col(col_map["status"]) or "New"
-        url = get_col(col_map["url"])
-        publish_date = get_col(col_map["publish_date"])
-        platform = get_col(col_map["platform"]) or "YouTube"
-        description = get_col(col_map["description"])
-
-        extra = {}
-        for c_idx, h_name in enumerate(headers):
-            if c_idx not in col_map.values() and c_idx < len(row):
-                extra[h_name] = str(row[c_idx]).strip()
-
-        records.append(
-            CalendarRecord(
-                row_index=idx,
-                project=project,
-                title=title,
-                status=status,
-                url=url,
-                publish_date=publish_date,
-                platform=platform,
-                description=description,
-                extra_fields=extra,
-            )
-        )
-
-    return records
-
-
-def add_record(
-    title: str,
-    project: str = "",
-    status: str = "Scheduled",
-    url: str = "",
-    publish_date: str = "",
-    platform: str = "YouTube",
-    description: str = "",
-    spreadsheet_id: Optional[str] = None,
-    sheet_name: str = DEFAULT_SHEET_NAME,
-    service=None
-) -> CalendarRecord:
-    """
-    Appends a new record to the Google Sheet.
-    """
-    sheet_id = get_spreadsheet_id(spreadsheet_id)
-    if service is None:
-        service = get_sheets_service()
-
-    headers = ensure_sheet_headers(service, sheet_id, sheet_name)
-    col_map = parse_header_mapping(headers)
-
-    # Build the row array matching the header positions
-    row_len = max(len(headers), max(col_map.values()) + 1 if col_map else len(DEFAULT_HEADERS))
-    row_data = [""] * row_len
-
-    if col_map["project"] >= 0:
-        row_data[col_map["project"]] = project
-    if col_map["title"] >= 0:
-        row_data[col_map["title"]] = title
-    if col_map["status"] >= 0:
-        row_data[col_map["status"]] = status
-    if col_map["url"] >= 0:
-        row_data[col_map["url"]] = url
-    if col_map["publish_date"] >= 0:
-        row_data[col_map["publish_date"]] = publish_date
-    if col_map["platform"] >= 0:
-        row_data[col_map["platform"]] = platform
-    if col_map["description"] >= 0:
-        row_data[col_map["description"]] = description
-
-    append_result = service.spreadsheets().values().append(
-        spreadsheetId=sheet_id,
-        range=f"{sheet_name}!A:A",
-        valueInputOption="USER_ENTERED",
-        insertDataOption="INSERT_ROWS",
-        body={"values": [row_data]}
-    ).execute()
-
-    # Determine updated row index from updatedRange e.g. "YouTube!A10:F10"
-    updated_range = append_result.get("updates", {}).get("updatedRange", "")
-    new_row_index = -1
-    if "!" in updated_range:
-        range_part = updated_range.split("!")[1]
-        import re
-        m = re.search(r'(\d+)', range_part)
-        if m:
-            new_row_index = int(m.group(1))
-
-    return CalendarRecord(
-        row_index=new_row_index,
-        project=project,
-        title=title,
-        status=status,
-        url=url,
-        publish_date=publish_date,
-        platform=platform,
-        description=description,
-    )
-
-
-def remove_record(
-    row_index: Optional[int] = None,
-    title: Optional[str] = None,
-    project: Optional[str] = None,
-    spreadsheet_id: Optional[str] = None,
-    sheet_name: str = DEFAULT_SHEET_NAME,
-    service=None
-) -> bool:
-    """
-    Deletes a row from the Google Sheet either by exact row index, project name, or title.
-    Returns True if successfully deleted.
-    """
-    sheet_id = get_spreadsheet_id(spreadsheet_id)
-    if service is None:
-        service = get_sheets_service()
-
-    if row_index is None and title is None and project is None:
-        raise ValueError("Must provide row_index, title, or project to remove_record.")
-
-    if row_index is None:
-        records = list_records(spreadsheet_id=sheet_id, sheet_name=sheet_name, service=service)
-        target = None
-
-        if project is not None:
-            clean_proj = project.strip().lower()
-            for r in records:
-                if r.project.strip().lower() == clean_proj:
-                    target = r
-                    break
-
-        if not target and title is not None:
-            clean_t = title.strip().lower()
-            for r in records:
-                if r.title.strip().lower() == clean_t:
-                    target = r
-                    break
-            if not target:
-                for r in records:
-                    if clean_t in r.title.strip().lower():
-                        target = r
-                        break
-
-        if not target:
-            identifier = project or title
-            raise ValueError(f"No calendar record found matching: '{identifier}'")
-        row_index = target.row_index
-
-    if row_index < 2:
-        raise ValueError(f"Cannot delete row {row_index} (row 1 is header row).")
-
-    tab_props = get_sheet_tab_info(service, sheet_id, sheet_name)
-    tab_id = tab_props.get("sheetId", 0)
-
-    request_body = {
-        "requests": [
-            {
-                "deleteDimension": {
-                    "range": {
-                        "sheetId": tab_id,
-                        "dimension": "ROWS",
-                        "startIndex": row_index - 1,
-                        "endIndex": row_index,
-                    }
-                }
-            }
-        ]
-    }
-
-    service.spreadsheets().batchUpdate(
-        spreadsheetId=sheet_id,
-        body=request_body
-    ).execute()
-
-    return True
-
-
-def update_record(
-    row_index: int,
-    updates: Dict[str, str],
-    spreadsheet_id: Optional[str] = None,
-    sheet_name: str = DEFAULT_SHEET_NAME,
-    service=None
-) -> bool:
-    """
-    Updates specific fields for a given row in the Google Sheet.
-    `updates` dict keys can be: project, title, status, url, publish_date, platform, description.
-    """
-    if row_index < 2:
-        raise ValueError(f"Invalid row_index {row_index} for update.")
-
-    sheet_id = get_spreadsheet_id(spreadsheet_id)
-    if service is None:
-        service = get_sheets_service()
-
-    headers = ensure_sheet_headers(service, sheet_id, sheet_name)
-    col_map = parse_header_mapping(headers)
-
-    # Read current row values
-    result = service.spreadsheets().values().get(
-        spreadsheetId=sheet_id,
-        range=f"{sheet_name}!A{row_index}:Z{row_index}"
-    ).execute()
-    current_values = result.get("values", [[]])[0]
-    while len(current_values) < len(headers):
-        current_values.append("")
-
-    for k, v in updates.items():
-        k_norm = k.strip().lower()
-        if k_norm in col_map and col_map[k_norm] >= 0:
-            target_col = col_map[k_norm]
-            while len(current_values) <= target_col:
-                current_values.append("")
-            current_values[target_col] = str(v)
-
-    service.spreadsheets().values().update(
-        spreadsheetId=sheet_id,
-        range=f"{sheet_name}!A{row_index}:{row_index}",
-        valueInputOption="USER_ENTERED",
-        body={"values": [current_values]}
-    ).execute()
-
-    return True
-
-
 def sync_projects_to_sheet(
     projects: List[Any],
     spreadsheet_id: Optional[str] = None,
@@ -492,7 +194,7 @@ def sync_projects_to_sheet(
     service=None
 ) -> Dict[str, int]:
     """
-    Synchronizes local video projects with the Google Sheet Content Calendar (one-way sync).
+    Synchronizes local video projects with Google Sheets (one-way sync).
     - Local project directory is the sole source of truth.
     - Updates Status, Title, URL, and Publish Date for existing projects to match local state.
     - Clears/unschedules Publish Date in sheet if removed locally.

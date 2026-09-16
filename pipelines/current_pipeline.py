@@ -12,8 +12,8 @@ Stages:
   5. Reviewed          - Manual review complete (final.mp4), needs metadata & thumbnail.
   6. Added Metadata    - metadata.json created, needs thumbnail.
   7. Added Thumbnail   - Thumbnail(s) created, needs metadata.json.
-  8. Ready to Schedule - final.mp4 + metadata.json + thumbnail(s) complete, needs calendar scheduling.
-  9. Scheduled         - Video scheduled in content calendar, needs YouTube upload.
+  8. Ready to Schedule - final.mp4 + metadata.json + thumbnail(s) complete, ready for release/upload.
+  9. Scheduled         - Video has scheduled publish date, needs YouTube upload.
  10. Uploaded          - Video uploaded to YouTube (metadata.json has valid YT URL). Complete!
 """
 
@@ -24,16 +24,9 @@ import re
 import argparse
 from pathlib import Path
 
-# Ensure Python's standard library calendar is loaded into sys.modules to prevent shadowing
 pipeline_dir = Path(__file__).resolve().parent
 repo_root = pipeline_dir.parent
 video_editing_dir = repo_root / "video-editing"
-
-_orig_sys_path = sys.path[:]
-sys.path = [p for p in sys.path if p not in ("", ".", str(pipeline_dir))]
-import calendar as _stdlib_calendar
-import _strptime
-sys.path = _orig_sys_path
 
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
@@ -219,7 +212,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
     elif project.final_file and project.metadata_file and project.thumbnail_files:
         project.stage_num = 8
         project.stage_name = "Ready to Schedule"
-        project.next_step = "Schedule video release in content calendar (`phantom pipeline calendar add`)"
+        project.next_step = "Upload video to YouTube (`phantom yt upload`) or set publishDate in metadata.json"
         project.status_color = COLOR_CYAN
 
     # Stage 7: Added Thumbnail (final.mp4 + thumbnail, missing metadata)
@@ -449,7 +442,7 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
     if ready_to_sched > 0:
         print(f" {COLOR_CYAN}📋 Ready to Schedule: {ready_to_sched} video(s) fully reviewed with metadata & thumbnail!{COLOR_RESET}")
     if scheduled_cnt > 0:
-        print(f" {COLOR_YELLOW}📅 Scheduled (Needs Upload): {scheduled_cnt} video(s) on calendar awaiting YouTube upload{COLOR_RESET}")
+        print(f" {COLOR_YELLOW}📅 Scheduled (Needs Upload): {scheduled_cnt} video(s) scheduled awaiting YouTube upload{COLOR_RESET}")
     if uploaded_cnt > 0:
         print(f" {COLOR_GREEN}🎉 Uploaded: {uploaded_cnt} video(s) published on YouTube!{COLOR_RESET}")
 
@@ -513,7 +506,7 @@ def main():
     parser.add_argument(
         "--no-sync",
         action="store_true",
-        help="Skip syncing pipeline status with Google Sheets content calendar.",
+        help="Skip syncing pipeline status with Google Sheets.",
     )
     args = parser.parse_args()
 
@@ -556,7 +549,7 @@ def main():
                 pass
         else:
             try:
-                print(f"{COLOR_CYAN}🔄 Syncing video projects with Google Sheets Content Calendar...{COLOR_RESET}", end="", flush=True)
+                print(f"{COLOR_CYAN}🔄 Syncing video projects with Google Sheets...{COLOR_RESET}", end="", flush=True)
                 stats = sync_projects_to_sheet(all_projects)
                 details = []
                 if stats.get("added"):

@@ -1,6 +1,6 @@
 # 🎬 Content & Video Processing Pipelines
 
-The **Pipelines** module provides an end-to-end orchestration suite for creating, processing, tracking, and scheduling YouTube videos. It automates the multi-stage lifecycle from initial project creation, Excalidraw scripting, and single-pass FFmpeg editing to quality review, metadata authoring, Google Sheets calendar scheduling, and publishing.
+The **Pipelines** module provides an end-to-end orchestration suite for creating, processing, tracking, and scheduling YouTube videos. It automates the multi-stage lifecycle from initial project creation, Excalidraw scripting, and single-pass FFmpeg editing to quality review, metadata authoring, Google Sheets project synchronization, and publishing.
 
 ---
 
@@ -49,19 +49,13 @@ phantom pipeline process /path/to/webcam.mp4 /path/to/screen.mp4 --bgm lofi-chil
 
 # Process a pre-composed raw video (skips webcam masking; trims silences directly)
 phantom pipeline process --raw /path/to/raw.mp4 --bgm lofi-chill
-
-# Manage the Google Sheets Content Calendar
-phantom pipeline calendar list
-phantom pipeline calendar next-date --platform youtube
-phantom pipeline calendar add --title "My Video Title"
-phantom pipeline calendar remove 5
 ```
 
 ---
 
 ## 📊 Pipeline Status Tracker: [`current_pipeline.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/current_pipeline.py)
 
-The status tracker scans project folders, validates required assets, connects to the Google Sheets Content Calendar, and displays an overview with progress bars, file checklists, and actionable next steps.
+The status tracker scans project folders, validates required assets, synchronizes project status with Google Sheets, and displays an overview with progress bars, file checklists, and actionable next steps.
 
 ### CLI Usage
 
@@ -99,8 +93,8 @@ phantom pipeline status --json
 | **5** | **Reviewed** | `final.mp4` exists; missing metadata/thumbnail. | Create `metadata.json` and design thumbnail. |
 | **6** | **Added Metadata** | `final.mp4` + `metadata.json` present; missing thumbnail. | Design and add thumbnail image. |
 | **7** | **Added Thumbnail** | `final.mp4` + thumbnail present; missing `metadata.json`. | Create `metadata.json`. |
-| **8** | **Ready to Schedule** | `final.mp4` + `metadata.json` + thumbnail image present. | Run `phantom pipeline calendar add`. |
-| **9** | **Scheduled** | Matched in Google Sheets Content Calendar. | Upload video to YouTube (`phantom yt upload`). |
+| **8** | **Ready to Schedule** | `final.mp4` + `metadata.json` + thumbnail image present. | Ready for YouTube upload (`phantom yt upload`) or set publishDate in `metadata.json`. |
+| **9** | **Scheduled** | Has scheduled publish date in `metadata.json`. | Upload video to YouTube (`phantom yt upload`). |
 | **10** | **Uploaded** | `metadata.json` contains a valid YouTube URL. | 🎉 Pipeline complete! |
 
 ### Sample Terminal Output
@@ -271,87 +265,15 @@ python pipelines/single_pass_mask_trim.py \
 
 ---
 
-## 📅 Content Calendar: [`calendar.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/calendar.py)
-
-The Content Calendar CLI integrates directly with Google Sheets, allowing you to manage publication schedules, query upcoming slots, and automatically assign release dates.
-
-### Subcommands
-
-#### 1. `list`: Display Content Calendar
-
-Displays scheduled entries in a formatted terminal table with platform badges, dates, and live status.
-
-```bash
-# List all scheduled content
-phantom pipeline calendar list
-
-# Filter by platform
-phantom pipeline calendar list --platform youtube
-phantom pipeline calendar list --platform twitter
-```
-
-#### 2. `next-date`: Compute Next Available Publish Slot
-
-Computes the earliest open date according to channel publication policies:
-* **YouTube**: 1 video per day at **10:30 PM (22:30)**.
-* **Twitter**: 1 post per day at **12:00 PM (12:00)**.
-
-```bash
-# Calculate next YouTube date
-phantom pipeline calendar next-date --platform youtube
-
-# Output in JSON format
-phantom pipeline calendar next-date --platform youtube --json
-```
-
-#### 3. `add`: Schedule a Video
-
-Adds a new row to the Google Sheet. If `--date` is omitted, the script automatically assigns the next available date slot.
-
-```bash
-# Auto-assign next date
-phantom pipeline calendar add \
-    --title "How to Build AI Agents" \
-    --platform youtube \
-    --desc "A deep-dive tutorial into building autonomous agents"
-
-# Explicit date & URL
-phantom pipeline calendar add \
-    --title "Automation Tip #5" \
-    --platform twitter \
-    --date "tomorrow" \
-    --url "https://x.com/..."
-```
-
-#### 4. `remove`: Unschedule a Project
-
-Removes the `publishDate` from the target project's `metadata.json` (which automatically updates the status and unschedules it in Google Sheets upon next sync).
-
-```bash
-# Unschedule current project (when running inside project directory)
-phantom pipeline calendar remove
-
-# Unschedule by project name or folder path
-phantom pipeline calendar remove "Mastersealer case study"
-phantom pipeline calendar remove --project "Mastersealer case study"
-
-# Unschedule by title substring
-phantom pipeline calendar remove --title "How to Build AI Agents"
-
-# Unschedule by sheet row index
-phantom pipeline calendar remove 4
-```
-
----
-
 ## 🔌 Google Sheets Backend: [`google_sheet_utils.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/google_sheet_utils.py)
 
-The backend driver powering the calendar CLI:
+The backend driver powering Google Sheets synchronization:
 
 * **Google Service Account Authentication**: Authenticates securely and permanently using headless Google Cloud Service Account credentials (`GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_PRIVATE_KEY`), eliminating the need for expiring user tokens or interactive browser logins.
 * **Dynamic Header & Schema Mapping**: Detects existing sheet headers (`Title`, `Description`, `URL`, `Publish Date`, `Platform`) or initializes default columns if the sheet is empty.
-* **Data Model**: Uses the `CalendarRecord` dataclass for type safety and easy conversion between API rows and Python objects.
-* **CRUD API**: Exposes `list_records()`, `add_record()`, `remove_record()`, and `update_record()`.
+* **Default Worksheet**: Synchronizes with the `YouTube` sheet tab by default.
+* **Project Synchronization**: One-way sync from local project folders to the sheet via `sync_projects_to_sheet()` during `phantom pipeline status`.
+* **Written Content Synchronization**: [`written_content_sheet_utils.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/written_content_sheet_utils.py) re-exports sheet utilities for tracking written social posts across platforms (Substack, LinkedIn).
 
 ### Configuration
 

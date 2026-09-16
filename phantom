@@ -106,8 +106,6 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/organize.py" "$@"
-        elif [ "$SUBCOMMAND" = "calendar" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/calendar.py" "$@"
         else
             echo "Unknown pipeline subcommand: $SUBCOMMAND"
             echo "Usage: phantom pipeline status [arguments]"
@@ -115,7 +113,6 @@ case "$COMMAND" in
             echo "       phantom pipeline process --raw <raw_video> [arguments]"
             echo "       phantom pipeline newvideo <project_name>"
             echo "       phantom pipeline organize <video_file> <project_name> (--ytlong | --loom)"
-            echo "       phantom pipeline calendar [list|next-date|add|remove] [arguments]"
             exit 1
         fi
         ;;
