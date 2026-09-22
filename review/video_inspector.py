@@ -7,7 +7,7 @@ import math
 import argparse
 import subprocess
 
-from utils import Colors, colorize, format_time, parse_time_to_seconds
+from utils import Colors, colorize, format_time, parse_time_to_seconds, find_intel_render_node
 
 def compute_aspect_ratio(width: int, height: int) -> str:
     """Computes simplified aspect ratio from width and height."""
@@ -64,10 +64,22 @@ def run_inspection(video_path: str, args) -> tuple:
     black_filter = f"blackdetect=d={args.black_duration}:pic_th={args.black_pic_th}:pix_th={args.black_pix_th}"
     freeze_filter = f"freezedetect=d={args.freeze_duration}:n={args.freeze_noise}"
     
+    hw_args = []
+    intel_node = find_intel_render_node()
+    if intel_node:
+        hw_args = [
+            "-init_hw_device", f"vaapi=va:{intel_node}",
+            "-filter_hw_device", "va",
+            "-hwaccel", "vaapi",
+            "-hwaccel_device", intel_node,
+        ]
+
     cmd = [
         'ffmpeg', '-y',
+        '-threads', '0',
+    ] + hw_args + [
         '-i', video_path,
-        '-vf', f"{black_filter},{freeze_filter}",
+        '-vf', f"scale=-2:360,{black_filter},{freeze_filter}",
         '-f', 'null', '-'
     ]
 
