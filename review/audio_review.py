@@ -267,18 +267,8 @@ def main():
         wav_path = temp_wav
 
     try:
-        print("Loading audio with soundfile...", file=sys.stderr)
-        try:
-            import soundfile as sf
-            audio, sr = sf.read(wav_path, dtype="float32")
-            if audio.ndim > 1:
-                audio = np.mean(audio, axis=1)
-            if sr != SAMPLE_RATE:
-                audio = librosa.resample(audio, orig_sr=sr, target_sr=SAMPLE_RATE)
-                sr = SAMPLE_RATE
-        except Exception as e:
-            print(f"Notice: soundfile load failed ({e}), falling back to librosa...", file=sys.stderr)
-            audio, sr = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
+        print("Loading audio...", file=sys.stderr)
+        audio, sr = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
 
         print("Building windows...", file=sys.stderr)
         windows, start_times = make_windows(audio, sr, args.win_sec, args.hop_sec)

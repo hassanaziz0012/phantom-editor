@@ -7,7 +7,7 @@ import numpy as np
 
 # Ensure the directory containing this script is in sys.path to resolve local imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from utils import parse_timestamp, get_intel_hardware_encoder_args
+from utils import parse_timestamp
 
 def load_audio_with_ffmpeg(file_path, sampling_rate=16000):
     """
@@ -121,20 +121,19 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
 
     select_expr, shift_expr, total_duration = get_silence_trim_expressions(intervals)
 
-    hw_info = get_intel_hardware_encoder_args()
-    v_suffix = hw_info["filter_suffix"]
-    v_script = f"select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30{v_suffix}"
+    v_script = f"select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30"
     a_script = f"aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB',aresample=async=1:first_pts=0"
 
     cmd = [
         'ffmpeg', '-hide_banner', '-loglevel', 'error', '-stats', '-y',
         '-threads', '0',
-    ] + hw_info["hw_args"] + hw_info.get("hwaccel_args", []) + [
         '-i', input_video,
         '-vf', v_script,
         '-af', a_script,
         '-fps_mode', 'cfr',
-    ] + hw_info["vcodec"] + [
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '20',
         '-c:a', 'aac',
         '-b:a', '384k',
         '-t', f"{total_duration:.3f}",

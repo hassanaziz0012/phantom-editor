@@ -13,7 +13,6 @@ import time
 import argparse
 import subprocess
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 
 pipeline_dir = Path(__file__).resolve().parent
 repo_root = pipeline_dir.parent
@@ -25,8 +24,7 @@ if str(pipeline_dir) not in sys.path:
     sys.path.insert(0, str(pipeline_dir))
 
 from utils import (
-    print_info, print_success, print_warning, print_error, get_video_info,
-    get_intel_hardware_encoder_args
+    print_info, print_success, print_warning, print_error, get_video_info
 )
 from pipeline_status import (
     is_4k_video, is_valid_file, format_duration,
@@ -186,12 +184,10 @@ def verify_script_dependencies(pipeline_dir: Path, repo_root: Path) -> dict[str,
     v_dir = repo_root / "video-editing"
     m_dir = repo_root / "metadata"
     r_dir = repo_root / "review"
-    a_dir = repo_root / "audio-processing"
     scripts = {
         "downscale_py": v_dir / "downscale.py",
         "auto_attach_webcam_py": v_dir / "auto_attach_webcam_mask.py",
-        "process_audio_sh": a_dir / "process_audio.sh",
-        "noise_reduction_sh": a_dir / "noise_reduction.sh",
+        "process_audio_sh": repo_root / "audio-processing" / "process_audio.sh",
         "transcribe_cloud_py": v_dir / "transcribe_cloud.py",
         "trim_silences_py": v_dir / "trim_silences.py",
         "add_bgm_sh": v_dir / "add_bgm_to_video.sh",
@@ -245,8 +241,7 @@ def run_step1_transcription(
 def run_step2_trim_silences_raw(
     raw_video_path: Path,
     step2_output: Path,
-    force_run: bool,
-    speech_intervals: list | None = None
+    force_run: bool
 ) -> bool:
     """Step 2 (Raw Mode): Silence Trimming on pre-composed video (skips webcam mask attachment)."""
     print_info("\n--- [Step 2/7] Silence Trimming on Raw Video ---")
@@ -262,33 +257,29 @@ def run_step2_trim_silences_raw(
     else:
         print_info(f"Video resolution {video_info.width}x{video_info.height} is 1080p HD. No downscaling needed.")
 
-    if speech_intervals is None:
-        print_info("Analyzing audio for speech intervals with Silero VAD...")
-        speech_intervals = get_speech_intervals(raw_video_path)
+    print_info("Analyzing audio for speech intervals with Silero VAD...")
+    speech_intervals = get_speech_intervals(raw_video_path)
     print_info(f"Detected {len(speech_intervals)} active speech intervals.")
 
     select_expr, shift_expr, total_speech_duration = get_silence_trim_expressions(speech_intervals)
-
-    hw_info = get_intel_hardware_encoder_args()
-    print_info(f"Using video encoder: {hw_info['desc']}")
-    v_suffix = hw_info["filter_suffix"]
 
     if select_expr and shift_expr:
         v_filter = f"select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30"
         if needs_downscale:
             v_filter = f"scale=1920:1080:flags=bicubic,{v_filter}"
-        v_filter = f"{v_filter}{v_suffix}"
         a_filter = f"aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB',aresample=async=1:first_pts=0"
 
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
             "-threads", "0",
-        ] + hw_info["hw_args"] + hw_info.get("hwaccel_args", []) + [
             "-i", str(raw_video_path),
             "-vf", v_filter,
             "-af", a_filter,
             "-fps_mode", "cfr",
-        ] + hw_info["vcodec"] + [
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "20",
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", "384k",
             "-t", f"{total_speech_duration:.3f}",
@@ -297,20 +288,17 @@ def run_step2_trim_silences_raw(
         ]
     else:
         print_warning("No silence intervals to cut. Re-encoding video directly.")
-        vf_args = []
-        if needs_downscale:
-            vf_args = ["-vf", f"scale=1920:1080:flags=bicubic{v_suffix}"]
-        elif v_suffix:
-            vf_args = ["-vf", v_suffix.lstrip(",")]
-
+        vf_args = ["-vf", "scale=1920:1080:flags=bicubic"] if needs_downscale else []
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
             "-threads", "0",
-        ] + hw_info["hw_args"] + hw_info.get("hwaccel_args", []) + [
             "-i", str(raw_video_path),
         ] + vf_args + [
             "-fps_mode", "cfr",
-        ] + hw_info["vcodec"] + [
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "20",
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", "384k",
             "-movflags", "+faststart",
@@ -335,163 +323,77 @@ def run_step2_trim_silences_raw(
 
 def run_step3_process_audio(
     step2_output: Path,
-    noise_reduction_sh: Path,
-    temp_dir: Path,
+    step3_output: Path,
+    process_audio_sh: Path,
     force_run: bool
-) -> tuple[Path, bool]:
-    """Step 3: Process Audio (Extract audio from trimmed video and apply DeepFilterNet)."""
-    print_info("\n--- [Step 3/7] Processing Audio (DeepFilterNet Noise Reduction) ---")
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    cleaned_wav = temp_dir / "noise-reduced.wav"
-    raw_wav = temp_dir / "raw-trimmed-audio.wav"
+) -> bool:
+    """Step 3: Process Audio."""
+    print_info("\n--- [Step 3/7] Processing Audio ---")
+    if not force_run and is_valid_file(step3_output):
+        print_success(f"[SKIP] Step 3 complete: Audio processed video file already exists -> {step3_output.name}")
+        return force_run
 
-    if not force_run and is_valid_file(cleaned_wav):
-        print_success(f"[SKIP] Step 3 complete: Cleaned audio file already exists -> {cleaned_wav.name}")
-        return cleaned_wav, force_run
-
-    # Extract audio track to 48kHz WAV
-    print_info("Extracting audio track from trimmed video...")
-    cmd_extract = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-threads", "0",
-        "-i", str(step2_output),
-        "-vn",
-        "-c:a", "pcm_s16le",
-        "-ar", "48000",
-        str(raw_wav)
-    ]
+    cmd_step3 = ["bash", str(process_audio_sh), str(step2_output)]
+    print(f"Executing: {' '.join(cmd_step3)}")
     try:
-        subprocess.run(cmd_extract, check=True)
+        subprocess.run(cmd_step3, check=True)
     except subprocess.CalledProcessError as e:
-        print_error(f"[ERROR] Step 3 audio extraction failed with exit code {e.returncode}")
+        print_error(f"[ERROR] Step 3 failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
-    # Run DeepFilterNet noise reduction
-    print_info("Applying DeepFilterNet noise reduction...")
-    cmd_nr = ["bash", str(noise_reduction_sh), str(raw_wav), "--output-file", str(cleaned_wav)]
-    print(f"Executing: {' '.join(cmd_nr)}")
-    try:
-        subprocess.run(cmd_nr, check=True)
-    except subprocess.CalledProcessError as e:
-        print_error(f"[ERROR] Step 3 noise reduction failed with exit code {e.returncode}")
-        sys.exit(e.returncode)
-
-    if raw_wav.exists():
-        try:
-            raw_wav.unlink()
-        except Exception:
-            pass
-
-    if not is_valid_file(cleaned_wav):
-        print_error(f"[ERROR] Step 3 output file invalid or missing at '{cleaned_wav}'")
+    if not is_valid_file(step3_output):
+        print_error(f"[ERROR] Step 3 output file invalid or missing at '{step3_output}'")
         sys.exit(1)
-
-    print_success(f"[SUCCESS] Step 3 complete: Audio cleaned -> {cleaned_wav.name}")
-    return cleaned_wav, True
-
-
-def resolve_bgm_track(bgm_input: str | None) -> Path | None:
-    """Resolve BGM track by full path or search in BGM directory."""
-    if not bgm_input:
-        return None
-    p = Path(bgm_input).expanduser().resolve()
-    if p.is_file():
-        return p
-    bgm_dir = Path(os.environ.get("BGM_DIR", Path.home() / "Videos/Asset Library/BGM"))
-    if (bgm_dir / bgm_input).is_file():
-        return bgm_dir / bgm_input
-    if (bgm_dir / f"{bgm_input}.mp3").is_file():
-        return bgm_dir / f"{bgm_input}.mp3"
-    return None
+    print_success(f"[SUCCESS] Step 3 complete: Audio processed -> {step3_output.name}")
+    return True
 
 
-def run_step4_add_bgm_and_mux(
-    step2_output: Path,
-    cleaned_wav: Path,
-    temp_dir: Path,
+def run_step4_add_bgm(
+    step3_output: Path,
+    step4_output: Path,
     bgm: str | None,
     volume: int,
+    add_bgm_sh: Path,
     force_run: bool
 ) -> tuple[Path, bool]:
-    """Step 4: Normalize Audio, Mix Background Music (if requested), and Mux into Video."""
-    print_info("\n--- [Step 4/7] Normalizing Audio, Mixing BGM & Single Video Multiplex ---")
-    processed_audio = temp_dir / "final-processed-audio.m4a"
-    muxed_video = temp_dir / "single-pass-muxed-video.mp4"
+    """Step 4: Add Background Music."""
+    print_info("\n--- [Step 4/7] Adding Background Music ---")
+    if not bgm:
+        print_warning("[WARNING] Step 4 skipped: No BGM track specified with --bgm.")
+        return step3_output, force_run
 
-    bgm_file = resolve_bgm_track(bgm) if bgm else None
-    if bgm and not bgm_file:
-        print_warning(f"[WARNING] BGM track '{bgm}' not found. Proceeding without BGM.")
+    if not force_run and is_valid_file(step4_output):
+        print_success(f"[SKIP] Step 4 complete: BGM video file already exists -> {step4_output.name}")
+        return step4_output, force_run
 
-    # 1. Process audio (Loudnorm + BGM mix)
-    if bgm_file:
-        print_info(f"Mixing BGM track '{bgm_file.name}' at {volume}% volume and applying loudnorm...")
-        cmd_audio = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-threads", "0",
-            "-i", str(cleaned_wav),
-            "-stream_loop", "-1", "-i", str(bgm_file),
-            "-filter_complex",
-            f"[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[voice];[1:a]volume={volume}/100[music];[voice][music]amix=inputs=2:duration=first[aout]",
-            "-map", "[aout]",
-            "-c:a", "aac",
-            "-b:a", "384k",
-            str(processed_audio)
-        ]
-    else:
-        print_info("Applying loudnorm normalization to audio...")
-        cmd_audio = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-threads", "0",
-            "-i", str(cleaned_wav),
-            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
-            "-c:a", "aac",
-            "-b:a", "384k",
-            str(processed_audio)
-        ]
-
-    print(f"Executing audio filter: {' '.join(cmd_audio)}")
-    try:
-        subprocess.run(cmd_audio, check=True)
-    except subprocess.CalledProcessError as e:
-        print_error(f"[ERROR] Step 4 audio processing failed with exit code {e.returncode}")
-        sys.exit(e.returncode)
-
-    # 2. Single Video Multiplex (stream copy video, stream copy processed audio)
-    print_info("🚀 Multiplexing trimmed video with processed audio (single mux pass)...")
-    cmd_mux = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-threads", "0",
-        "-i", str(step2_output),
-        "-i", str(processed_audio),
-        "-c:v", "copy",
-        "-c:a", "copy",
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-movflags", "+faststart",
-        str(muxed_video)
+    cmd_step4 = [
+        "bash",
+        str(add_bgm_sh),
+        str(step3_output),
+        bgm,
+        "--volume", str(volume)
     ]
-    print(f"Executing: {' '.join(cmd_mux)}")
+    print(f"Executing: {' '.join(cmd_step4)}")
     try:
-        subprocess.run(cmd_mux, check=True)
+        subprocess.run(cmd_step4, check=True)
     except subprocess.CalledProcessError as e:
-        print_error(f"[ERROR] Step 4 video multiplexing failed with exit code {e.returncode}")
+        print_error(f"[ERROR] Step 4 failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
-    if not is_valid_file(muxed_video):
-        print_error(f"[ERROR] Step 4 output file invalid or missing at '{muxed_video}'")
+    if not is_valid_file(step4_output):
+        print_error(f"[ERROR] Step 4 output file invalid or missing at '{step4_output}'")
         sys.exit(1)
 
-    print_success(f"[SUCCESS] Step 4 complete: Muxed video and audio into {muxed_video.name}")
-    return muxed_video, True
+    print_success(f"[SUCCESS] Step 4 complete: Added BGM -> {step4_output.name}")
+    return step4_output, True
 
 
 def run_step5_finalize(
     current_latest_video: Path,
     final_output: Path,
-    temp_dir: Path | None,
     force_run: bool
 ) -> bool:
-    """Step 5: Finalize Output File Name (Move file atomically to avoid copying)."""
+    """Step 5: Finalize Output File Name."""
     print_info("\n--- [Step 5/7] Finalizing Output File Name ---")
     if not force_run and is_valid_file(final_output) and (not is_valid_file(current_latest_video) or final_output.stat().st_mtime >= current_latest_video.stat().st_mtime):
         print_success(f"[SKIP] Step 5 complete: Final review video file already exists -> {final_output.name}")
@@ -504,17 +406,8 @@ def run_step5_finalize(
             except Exception as e:
                 print_error(f"Error removing existing file '{final_output}': {e}")
 
-        # Move atomically rather than copying
-        shutil.move(str(current_latest_video), str(final_output))
-        print_success(f"[SUCCESS] Step 5 complete: Moved final video file to -> {final_output.name}")
-
-        # Clean up temporary audio processing directory
-        if temp_dir and temp_dir.exists():
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception:
-                pass
-
+        shutil.copy2(str(current_latest_video), str(final_output))
+        print_success(f"[SUCCESS] Step 5 complete: Copied final video file to -> {final_output.name}")
         return True
 
 
@@ -621,127 +514,67 @@ def main():
     pipeline_start_time = time.perf_counter()
     force_run = args.force
 
-    # Phase 1: Parallel Audio Analysis (Groq Cloud Transcription + Silero VAD)
-    audio_analysis_executor = ThreadPoolExecutor(max_workers=2)
-    metadata_executor = ThreadPoolExecutor(max_workers=1)
-    metadata_future = None
-
-    print_info("\n🚀 Starting parallel audio analysis (Groq Cloud Transcription + Silero VAD)...")
+    # Step 1: Transcribe Video using Groq Cloud
     step1_start = time.perf_counter()
-
-    def run_step1_and_trigger_async_metadata():
-        f_run = run_step1_transcription(
-            webcam_path=main_video_path,
-            step1_srt_output=outputs["step1_srt"],
-            step1_1word_srt=outputs["step1_1word_srt"],
-            transcribe_cloud_py=scripts["transcribe_cloud_py"],
-            force_run=force_run
-        )
-        # Asynchronously trigger Step 7 as soon as transcription completes!
-        nonlocal metadata_future
-        metadata_future = metadata_executor.submit(
-            run_step7_create_metadata,
-            video_dir=video_dir,
-            metadata_output=outputs["metadata_output"],
-            title=args.title,
-            auto_create_metadata_py=scripts["auto_create_metadata_py"],
-            force_run=f_run
-        )
-        return f_run
-
-    future_step1 = audio_analysis_executor.submit(run_step1_and_trigger_async_metadata)
-    future_vad = audio_analysis_executor.submit(get_speech_intervals, main_video_path)
+    force_run = run_step1_transcription(
+        webcam_path=main_video_path,
+        step1_srt_output=outputs["step1_srt"],
+        step1_1word_srt=outputs["step1_1word_srt"],
+        transcribe_cloud_py=scripts["transcribe_cloud_py"],
+        force_run=force_run
+    )
+    step1_duration = time.perf_counter() - step1_start
 
     # Step 2: Video Processing (Silence Trimming for --raw, or Single-Pass Mask + Trim)
+    step2_start = time.perf_counter()
     if is_raw_mode:
-        speech_intervals = future_vad.result()
-        step2_start = time.perf_counter()
         force_run = run_step2_trim_silences_raw(
             raw_video_path=main_video_path,
             step2_output=outputs["step2_output"],
-            force_run=force_run,
-            speech_intervals=speech_intervals
+            force_run=force_run
         )
-        step2_duration = time.perf_counter() - step2_start
-
-        # Ensure Step 1 is done
-        force_run = future_step1.result()
-        step1_duration = time.perf_counter() - step1_start
     else:
-        if args.all:
-            speech_intervals = future_vad.result()
-            step2_start = time.perf_counter()
-            force_run = run_single_pass_mask_trim(
-                webcam_path=main_video_path,
-                screen_path=screen_path,
-                step1_1word_srt=outputs["step1_1word_srt"],
-                step2_output=outputs["step2_output"],
-                preset=args.preset,
-                width=args.width,
-                all_overlay=args.all,
-                video_dir=video_dir,
-                force_run=force_run,
-                skip_confirm=args.yes,
-                speech_intervals=speech_intervals
-            )
-            step2_duration = time.perf_counter() - step2_start
+        force_run = run_single_pass_mask_trim(
+            webcam_path=main_video_path,
+            screen_path=screen_path,
+            step1_1word_srt=outputs["step1_1word_srt"],
+            step2_output=outputs["step2_output"],
+            preset=args.preset,
+            width=args.width,
+            all_overlay=args.all,
+            video_dir=video_dir,
+            force_run=force_run,
+            skip_confirm=args.yes
+        )
+    step2_duration = time.perf_counter() - step2_start
 
-            force_run = future_step1.result()
-            step1_duration = time.perf_counter() - step1_start
-        else:
-            speech_intervals = future_vad.result()
-            force_run = future_step1.result()
-            step1_duration = time.perf_counter() - step1_start
-
-            step2_start = time.perf_counter()
-            force_run = run_single_pass_mask_trim(
-                webcam_path=main_video_path,
-                screen_path=screen_path,
-                step1_1word_srt=outputs["step1_1word_srt"],
-                step2_output=outputs["step2_output"],
-                preset=args.preset,
-                width=args.width,
-                all_overlay=args.all,
-                video_dir=video_dir,
-                force_run=force_run,
-                skip_confirm=args.yes,
-                speech_intervals=speech_intervals
-            )
-            step2_duration = time.perf_counter() - step2_start
-
-    audio_analysis_executor.shutdown(wait=False)
-
-    # Temporary directory for isolated audio processing
-    audio_temp_dir = video_dir / f"_tmp_{main_video_path.stem}_audio"
-
-    # Step 3: Process Audio (Audio-Only DeepFilterNet)
+    # Step 3: Process Audio
     step3_start = time.perf_counter()
-    cleaned_wav, force_run = run_step3_process_audio(
+    force_run = run_step3_process_audio(
         step2_output=outputs["step2_output"],
-        noise_reduction_sh=scripts["noise_reduction_sh"],
-        temp_dir=audio_temp_dir,
+        step3_output=outputs["step3_output"],
+        process_audio_sh=scripts["process_audio_sh"],
         force_run=force_run
     )
     step3_duration = time.perf_counter() - step3_start
 
-    # Step 4: Add Background Music + Loudnorm and Single Video Mux
+    # Step 4: Add Background Music
     step4_start = time.perf_counter()
-    current_latest_video, force_run = run_step4_add_bgm_and_mux(
-        step2_output=outputs["step2_output"],
-        cleaned_wav=cleaned_wav,
-        temp_dir=audio_temp_dir,
+    current_latest_video, force_run = run_step4_add_bgm(
+        step3_output=outputs["step3_output"],
+        step4_output=outputs["step4_output"],
         bgm=args.bgm,
         volume=args.volume,
+        add_bgm_sh=scripts["add_bgm_sh"],
         force_run=force_run
     )
     step4_duration = time.perf_counter() - step4_start
 
-    # Step 5: Finalize Output File Name (Atomic move, no file copies)
+    # Step 5: Finalize Output File Name
     step5_start = time.perf_counter()
     force_run = run_step5_finalize(
         current_latest_video=current_latest_video,
         final_output=outputs["final_output"],
-        temp_dir=audio_temp_dir,
         force_run=force_run
     )
     step5_duration = time.perf_counter() - step5_start
@@ -757,21 +590,16 @@ def main():
     )
     step6_duration = time.perf_counter() - step6_start
 
-    # Step 7: Await Asynchronous Metadata Generation
+    # Step 7: Generate Project Metadata
     step7_start = time.perf_counter()
-    if metadata_future is not None:
-        print_info("\n--- [Step 7/7] Awaiting Project Metadata (Generated in background) ---")
-        metadata_future.result()
-    else:
-        run_step7_create_metadata(
-            video_dir=video_dir,
-            metadata_output=outputs["metadata_output"],
-            title=args.title,
-            auto_create_metadata_py=scripts["auto_create_metadata_py"],
-            force_run=force_run
-        )
+    run_step7_create_metadata(
+        video_dir=video_dir,
+        metadata_output=outputs["metadata_output"],
+        title=args.title,
+        auto_create_metadata_py=scripts["auto_create_metadata_py"],
+        force_run=force_run
+    )
     step7_duration = time.perf_counter() - step7_start
-    metadata_executor.shutdown(wait=False)
 
     total_duration = time.perf_counter() - pipeline_start_time
 
@@ -787,7 +615,7 @@ def main():
     print(f"  Step 1 (Transcription):        {format_duration(step1_duration)}")
     print(f"  {step2_label:<32}{format_duration(step2_duration)}")
     print(f"  Step 3 (Audio Processing):      {format_duration(step3_duration)}")
-    print(f"  Step 4 (BGM & Single Mux):      {format_duration(step4_duration)}")
+    print(f"  Step 4 (Background Music):      {format_duration(step4_duration)}")
     print(f"  Step 5 (Finalize File):         {format_duration(step5_duration)}")
     print(f"  Step 6 (Audio & Video Review):  {format_duration(step6_duration)}")
     print(f"  Step 7 (Auto Create Metadata):  {format_duration(step7_duration)}")
