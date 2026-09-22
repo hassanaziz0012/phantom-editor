@@ -22,7 +22,7 @@ if str(video_editing_dir) not in sys.path:
 from utils import (
     COLOR_GREEN, COLOR_RED, COLOR_YELLOW, COLOR_BLUE, COLOR_RESET, COLOR_BOLD,
     print_info, print_success, print_warning, print_error,
-    get_video_info
+    get_video_info, get_intel_hardware_encoder_args
 )
 from auto_attach_webcam_mask import (
     parse_srt, detect_overlay_ranges, get_timeline_segments,
@@ -41,7 +41,8 @@ def run_single_pass_mask_trim(
     all_overlay: bool = False,
     video_dir: Path | None = None,
     force_run: bool = False,
-    skip_confirm: bool = False
+    skip_confirm: bool = False,
+    speech_intervals: list | None = None
 ) -> bool:
     """Step 2: Single-Pass Video Processing (Masking + Silence Trimming)."""
     if video_dir is None:
@@ -136,7 +137,8 @@ def run_single_pass_mask_trim(
 
     segments = get_timeline_segments(overlay_ranges, webcam_duration)
 
-    speech_intervals = get_speech_intervals(webcam_path)
+    if speech_intervals is None:
+        speech_intervals = get_speech_intervals(webcam_path)
     select_expr, shift_expr, total_speech_duration = get_silence_trim_expressions(speech_intervals)
 
     overlay_w = width if width is not None else (400 if preset == "portrait" else 550)
@@ -158,8 +160,12 @@ def run_single_pass_mask_trim(
         output_label="composite_v"
     )
 
+    hw_info = get_intel_hardware_encoder_args()
+    print_info(f"Using video encoder: {hw_info['desc']}")
+    v_suffix = hw_info["filter_suffix"]
+
     if select_expr and shift_expr:
-        v_trim = f"[composite_v]select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30[out_v]"
+        v_trim = f"[composite_v]select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30{v_suffix}[out_v]"
         if audio_src:
             a_trim = f"[{audio_src}]aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB',aresample=async=1:first_pts=0[out_a]"
             filter_complex = f"{mask_filter};{v_trim};{a_trim}"
@@ -169,17 +175,20 @@ def run_single_pass_mask_trim(
             audio_map = []
         final_duration = total_speech_duration
     else:
-        filter_complex = f"{mask_filter};[composite_v]fps=30[out_v]"
+        filter_complex = f"{mask_filter};[composite_v]fps=30{v_suffix}[out_v]"
         if audio_src:
             audio_map = ["-map", audio_src, "-c:a", "aac"]
         else:
             audio_map = []
         final_duration = webcam_duration
 
+    hwaccel_args = hw_info.get("hwaccel_args", [])
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
         "-threads", "0",
+    ] + hw_info["hw_args"] + hwaccel_args + [
         "-i", str(screen_path),
+    ] + hwaccel_args + [
         "-i", str(webcam_path),
         "-loop", "1", "-i", str(mask_path),
         "-filter_complex", filter_complex,
@@ -187,10 +196,7 @@ def run_single_pass_mask_trim(
     ] + audio_map + [
         "-fps_mode", "cfr",
         "-t", f"{final_duration:.3f}",
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-preset", "veryfast",
-        "-crf", "20",
+    ] + hw_info["vcodec"] + [
         "-movflags", "+faststart",
         str(step2_output)
     ]
