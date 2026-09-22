@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 class Colors:
     HEADER = '\033[95m'
@@ -67,3 +68,23 @@ def format_seconds_to_hhmmss(seconds: float) -> str:
         return f"{hours:02d}:{minutes:02d}:{secs:02d}"
     else:
         return f"{minutes:02d}:{secs:02d}"
+
+
+def find_intel_render_node() -> str | None:
+    """Find the DRI render node corresponding to an Intel GPU (vendor ID 0x8086)."""
+    drm_path = Path("/sys/class/drm")
+    if drm_path.is_dir():
+        for p in sorted(drm_path.glob("renderD*/device/vendor")):
+            try:
+                if p.read_text().strip().lower() == "0x8086":
+                    node_name = p.parent.parent.name
+                    node_path = Path("/dev/dri") / node_name
+                    if node_path.exists():
+                        return str(node_path)
+            except Exception:
+                continue
+
+    for default_node in ["/dev/dri/renderD129", "/dev/dri/renderD128"]:
+        if Path(default_node).exists():
+            return default_node
+    return None
