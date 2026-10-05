@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 import subprocess
+import tempfile
 import gc
 import numpy as np
 
@@ -117,55 +118,44 @@ def cut_video_with_ffmpeg(input_video, output_video, intervals):
     if not intervals:
         print("No active speech intervals found to keep.")
         return
-        
 
-    select_expr, shift_expr, total_duration = get_silence_trim_expressions(intervals)
+    abs_input = os.path.abspath(input_video)
+    total_duration = sum(end - start for start, end in intervals)
 
-    v_script = f"select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30"
-    a_script = f"aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB',aresample=async=1:first_pts=0"
+    # Use FFmpeg's concat demuxer to process segments in lockstep.
+    # This prevents the multi-stream scheduler desynchronization and premature video EOF
+    # caused by single-pass select/setpts expressions on long VFR videos.
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+        concat_file = f.name
+        for start, end in intervals:
+            f.write(f"file '{abs_input}'\n")
+            f.write(f"inpoint {start:.3f}\n")
+            f.write(f"outpoint {end:.3f}\n")
 
-    cmd = [
-        'ffmpeg', '-hide_banner', '-loglevel', 'error', '-stats', '-y',
-        '-threads', '0',
-        '-i', input_video,
-        '-vf', v_script,
-        '-af', a_script,
-        '-fps_mode', 'cfr',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-crf', '20',
-        '-c:a', 'aac',
-        '-b:a', '384k',
-        '-t', f"{total_duration:.3f}",
-        output_video
-    ]
+    try:
+        cmd = [
+            'ffmpeg', '-hide_banner', '-loglevel', 'error', '-stats', '-y',
+            '-f', 'concat', '-safe', '0',
+            '-i', concat_file,
+            '-vf', 'fps=30,setpts=N/30/TB',
+            '-af', 'aresample=async=1:first_pts=0,asetpts=N/SR/TB',
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-crf', '20',
+            '-c:a', 'aac',
+            '-b:a', '384k',
+            '-t', f"{total_duration:.3f}",
+            output_video
+        ]
 
-    print(f"Executing single-pass jump-cuts into {output_video}...")
-    subprocess.run(cmd, check=True)
-
-def get_speech_intervals(video_path, padding=0.15, min_silence=0.4, threshold=0.5):
-    """
-    Decodes audio from video_path and uses Silero VAD to detect active speech intervals.
-    Returns: list of (start_sec, end_sec) tuples.
-    """
-    from faster_whisper.vad import get_speech_timestamps, VadOptions
-
-    audio = load_audio_with_ffmpeg(video_path, sampling_rate=16000)
-    vad_options = VadOptions(
-        threshold=threshold,
-        min_silence_duration_ms=int(min_silence * 1000),
-        speech_pad_ms=int(padding * 1000)
-    )
-
-    speech_timestamps = get_speech_timestamps(audio, vad_options, sampling_rate=16000)
-
-    intervals = []
-    for item in speech_timestamps:
-        start_sec = item['start'] / 16000.0
-        end_sec = item['end'] / 16000.0
-        intervals.append((start_sec, end_sec))
-
-    return intervals
+        print(f"Executing concat jump-cuts into {output_video}...")
+        subprocess.run(cmd, check=True)
+    finally:
+        if os.path.exists(concat_file):
+            try:
+                os.remove(concat_file)
+            except OSError:
+                pass
 
 def process_video(video_path, output_path, padding, min_silence, threshold, is_recursive=False):
     print(f"\nDecoding audio from {video_path}...")
