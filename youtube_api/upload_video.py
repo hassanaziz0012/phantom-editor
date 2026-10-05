@@ -295,6 +295,7 @@ def get_share_url(video_id: str) -> str:
 def main():
     parser = argparse.ArgumentParser(description="Upload a video to YouTube.")
     parser.add_argument("video_path", help="Path to the .mp4 file to upload.")
+    parser.add_argument("--skip-socials", action="store_true", help="Skip sharing the video on social platforms.")
     args = parser.parse_args()
 
     video_path = Path(args.video_path).resolve()
@@ -358,31 +359,32 @@ def main():
     except Exception as e:
         print(f"⚠️  Failed to save metadata to metadata.json: {e}")
 
-    # Post tweet
-    tweet_template = metadata.get(
-        "tweetTemplate",
-        "🎬 New video just dropped! {url}"
-    )
-    tweet_content = tweet_template.format(
-        url=share_url,
-        title=metadata.get("title", ""),
-    )
-    print(f"\n🐦 Posting tweet:\n   {tweet_content}")
-    try:
-        subprocess.run(["phantom", "tweet", tweet_content], check=True)
-        print("✅ Tweet posted!")
-    except Exception as e:
-        print(f"⚠️  Tweet step failed or browser closed: {e}")
-        print("⏭  Moving on gracefully...")
+    if not args.skip_socials:
+        # Post tweet
+        tweet_template = metadata.get(
+            "tweetTemplate",
+            "🎬 New video just dropped! {url}"
+        )
+        tweet_content = tweet_template.format(
+            url=share_url,
+            title=metadata.get("title", ""),
+        )
+        print(f"\n🐦 Posting tweet:\n   {tweet_content}")
+        try:
+            subprocess.run(["phantom", "tweet", tweet_content], check=True)
+            print("✅ Tweet posted!")
+        except Exception as e:
+            print(f"⚠️  Tweet step failed or browser closed: {e}")
+            print("⏭  Moving on gracefully...")
 
-    # Post Substack note
-    print(f"\n📝 Posting Substack note:\n   {tweet_content}")
-    try:
-        subprocess.run(["phantom", "substack", "note", tweet_content], check=True)
-        print("✅ Substack note posted!")
-    except Exception as e:
-        print(f"⚠️  Substack note step failed or browser closed: {e}")
-        print("⏭  Moving on gracefully...")
+        # Post Substack note
+        print(f"\n📝 Posting Substack note:\n   {tweet_content}")
+        try:
+            subprocess.run(["phantom", "substack", "note", tweet_content], check=True)
+            print("✅ Substack note posted!")
+        except Exception as e:
+            print(f"⚠️  Substack note step failed or browser closed: {e}")
+            print("⏭  Moving on gracefully...")
 
     # Send email broadcast
     title = metadata.get("title", video_path.stem)
