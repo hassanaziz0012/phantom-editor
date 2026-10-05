@@ -59,7 +59,14 @@ def main():
 
     # Upload video using helper from upload_video.py
     try:
-        video_id = upload_video.upload_video(youtube, video_path, metadata, require_timestamps=False)
+        video_id = upload_video.upload_video(
+            youtube,
+            video_path,
+            metadata,
+            require_description=False,
+            require_timestamps=False,
+            require_recommendations=False,
+        )
     except Exception as e:
         print(f"Error: YouTube upload failed: {e}", file=sys.stderr)
         sys.exit(1)
