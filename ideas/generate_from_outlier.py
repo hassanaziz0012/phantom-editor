@@ -2,8 +2,8 @@
 """
 YouTube Outlier Video Idea Generator
 ====================================
-Accepts a YouTube video URL, locates the video in the PostgreSQL outliers database,
-summarizes the video via OpenRouter and Groq Cloud if not already summarized,
+Accepts a YouTube video URL, fetches video metadata and transcript,
+summarizes the video via OpenRouter and Groq Cloud,
 gathers the creator's recent channel video titles, constructs a contextual prompt,
 queries Claude via BrowserLLM (headful mode), and exports the resulting content ideas
 to the Google Sheets Content Calendar.
@@ -98,50 +98,7 @@ def extract_video_id(input_str: str) -> str:
     raise ValueError(f"Could not extract a valid YouTube video ID from: '{input_str}'")
 
 
-# ── Database Lookup ────────────────────────────────────────────────────────────
-
-def find_video_in_db(video_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Queries the PostgreSQL database for a video record and its channel information.
-    """
-    try:
-        from ideas.outliers_db.connection import get_db_connection
-
-        sql = """
-        SELECT
-            v.video_id,
-            v.channel_id,
-            v.title,
-            v.description,
-            v.url,
-            v.summary,
-            v.takeaways,
-            v.view_count,
-            v.like_count,
-            v.comment_count,
-            v.score,
-            v.view_score,
-            v.is_outlier,
-            c.title AS channel_title,
-            c.custom_url AS channel_custom_url,
-            c.avg_views AS channel_avg_views
-        FROM videos v
-        LEFT JOIN channels c ON v.channel_id = c.channel_id
-        WHERE v.video_id = %s;
-        """
-        with get_db_connection(auto_start=True) as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, (video_id,))
-                row = cur.fetchone()
-                if row:
-                    return dict(row)
-    except Exception as e:
-        logger.warning("Could not query PostgreSQL database: %s", e)
-
-    return None
-
-
-# ── Video Metadata Fetching (Fallback) ─────────────────────────────────────────
+# ── Video Metadata Fetching ───────────────────────────────────────────────────
 
 def fetch_video_metadata(video_id: str, api_key: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -197,35 +154,20 @@ def fetch_video_metadata(video_id: str, api_key: Optional[str] = None) -> Dict[s
 
 def get_or_create_summary(
     video_id: str,
-    db_record: Optional[Dict[str, Any]] = None,
-    force_fresh: bool = False,
     model: Optional[str] = None,
 ) -> Tuple[str, List[str]]:
     """
-    Retrieves summary and takeaways from the database if present, or executes
-    ideas/summarize_video.py to download, transcribe, summarize, and save to DB.
+    Executes ideas/summarize_video.py to download, transcribe, and summarize
+    the video via OpenRouter and Groq Whisper.
 
     Returns:
         (summary_text, takeaways_list)
     """
-    # Check if existing summary in DB is valid
-    if not force_fresh and db_record:
-        summary = db_record.get("summary")
-        takeaways = db_record.get("takeaways")
-        if summary and summary.strip():
-            takeaways_list: List[str] = []
-            if isinstance(takeaways, list):
-                takeaways_list = [str(t).strip() for t in takeaways if str(t).strip()]
-            elif isinstance(takeaways, str) and takeaways.strip():
-                takeaways_list = [t.strip() for t in takeaways.split("\n") if t.strip()]
-            return summary.strip(), takeaways_list
-
-    # Execute summarization via ideas/summarize_video.py
     from ideas.summarize_video import DEFAULT_MODEL, summarize_video
 
     summary_model = model or DEFAULT_MODEL
     logger.info("Summarizing video %s via OpenRouter (%s)...", video_id, summary_model)
-    summary_obj, _ = summarize_video(video_id, model=summary_model, save_to_db=True)
+    summary_obj, _ = summarize_video(video_id, model=summary_model)
 
     return summary_obj.summary, summary_obj.takeaways
 
@@ -418,7 +360,7 @@ def print_terminal_results(
         status_badges.append(f"{c.CYAN}Views: {view_count:,}{c.RESET}")
 
     if status_badges:
-        print(f"  {c.BOLD}DB Metrics:{c.RESET}     {' | '.join(status_badges)}")
+        print(f"  {c.BOLD}Metrics:{c.RESET}        {' | '.join(status_badges)}")
 
     if summary_preview:
         short_summary = (summary_preview[:200] + "...") if len(summary_preview) > 200 else summary_preview
@@ -459,7 +401,7 @@ def print_terminal_results(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate content ideas from an outlier YouTube video using BrowserLLM, Claude, and PostgreSQL."
+        description="Generate content ideas from an outlier YouTube video using BrowserLLM and Claude."
     )
     parser.add_argument(
         "video",
@@ -475,7 +417,7 @@ def main():
         "--fresh-summary", "--resummarize",
         action="store_true",
         dest="fresh_summary",
-        help="Force a fresh video summary from OpenRouter and Groq Whisper even if already stored in database.",
+        help="Force a fresh video summary (retained for backward compatibility).",
     )
     parser.add_argument(
         "--model", "-m",
@@ -533,53 +475,29 @@ def main():
 
     video_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    # 2. Database Lookup
+    # 2. Fetch Video Metadata
     if not args.json:
-        print(f"{Colors.CYAN}Looking up video {Colors.BOLD}{video_id}{Colors.RESET}{Colors.CYAN} in outliers database...{Colors.RESET}")
+        print(f"{Colors.CYAN}Fetching metadata for video {Colors.BOLD}{video_id}{Colors.RESET}...{Colors.RESET}")
 
-    db_record = find_video_in_db(video_id)
-
-    title = ""
-    channel_name = ""
-    description = ""
-    view_count = None
+    meta = fetch_video_metadata(video_id)
+    title = meta.get("title", "")
+    channel_name = meta.get("channel_title", "")
+    description = meta.get("description", "")
+    view_count = meta.get("view_count")
     outlier_score = None
     is_outlier = False
 
-    if db_record:
-        title = db_record.get("title") or ""
-        channel_name = db_record.get("channel_title") or ""
-        description = db_record.get("description") or ""
-        view_count = db_record.get("view_count")
-        outlier_score = db_record.get("score")
-        is_outlier = bool(db_record.get("is_outlier"))
-        if not args.json:
-            print(f"  {Colors.GREEN}✓ Found video record in database!{Colors.RESET}")
-    else:
-        if not args.json:
-            print(f"  {Colors.YELLOW}Video not currently in DB. Will summarize and register it.{Colors.RESET}")
-
-    # Fallback metadata fetching if title or channel_name are missing
-    if not title or not channel_name:
-        meta = fetch_video_metadata(video_id)
-        title = title or meta.get("title", "")
-        channel_name = channel_name or meta.get("channel_title", "")
-        description = description or meta.get("description", "")
-        if view_count is None:
-            view_count = meta.get("view_count")
-
-    # 3. Summarize the Video (Step 1)
     if not args.json:
-        if db_record and db_record.get("summary") and not args.fresh_summary:
-            print(f"{Colors.CYAN}Using existing video summary and takeaways from database.{Colors.RESET}")
-        else:
-            print(f"{Colors.CYAN}Summarizing video audio and generating takeaways via OpenRouter...{Colors.RESET}")
+        print(f"  {Colors.GREEN}✓ Title: {title}{Colors.RESET}")
+        print(f"  {Colors.GREEN}✓ Channel: {channel_name}{Colors.RESET}")
+
+    # 3. Summarize the Video
+    if not args.json:
+        print(f"{Colors.CYAN}Summarizing video audio and generating takeaways via OpenRouter...{Colors.RESET}")
 
     try:
         summary, takeaways = get_or_create_summary(
             video_id=video_id,
-            db_record=db_record,
-            force_fresh=args.fresh_summary,
             model=args.model,
         )
     except Exception as e:
