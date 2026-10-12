@@ -115,7 +115,7 @@ def get_pipeline_outputs(webcam_path: Path, video_dir: Path, bgm: str | None) ->
         "step3_output": video_dir / "after-audio-processing.mp4",
         "step4_needed": step4_needed,
         "step4_output": video_dir / "after-audio-processing-bgm.mp4",
-        "final_output": video_dir / f"to-review{ext}",
+        "final_output": video_dir / f"final{ext}",
         "metadata_output": video_dir / "metadata.json",
     }
 
@@ -235,7 +235,7 @@ def print_pipeline_overview(
     print(f" 2. {step2_name:<56} {s2_str}")
     print(f" 3. Process audio via process_audio.sh                       {s3_str}")
     print(f" 4. Add background music (add_bgm_to_video.sh)               {s4_str}")
-    print(f" 5. Rename final video file to 'to-review{ext}'               {s5_str}")
+    print(f" 5. Rename final video file to 'final{ext}'               {s5_str}")
     print(f" 6. Review final video (audio_review.py & video_inspector.py) {s6_str}")
     print(f" 7. Auto-generate project metadata (metadata.json)           {s7_str}")
     print_info("============================================================")
