@@ -7,9 +7,7 @@ If captions (.srt) are found, automatically generates:
 1. Human-like 2-3 sentence video description
 2. Promotional tweet template
 3. Video recommendations from channel archive
-
-Note: Video chapters & timestamps are generated separately via `metadata/generate_timestamps.py`
-after video review cuts are finalized.
+4. Video chapters & timestamps
 """
 
 from __future__ import annotations
@@ -17,8 +15,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 # Ensure repository root is in sys.path
 repo_root = Path(__file__).resolve().parent.parent
@@ -30,11 +29,38 @@ try:
     from metadata.auto_gen_desc import generate_description_for_project
     from metadata.auto_gen_tweet import generate_tweet_for_project
     from metadata.recommendations.recommend import recommend_videos_for_project
+    from metadata.generate_timestamps import generate_timestamps_for_project
 except ImportError:
     import utils  # noqa: E402
     from auto_gen_desc import generate_description_for_project  # noqa: E402
     from auto_gen_tweet import generate_tweet_for_project  # noqa: E402
     from recommendations.recommend import recommend_videos_for_project  # noqa: E402
+    from generate_timestamps import generate_timestamps_for_project  # noqa: E402
+
+
+T = TypeVar("T")
+
+
+def retry_with_backoff(
+    func: Callable[[], T],
+    max_retries: int = 3,
+    base_delay: float = 2.0,
+    step_name: str = "operation",
+) -> T | None:
+    """Execute a function with retry logic and exponential backoff."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            return func()
+        except Exception as e:
+            if attempt < max_retries:
+                delay = base_delay * (2 ** (attempt - 1))
+                print(f"⚠️  {step_name} failed (attempt {attempt}/{max_retries}): {e}")
+                print(f"   Retrying in {delay:.1f}s...")
+                time.sleep(delay)
+            else:
+                print(f"❌ {step_name} failed after {max_retries} attempts: {e}")
+                return None
+    return None
 
 
 def auto_create_metadata(
@@ -78,36 +104,65 @@ def auto_create_metadata(
             print(f"\n📂 Found captions file: {captions_path.name}")
 
             # 1. Generate Description
-            try:
-                print("\n[1/3] Generating Description...")
-                desc = generate_description_for_project(captions_path, metadata_path=metadata_path)
+            print("\n[1/4] Generating Description...")
+            desc = retry_with_backoff(
+                lambda: generate_description_for_project(captions_path, metadata_path=metadata_path),
+                max_retries=3,
+                base_delay=2.0,
+                step_name="Description generation",
+            )
+            if desc is not None:
                 metadata["description"] = desc
                 print("✓ Generated video description.")
-            except Exception as e:
-                print(f"⚠️  Failed to generate description: {e}")
+            else:
+                print("⚠️  Skipping description generation after max retries.")
 
             # 2. Generate Tweet Template
-            try:
-                print("\n[2/3] Generating Promotional Tweet Template...")
-                tweet = generate_tweet_for_project(captions_path, metadata_path=metadata_path)
+            print("\n[2/4] Generating Promotional Tweet Template...")
+            tweet = retry_with_backoff(
+                lambda: generate_tweet_for_project(captions_path, metadata_path=metadata_path),
+                max_retries=3,
+                base_delay=2.0,
+                step_name="Tweet template generation",
+            )
+            if tweet is not None:
                 metadata["tweetTemplate"] = tweet
                 print("✓ Generated promotional tweet template.")
-            except Exception as e:
-                print(f"⚠️  Failed to generate tweet template: {e}")
+            else:
+                print("⚠️  Skipping tweet template generation after max retries.")
 
             # 3. Generate Recommendations
             if not skip_recommendations:
-                try:
-                    print("\n[3/3] Generating Video Recommendations...")
-                    recs = recommend_videos_for_project(target=project_dir, metadata_path=metadata_path)
+                print("\n[3/4] Generating Video Recommendations...")
+                recs = retry_with_backoff(
+                    lambda: recommend_videos_for_project(target=project_dir, metadata_path=metadata_path),
+                    max_retries=3,
+                    base_delay=2.0,
+                    step_name="Recommendations generation",
+                )
+                if recs is not None:
                     metadata["recommendations"] = recs
                     print(f"✓ Generated {len(recs)} recommendations.")
-                except Exception as e:
-                    print(f"⚠️  Failed to generate recommendations: {e}")
+                else:
+                    print("⚠️  Skipping recommendations generation after max retries.")
+
+            # 4. Generate Timestamps
+            print("\n[4/4] Generating Video Timestamps...")
+            timestamps = retry_with_backoff(
+                lambda: generate_timestamps_for_project(target=project_dir, metadata_path=metadata_path),
+                max_retries=3,
+                base_delay=2.0,
+                step_name="Timestamps generation",
+            )
+            if timestamps is not None:
+                metadata["timestamps"] = timestamps
+                print(f"✓ Generated {len(timestamps)} timestamps.")
+            else:
+                print("⚠️  Skipping timestamps generation after max retries.")
 
         else:
             print("\n⚠️  No phrase-level .srt captions file found in project folder.")
-            print("   Skipping AI generation of description, tweet template, and recommendations.")
+            print("   Skipping AI generation of description, tweet template, recommendations, and timestamps.")
             print("   Run `phantom edit transcribe <video>` to generate captions first if needed.")
 
     # Save to disk
@@ -155,7 +210,7 @@ def main():
         "--skip-ai",
         action="store_true",
         default=False,
-        help="Skip AI generation of description, tweet template, and recommendations.",
+        help="Skip AI generation of description, tweet template, recommendations, and timestamps.",
     )
     parser.add_argument(
         "--skip-recommendations",
