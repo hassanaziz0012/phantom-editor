@@ -24,7 +24,8 @@ if str(pipeline_dir) not in sys.path:
     sys.path.insert(0, str(pipeline_dir))
 
 from utils import (
-    print_info, print_success, print_warning, print_error, get_video_info
+    print_info, print_success, print_warning, print_error, get_video_info,
+    run_ffmpeg_with_progress
 )
 from pipeline_status import (
     is_4k_video, is_valid_file, format_duration,
@@ -305,13 +306,7 @@ def run_step2_trim_silences_raw(
             str(step2_output)
         ]
 
-    print_info("🚀 Executing silence trimming...")
-    print(f"Executing: {' '.join(cmd)}")
-    try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print_error(f"[ERROR] Silence trimming failed with exit code {e.returncode}")
-        sys.exit(e.returncode)
+    run_ffmpeg_with_progress(cmd, total_speech_duration, "Silence Trimming")
 
     if not is_valid_file(step2_output):
         print_error(f"[ERROR] Step 2 output file invalid or missing at '{step2_output}'")
