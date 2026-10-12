@@ -39,7 +39,9 @@ def extract_json_block(text: str) -> str:
 
 def parse_json_response(response_text: str) -> Any:
     """Extracts and parses JSON object or array from LLM response."""
-    return json.loads(extract_json_block(response_text))
+    json_text = extract_json_block(response_text)
+    json_text = json_text.replace('\u201c', '"').replace('\u201d', '"').replace('\u2018', "'").replace('\u2019', "'")
+    return json.loads(json_text)
 
 
 def parse_claude_json(response_text: str) -> Any:
