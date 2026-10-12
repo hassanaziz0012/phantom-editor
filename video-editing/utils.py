@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import json
 import uuid
+import time
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -370,3 +371,106 @@ def get_google_doc_shorts(doc_id: str, credentials_file: Path, token_file: Path)
         shorts.append(current_short)
         
     return shorts
+
+
+def run_ffmpeg_with_progress(cmd: list[str], total_duration: float, description: str = "Encoding") -> None:
+    """
+    Run ffmpeg with a progress bar.
+    
+    Args:
+        cmd: ffmpeg command list (without -progress flag)
+        total_duration: Total duration of the output in seconds
+        description: Description to show in progress bar
+    """
+    # Insert -progress pipe:1 before the output file
+    output_idx = -1
+    for i, arg in enumerate(cmd):
+        if arg == "-y":
+            output_idx = i + 1
+            break
+    if output_idx == -1:
+        output_idx = len(cmd) - 1
+    
+    progress_cmd = cmd[:output_idx] + ["-progress", "pipe:1", "-nostats"] + cmd[output_idx:]
+    
+    print_info(f"\n🚀 {description}...")
+    
+    start_time = time.time()
+    last_update = 0
+    
+    try:
+        process = subprocess.Popen(
+            progress_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
+        )
+        
+        # Progress bar constants
+        BAR_WIDTH = 50
+        
+        while True:
+            line = process.stdout.readline()
+            if not line:
+                break
+            
+            line = line.strip()
+            if line.startswith("out_time_ms="):
+                try:
+                    out_time_ms = int(line.split("=")[1])
+                    current_time = out_time_ms / 1_000_000.0
+                    if total_duration > 0:
+                        progress = min(current_time / total_duration, 1.0)
+                    else:
+                        progress = 0.0
+                    
+                    # Throttle updates to ~10 FPS
+                    now = time.time()
+                    if now - last_update >= 0.1 or progress >= 1.0:
+                        elapsed = now - start_time
+                        filled = int(BAR_WIDTH * progress)
+                        bar = "█" * filled + "░" * (BAR_WIDTH - filled)
+                        pct = progress * 100
+                        speed = ""
+                        if elapsed > 0 and current_time > 0:
+                            speed = f" {current_time/elapsed:.2f}x"
+                        eta = ""
+                        if progress > 0 and progress < 1.0:
+                            eta_sec = (elapsed / progress) - elapsed
+                            eta = f" ETA: {eta_sec:.0f}s"
+                        
+                        sys.stdout.write(f"\r  {description}: |{bar}| {pct:5.1f}%{speed}{eta}")
+                        sys.stdout.flush()
+                        last_update = now
+                        
+                except (ValueError, IndexError):
+                    pass
+            elif line == "progress=end":
+                # Final update
+                elapsed = time.time() - start_time
+                filled = BAR_WIDTH
+                bar = "█" * filled
+                sys.stdout.write(f"\r  {description}: |{bar}| 100.0%")
+                sys.stdout.flush()
+        
+        # Wait for process to complete
+        stdout, stderr = process.communicate()
+        
+        if process.returncode != 0:
+            print()  # New line after progress bar
+            print_error(f"[ERROR] ffmpeg failed with exit code {process.returncode}")
+            if stderr:
+                print_error(stderr.strip())
+            sys.exit(process.returncode)
+        
+        print()  # New line after progress bar
+        
+    except FileNotFoundError:
+        print_error("Error: ffmpeg not found in system PATH")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print()
+        print_error("Processing cancelled by user.")
+        process.terminate()
+        sys.exit(1)
