@@ -22,7 +22,7 @@ if str(video_editing_dir) not in sys.path:
 from utils import (
     COLOR_GREEN, COLOR_RED, COLOR_YELLOW, COLOR_BLUE, COLOR_RESET, COLOR_BOLD,
     print_info, print_success, print_warning, print_error,
-    get_video_info
+    get_video_info, run_ffmpeg_with_progress
 )
 from auto_attach_webcam_mask import (
     parse_srt, detect_overlay_ranges, get_timeline_segments,
@@ -195,19 +195,14 @@ def run_single_pass_mask_trim(
         str(step2_output)
     ]
 
-    print_info("\n🚀 Executing single-pass video encoding (Mask + Silence Trim)...")
-    print(f"Executing: {' '.join(cmd)}")
-    try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print_error(f"[ERROR] Single-pass video encoding failed with exit code {e.returncode}")
-        sys.exit(e.returncode)
-    finally:
-        if temp_dir.exists():
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception:
-                pass
+    run_ffmpeg_with_progress(cmd, final_duration, "Single-Pass Encoding (Mask + Silence Trim)")
+
+    # Cleanup temp directory
+    if temp_dir.exists():
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception:
+            pass
 
     if not step2_output.is_file() or step2_output.stat().st_size == 0:
         print_error(f"[ERROR] Single-pass output file invalid or missing at '{step2_output}'")
