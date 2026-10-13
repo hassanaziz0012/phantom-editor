@@ -138,7 +138,7 @@ def resolve_project_paths(target: str | Path | None = None) -> tuple[Path, Path,
             pass
 
     if not title:
-        title = project_dir.name.replace("-", " ").replace("_", " ").title()
+        title = project_dir.name
 
     return project_dir, metadata_path, captions_path, title
 
