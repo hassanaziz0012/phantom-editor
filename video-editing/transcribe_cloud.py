@@ -91,10 +91,12 @@ def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
     print(f"Audio size ({file_size / (1024*1024):.2f} MB) exceeds the Groq limit of 25 MB.")
     print("Splitting audio into chunks using FFmpeg...")
 
-    audio_info = get_video_info(base_audio)
-    total_duration = audio_info.duration
+    # Use original video duration as authoritative source; FLAC duration from ffprobe can be unreliable
+    video_info = get_video_info(input_path)
+    total_duration = video_info.duration
     if total_duration <= 0:
-        total_duration = get_video_info(input_path).duration
+        audio_info = get_video_info(base_audio)
+        total_duration = audio_info.duration
 
     audio_chunks = []
     chunk_index = 0
@@ -121,7 +123,14 @@ def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
                 "-c:a", "flac",
                 chunk_file
             ]
-            subprocess.run(split_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                subprocess.run(split_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except subprocess.CalledProcessError as e:
+                # If seek fails (e.g., start_time beyond actual audio duration), stop chunking
+                if e.returncode == 234 or "Invalid data found" in str(e):
+                    print(f"Warning: ffmpeg seek failed at {start_time:.1f}s (exit code {e.returncode}). Stopping chunk split.")
+                    return audio_chunks
+                raise
 
             c_size = os.path.getsize(chunk_file) if os.path.exists(chunk_file) else 0
             if c_size <= SAFE_CHUNK_BYTES or chunk_duration <= 10.0:
