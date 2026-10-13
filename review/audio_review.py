@@ -20,6 +20,7 @@ import tempfile
 
 import numpy as np
 import librosa
+import torch
 from tqdm import tqdm
 from panns_inference import AudioTagging, labels
 
@@ -112,12 +113,13 @@ def run_batched_inference(model, windows: np.ndarray, batch_size: int):
     """
     all_probs = []
     n = windows.shape[0]
-    with tqdm(total=n, desc="Inference progress", unit="windows", file=sys.stderr) as pbar:
-        for i in range(0, n, batch_size):
-            batch = windows[i:i + batch_size]
-            clipwise_output, _ = model.inference(batch)
-            all_probs.append(clipwise_output)
-            pbar.update(len(batch))
+    with torch.inference_mode():
+        with tqdm(total=n, desc="Inference progress", unit="windows", file=sys.stderr) as pbar:
+            for i in range(0, n, batch_size):
+                batch = windows[i:i + batch_size]
+                clipwise_output, _ = model.inference(batch)
+                all_probs.append(clipwise_output)
+                pbar.update(len(batch))
     return np.concatenate(all_probs, axis=0)
 
 
@@ -200,15 +202,19 @@ def format_timestamp(seconds: float) -> str:
 
 
 def main():
+    cpu_cores = os.cpu_count() or 4
+    torch.set_num_threads(cpu_cores)
+
     parser = argparse.ArgumentParser(description="Detect unwanted noise events in a video/audio file.")
     parser.add_argument("input", nargs="?", default=None, help="Path to input video or audio file")
     parser.add_argument("--list-classes", nargs="?", const="", default=None,
                         help="List or search available PANNs/AudioSet labels (optional search filter)")
     parser.add_argument("--output", default=None, help="Optional path to output JSON (default: None, prints to terminal)")
+    parser.add_argument("--json-out", default=None, help="Optional path to output JSON (default: None, prints to terminal only)")
     parser.add_argument("--threshold", type=float, default=0.15, help="Confidence threshold (default: 0.15)")
     parser.add_argument("--win-sec", type=float, default=2.0, help="Window size in seconds (default: 2.0)")
     parser.add_argument("--hop-sec", type=float, default=0.5, help="Hop size in seconds (default: 0.5)")
-    parser.add_argument("--batch-size", type=int, default=32, help="Inference batch size (default: 32)")
+    parser.add_argument("--batch-size", type=int, default=64, help="Inference batch size (default: 64)")
     parser.add_argument("--gap-thresh", type=float, default=1.0, help="Max gap (sec) to merge adjacent hits of the same class (default: 1.0)")
     parser.add_argument("--min-duration", type=float, default=0.15, help="Drop merged segments shorter than this, in seconds (default: 0.15)")
     parser.add_argument("--classes", nargs="*", default=None,
@@ -292,10 +298,12 @@ def main():
         raw_hits = collect_hits(probs, start_times, target_idx, args.threshold, args.win_sec)
         segments = merge_hits(raw_hits, args.win_sec, args.gap_thresh, args.min_duration)
 
-        if args.output:
-            with open(args.output, "w") as f:
+        json_target = args.json_out or args.output
+        if json_target:
+            with open(json_target, "w") as f:
                 json.dump(segments, f, indent=2)
-            print(colorize(f"\nSaved {len(segments)} flagged segment(s) to {args.output}", Colors.GREEN), file=sys.stderr)
+            if args.output and not args.json_out:
+                print(colorize(f"\nSaved {len(segments)} flagged segment(s) to {args.output}", Colors.GREEN), file=sys.stderr)
 
         print("\n" + "=" * 80)
         print(colorize("AUDIO REVIEW INSPECTION REPORT", Colors.BOLD + Colors.HEADER))
