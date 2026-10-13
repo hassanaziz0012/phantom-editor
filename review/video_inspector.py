@@ -85,6 +85,11 @@ def run_inspection(video_path: str, args) -> tuple:
     freeze_start_regex = re.compile(r'freeze_start:\s*([0-9.]+)')
     # [freezedetect @ 0x...] freeze_end:17.5 freeze_duration:2.3
     freeze_end_regex = re.compile(r'freeze_end:\s*([0-9.]+)\s+freeze_duration:\s*([0-9.]+)')
+    # Newer FFmpeg releases (7+) log freeze_duration and freeze_end on separate
+    # lines and prefix them with the filter metadata name, e.g.
+    # [Parsed_freezedetect_5 @ 0x...] lavfi.freezedetect.freeze_end: 3
+    freeze_end_only_regex = re.compile(r'freeze_end:\s*([0-9.]+)')
+    freeze_duration_regex = re.compile(r'freeze_duration:\s*([0-9.]+)')
     # ffmpeg time status e.g. time=00:01:23.45
     time_regex = re.compile(r'time=([0-9:.]+)')
 
@@ -93,6 +98,8 @@ def run_inspection(video_path: str, args) -> tuple:
     
     # Track current active freeze to pair with its end log
     active_freeze_start = None
+    # Duration reported on its own line (newer FFmpeg) ahead of the end log
+    pending_freeze_duration = None
 
     print(colorize("Starting glitch detection scan...", Colors.BOLD + Colors.BLUE))
 
@@ -108,7 +115,7 @@ def run_inspection(video_path: str, args) -> tuple:
     total_duration = args.total_duration
 
     def handle_line(line_text: str):
-        nonlocal active_freeze_start
+        nonlocal active_freeze_start, pending_freeze_duration
         line_clean = line_text.strip()
         if not line_clean:
             return
@@ -136,9 +143,35 @@ def run_inspection(video_path: str, args) -> tuple:
             start = active_freeze_start if active_freeze_start is not None else (end - dur)
             freeze_glitches.append((start, end, dur))
             active_freeze_start = None
+            pending_freeze_duration = None
             # Clear progress line to output glitch warning cleanly
             sys.stdout.write("\r" + " " * 80 + "\r")
             print(colorize(f"⚠️  FREEZE DETECTED: {format_time(start)} --> {format_time(end)} (Duration: {dur:.2f}s)", Colors.WARNING))
+        else:
+            # Newer FFmpeg: freeze_end on its own line, duration possibly on its own
+            # earlier line. Prefer pairing the tracked start with this end time.
+            freeze_end_only_match = freeze_end_only_regex.search(line_clean)
+            if freeze_end_only_match:
+                end = float(freeze_end_only_match.group(1))
+                if active_freeze_start is not None:
+                    start = active_freeze_start
+                    dur = max(0.0, end - start)
+                elif pending_freeze_duration is not None:
+                    dur = pending_freeze_duration
+                    start = max(0.0, end - dur)
+                else:
+                    start = end
+                    dur = 0.0
+                freeze_glitches.append((start, end, dur))
+                active_freeze_start = None
+                pending_freeze_duration = None
+                # Clear progress line to output glitch warning cleanly
+                sys.stdout.write("\r" + " " * 80 + "\r")
+                print(colorize(f"⚠️  FREEZE DETECTED: {format_time(start)} --> {format_time(end)} (Duration: {dur:.2f}s)", Colors.WARNING))
+            else:
+                freeze_duration_match = freeze_duration_regex.search(line_clean)
+                if freeze_duration_match:
+                    pending_freeze_duration = float(freeze_duration_match.group(1))
 
         # Parse progress time
         time_match = time_regex.search(line_clean)
