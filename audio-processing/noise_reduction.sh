@@ -60,8 +60,28 @@ if [[ -z "$OUTPUT_FILE" ]]; then
     OUTPUT_FILE="${NAME}_filtered.${EXT}"
 fi
 
-# Create a temporary directory for deep-filter processing
-TMP_DIR=$(mktemp -d)
+# Create a temporary directory for deep-filter processing.
+# Prefer /dev/shm (RAM disk) so DeepFilterNet chunk splitting and the
+# intermediate WAV files never touch the physical disk. Fall back to a
+# standard mktemp directory when /dev/shm is unavailable, unwritable,
+# or too small for the estimated working set.
+TMP_DIR=""
+if [[ -d "/dev/shm" && -w "/dev/shm" ]]; then
+    # Peak working set ≈ 5x the input WAV (input copy + chunked copy +
+    # filtered chunks + concatenated output) plus a small safety margin.
+    INPUT_SIZE_MB=$(du -m "$INPUT_FILE" 2>/dev/null | awk '{printf "%d", $1 + 1}')
+    NEEDED_MB=$(( ${INPUT_SIZE_MB:-0} * 5 + 32 ))
+    AVAIL_MB=$(df -Pm /dev/shm 2>/dev/null | awk 'NR==2 {print $4}')
+    if [[ -n "$AVAIL_MB" && "$AVAIL_MB" -ge "$NEEDED_MB" ]]; then
+        TMP_DIR=$(mktemp -d -p /dev/shm deepfilter_XXXXXX)
+        echo "Using RAM disk (/dev/shm) for intermediate files: $TMP_DIR"
+    else
+        echo "Warning: /dev/shm unavailable or low on space (need ~${NEEDED_MB}MiB), using standard temp dir." >&2
+    fi
+fi
+if [[ -z "$TMP_DIR" ]]; then
+    TMP_DIR=$(mktemp -d)
+fi
 
 # Ensure the temp directory is cleaned up on exit
 trap 'rm -rf "$TMP_DIR"' EXIT
