@@ -13,7 +13,9 @@ If captions (.srt) are found, automatically generates:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -63,6 +65,25 @@ def retry_with_backoff(
     return None
 
 
+def ensure_browserllm_ready() -> bool:
+    """Run `browserllm blank` to ensure browser window is open, then wait 1s."""
+    print("\n🌐 Ensuring BrowserLLM browser window is open...")
+    try:
+        subprocess.run(["browserllm", "blank"], check=True, capture_output=True, text=True, timeout=30)
+        print("   BrowserLLM window opened successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"   ⚠️  browserllm blank failed (exit code {e.returncode}): {e.stderr.strip()}")
+        print("   Continuing anyway - browser may already be open.")
+    except FileNotFoundError:
+        print("   ⚠️  'browserllm' command not found in PATH. Continuing anyway.")
+    except subprocess.TimeoutExpired:
+        print("   ⚠️  browserllm blank timed out after 30s. Continuing anyway.")
+    
+    print("   Waiting 1s for browser to stabilize...")
+    time.sleep(1)
+    return True
+
+
 def auto_create_metadata(
     target: str | Path | None = None,
     title: str | None = None,
@@ -103,62 +124,85 @@ def auto_create_metadata(
         if captions_path and captions_path.is_file():
             print(f"\n📂 Found captions file: {captions_path.name}")
 
-            # 1. Generate Description
-            print("\n[1/4] Generating Description...")
-            desc = retry_with_backoff(
-                lambda: generate_description_for_project(captions_path, metadata_path=metadata_path),
-                max_retries=3,
-                base_delay=2.0,
-                step_name="Description generation",
-            )
-            if desc is not None:
-                metadata["description"] = desc
-                print("✓ Generated video description.")
-            else:
-                print("⚠️  Skipping description generation after max retries.")
+            # Ensure BrowserLLM browser is ready before running parallel workers
+            ensure_browserllm_ready()
 
-            # 2. Generate Tweet Template
-            print("\n[2/4] Generating Promotional Tweet Template...")
-            tweet = retry_with_backoff(
-                lambda: generate_tweet_for_project(captions_path, metadata_path=metadata_path),
-                max_retries=3,
-                base_delay=2.0,
-                step_name="Tweet template generation",
-            )
-            if tweet is not None:
-                metadata["tweetTemplate"] = tweet
-                print("✓ Generated promotional tweet template.")
-            else:
-                print("⚠️  Skipping tweet template generation after max retries.")
+            # Define the 4 AI generation tasks
+            def run_description() -> str | None:
+                return retry_with_backoff(
+                    lambda: generate_description_for_project(captions_path, metadata_path=metadata_path),
+                    max_retries=3,
+                    base_delay=2.0,
+                    step_name="Description generation",
+                )
 
-            # 3. Generate Recommendations
-            if not skip_recommendations:
-                print("\n[3/4] Generating Video Recommendations...")
-                recs = retry_with_backoff(
+            def run_tweet() -> str | None:
+                return retry_with_backoff(
+                    lambda: generate_tweet_for_project(captions_path, metadata_path=metadata_path),
+                    max_retries=3,
+                    base_delay=2.0,
+                    step_name="Tweet template generation",
+                )
+
+            def run_recommendations() -> list[dict[str, Any]] | None:
+                return retry_with_backoff(
                     lambda: recommend_videos_for_project(target=project_dir, metadata_path=metadata_path),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Recommendations generation",
                 )
-                if recs is not None:
-                    metadata["recommendations"] = recs
-                    print(f"✓ Generated {len(recs)} recommendations.")
-                else:
-                    print("⚠️  Skipping recommendations generation after max retries.")
 
-            # 4. Generate Timestamps
-            print("\n[4/4] Generating Video Timestamps...")
-            timestamps = retry_with_backoff(
-                lambda: generate_timestamps_for_project(target=project_dir, metadata_path=metadata_path),
-                max_retries=3,
-                base_delay=2.0,
-                step_name="Timestamps generation",
-            )
-            if timestamps is not None:
-                metadata["timestamps"] = timestamps
-                print(f"✓ Generated {len(timestamps)} timestamps.")
-            else:
-                print("⚠️  Skipping timestamps generation after max retries.")
+            def run_timestamps() -> list[dict[str, str]] | None:
+                return retry_with_backoff(
+                    lambda: generate_timestamps_for_project(target=project_dir, metadata_path=metadata_path),
+                    max_retries=3,
+                    base_delay=2.0,
+                    step_name="Timestamps generation",
+                )
+
+            # Prepare tasks to run
+            tasks: dict[str, Callable[[], Any]] = {
+                "description": run_description,
+                "tweet": run_tweet,
+                "timestamps": run_timestamps,
+            }
+            if not skip_recommendations:
+                tasks["recommendations"] = run_recommendations
+
+            print(f"\n🚀 Running {len(tasks)} AI generation tasks in parallel...")
+            
+            # Run all tasks in parallel using ThreadPoolExecutor
+            results: dict[str, Any] = {}
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+                future_to_task = {executor.submit(task_fn): task_name for task_name, task_fn in tasks.items()}
+                
+                for future in concurrent.futures.as_completed(future_to_task):
+                    task_name = future_to_task[future]
+                    try:
+                        result = future.result()
+                        results[task_name] = result
+                        if result is not None:
+                            if task_name == "recommendations":
+                                print(f"✓ [{task_name}] Generated {len(result)} recommendations.")
+                            elif task_name == "timestamps":
+                                print(f"✓ [{task_name}] Generated {len(result)} timestamps.")
+                            else:
+                                print(f"✓ [{task_name}] Generated successfully.")
+                        else:
+                            print(f"⚠️  [{task_name}] Failed after max retries.")
+                    except Exception as e:
+                        print(f"❌ [{task_name}] Unexpected error: {e}")
+                        results[task_name] = None
+
+            # Update metadata with results
+            if results.get("description") is not None:
+                metadata["description"] = results["description"]
+            if results.get("tweet") is not None:
+                metadata["tweetTemplate"] = results["tweet"]
+            if results.get("recommendations") is not None:
+                metadata["recommendations"] = results["recommendations"]
+            if results.get("timestamps") is not None:
+                metadata["timestamps"] = results["timestamps"]
 
         else:
             print("\n⚠️  No phrase-level .srt captions file found in project folder.")
