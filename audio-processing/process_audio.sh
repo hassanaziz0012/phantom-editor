@@ -70,6 +70,56 @@ if [[ "$PIPELINE_MODE" = true && -z "$OUTPUT_FILE" ]]; then
     exit 1
 fi
 
+# Check whether a valid PCM WAV already exists at $1 (e.g. pre-extracted in the
+# same pass that produced the trimmed video) and reuse it instead of decoding
+# the intermediate MP4's audio again. Returns 0 when the file can be reused.
+use_existing_raw_wav() {
+    local WAV_FILE="$1"
+    if [ -s "$WAV_FILE" ] && \
+       ffprobe -v error -select_streams a:0 -show_entries stream=codec_name \
+           -of csv=p=0 "$WAV_FILE" 2>/dev/null | grep -q '^pcm'; then
+        echo "Valid raw-audio.wav already exists, skipping extraction: $WAV_FILE"
+        return 0
+    fi
+    # Stale or corrupt leftover from an interrupted earlier run: remove it so
+    # the extraction below starts from a clean slate.
+    [ -f "$WAV_FILE" ] && rm -f "$WAV_FILE"
+    return 1
+}
+
+# Prefer /dev/shm (RAM disk) for intermediate audio work so that raw audio
+# extraction, DeepFilterNet chunk splitting/normalization and the normalized
+# WAV output all get their intermediate I/O off the physical disk. Falls back
+# to a standard mktemp directory when /dev/shm is unavailable, unwritable, or
+# too small for the estimated working set. Caller must set up a cleanup trap.
+make_tmp_dir() {
+    local INPUT_FILE="$1"
+    local SHM_DIR=/dev/shm
+    local NEEDED_MB AVAIL_MB DURATION_MB
+
+    # Estimate the RAM-disk working set from the real audio duration:
+    # ~0.5 MiB per audio second covers raw mono 16-bit extraction, the
+    # noise-reduced WAV, and a 24-bit stereo normalized output, worst case.
+    DURATION_MB=$(ffprobe -v error -show_entries format=duration \
+        -of default=noprint_wrappers=1:nokey=1 "$INPUT_FILE" 2>/dev/null \
+        | awk '{printf "%d", ($1 + 1) / 2}')
+    if [[ -n "$DURATION_MB" && "$DURATION_MB" -gt 0 ]]; then
+        NEEDED_MB=$(( DURATION_MB + 128 ))
+    else
+        NEEDED_MB=128
+    fi
+
+    if [[ -d "$SHM_DIR" && -w "$SHM_DIR" ]]; then
+        AVAIL_MB=$(df -Pm "$SHM_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
+        if [[ -n "$AVAIL_MB" && "$AVAIL_MB" -ge "$NEEDED_MB" ]]; then
+            mktemp -d -p "$SHM_DIR" tmp_audio_XXXXXX
+            return 0
+        fi
+        echo "Warning: /dev/shm unavailable or low on space (have ${AVAIL_MB:-unknown}MiB, need ~${NEEDED_MB}MiB); using standard temp dir." >&2
+    fi
+    mktemp -d
+}
+
 process_video() {
     local INPUT_MP4="$1"
     local OUTPUT_MP4="$2"
@@ -78,7 +128,7 @@ process_video() {
  
     if [ "$IS_RECURSIVE" = "true" ]; then
         local TEMP_DIR
-        TEMP_DIR=$(mktemp -d)
+        TEMP_DIR=$(make_tmp_dir "$INPUT_MP4")
         
         local RAW_WAV="$TEMP_DIR/raw-audio.wav"
         local NOISE_REDUCED_WAV="$TEMP_DIR/noise-reduced.wav"
@@ -86,10 +136,15 @@ process_video() {
         local PROCESSED_WAV="$TEMP_DIR/processed-audio.wav"
         
         echo "--- Step 1: Creating temp directory ---"
-        # Already created by mktemp -d
+        # Created by make_tmp_dir (prefer /dev/shm RAM disk, fallback via mktemp -d)
+        
+        # Guarantee cleanup on success or error: the calling subshell's
+        # 'set -e' would otherwise exit before the explicit 'rm -rf' below
+        # if any processing step fails.
+        trap 'rm -rf "$TEMP_DIR"' EXIT
         
         echo "--- Step 2: Extracting RAW audio ---"
-        "$SCRIPT_DIR/extract_wav_from_mp4.sh" "$INPUT_MP4" --output-file "$RAW_WAV"
+        use_existing_raw_wav "$RAW_WAV" || "$SCRIPT_DIR/extract_wav_from_mp4.sh" "$INPUT_MP4" --output-file "$RAW_WAV"
         
         echo "--- Step 3: Applying noise reduction (DeepFilterNet) ---"
         "$SCRIPT_DIR/noise_reduction.sh" "$RAW_WAV" --output-file "$NOISE_REDUCED_WAV"
@@ -107,7 +162,7 @@ process_video() {
             echo "--- Step 5: Remuxing normalized audio into video ---"
             ffmpeg -y -i "$INPUT_MP4" -i "$NOISE_REDUCED_WAV" \
                 -c:v copy -map 0:v:0 -map 1:a:0 \
-                -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k "$OUTPUT_MP4" \
+                -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k -ac 2 "$OUTPUT_MP4" \
                 -hide_banner -loglevel warning
         fi
         
@@ -127,9 +182,12 @@ process_video() {
         
         echo "--- Step 1: Creating temp directory ---"
         mkdir -p "$TEMP_DIR"
+        # Guarantee cleanup if any processing step fails later (set -e would
+        # otherwise exit before the 'rm -rf' at the end of this branch).
+        trap 'rm -rf "$TEMP_DIR"' EXIT
         
         echo "--- Step 2: Extracting RAW audio ---"
-        "$SCRIPT_DIR/extract_wav_from_mp4.sh" "$INPUT_MP4" --output-file "$RAW_WAV"
+        use_existing_raw_wav "$RAW_WAV" || "$SCRIPT_DIR/extract_wav_from_mp4.sh" "$INPUT_MP4" --output-file "$RAW_WAV"
         
         echo "--- Step 3: Applying noise reduction (DeepFilterNet) ---"
         "$SCRIPT_DIR/noise_reduction.sh" "$RAW_WAV" --output-file "$NOISE_REDUCED_WAV"
@@ -143,7 +201,7 @@ process_video() {
             echo "--- Step 4: Applying normalization, exporting processed audio & remuxing video ---"
             ffmpeg -y -i "$INPUT_MP4" -i "$NOISE_REDUCED_WAV" \
                 -c:v copy -map 0:v:0 -map 1:a:0 \
-                -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k "$FINAL_MP4" \
+                -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k -ac 2 "$FINAL_MP4" \
                 -map 1:a:0 -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s24le -ar 48000 "$PROCESSED_WAV" \
                 -hide_banner -loglevel warning
         fi
@@ -209,8 +267,16 @@ if [ "$RECURSIVE" = true ]; then
         OUTPUT_FILE="$OUTPUT_DIR/$REL_PATH"
         mkdir -p "$(dirname "$OUTPUT_FILE")"
 
-        # Run in a subshell to ensure set -e handles errors within process_video properly
-        if (set -e; process_video "$VIDEO_FILE" "$OUTPUT_FILE" "true" "$PIPELINE_MODE"); then
+        # Run in a subshell with explicit errexit so any failed processing step
+        # aborts process_video early and frees its temp dir via the trap. The
+        # subshell is deliberately NOT used as the 'if' condition: bash suppresses
+        # errexit for the entire condition list of 'if', which would let a failed
+        # step cascade silently and still be counted as a success.
+        set +e
+        (set -e; process_video "$VIDEO_FILE" "$OUTPUT_FILE" "true" "$PIPELINE_MODE")
+        RESULT=$?
+        set -e
+        if [ "$RESULT" -eq 0 ]; then
             SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
             echo "Successfully processed: $VIDEO_FILE"
             echo "Output saved to: $OUTPUT_FILE"
