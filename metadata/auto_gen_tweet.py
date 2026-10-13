@@ -30,22 +30,20 @@ def format_tweet_template(raw_tweet: str) -> str:
     """Formats the tweet text as a template containing the {url} placeholder."""
     cleaned = raw_tweet.strip().strip('"\'')
 
-    # If the LLM already included {url}, keep it
-    if "{url}" in cleaned:
-        template = cleaned
-    else:
-        template = f"{cleaned}\n\n{{url}}"
+    # Strip any {url} the LLM may have included; we re-append it cleanly below
+    cleaned = cleaned.replace("{url}", "").strip()
 
     # Validate length with a sample YouTube short link
+    # Template format: "<text>\n\n{url}", so overhead = 2 newlines + url length
     sample_url = "https://youtu.be/12345678901"
-    rendered = template.replace("{url}", sample_url)
-    if len(rendered) > 280:
-        # 280 - len(sample_url) - 1 (space) - 3 (ellipsis)
-        max_base_len = 280 - len(sample_url) - 4
-        cleaned_short = cleaned[:max_base_len].rstrip() + "..."
-        template = f"{cleaned_short} {{url}}"
+    max_base_len = 280 - len(sample_url) - 2  # 2 for the "\n\n" separator
 
-    return template
+    if len(cleaned) > max_base_len:
+        # Truncate at the last word boundary to avoid cutting mid-word/mid-sentence
+        truncated = cleaned[:max_base_len].rsplit(" ", 1)[0].rstrip()
+        cleaned = truncated + "…"
+
+    return f"{cleaned}\n\n{{url}}"
 
 
 def generate_tweet_for_project(
