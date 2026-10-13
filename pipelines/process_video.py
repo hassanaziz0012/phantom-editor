@@ -10,6 +10,7 @@ import os
 import sys
 import shutil
 import time
+import threading
 import argparse
 import subprocess
 import tempfile
@@ -432,36 +433,97 @@ def run_step2_trim_silences_raw(
 
     select_expr, shift_expr, total_speech_duration = get_silence_trim_expressions(speech_intervals)
 
-    if select_expr and shift_expr:
-        v_filter = f"select='{select_expr}',setpts='(T-({shift_expr}))/TB',fps=30"
-        if needs_downscale:
-            v_filter = f"scale=1920:1080:flags=bicubic,{v_filter}"
-        a_filter = f"aselect='{select_expr}',asetpts='(T-({shift_expr}))/TB',aresample=async=1:first_pts=0"
+    # Pre-extracted mono WAV consumed by Step 3 (process_audio.sh). It is written
+    # directly below, in the same pass as the preview MP4, at the exact location
+    # process_audio.sh expects (<input dir>/temp/raw-audio.wav) so Step 3 can
+    # skip its own redundant AAC-decode extraction pass.
+    raw_audio_path = step2_output.parent / "temp" / "raw-audio.wav"
+    step2_output.parent.joinpath("temp").mkdir(parents=True, exist_ok=True)
 
-        cmd = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
-            "-threads", "0",
-            "-i", str(raw_video_path),
-            "-vf", v_filter,
-            "-af", a_filter,
-            "-fps_mode", "cfr",
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "20",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "384k",
-            "-t", f"{total_speech_duration:.3f}",
-            "-movflags", "+faststart",
-            str(step2_output)
-        ]
+    if select_expr and shift_expr:
+        # Use the concat demuxer with inpoint/outpoint so FFmpeg can seek directly
+        # between speech intervals instead of decoding every frame to evaluate a
+        # select/aselect expression. This skips decoding of all silent sections.
+        concat_file_path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as concat_file:
+                concat_file_path = concat_file.name
+                # Escape apostrophes for the concat demuxer's quoting rules:
+                # a literal ' inside the single-quoted filename would terminate
+                # the quote, so it becomes...\''... (e.g. "it's" -> "it'\''s").
+                absolute_raw_video = str(raw_video_path.resolve()).replace("'", "'\\''")
+                for start, end in speech_intervals:
+                    concat_file.write(f"file '{absolute_raw_video}'\n")
+                    concat_file.write(f"inpoint {start:.3f}\n")
+                    concat_file.write(f"outpoint {end:.3f}\n")
+
+            v_filter = "fps=30,setpts=N/30/TB"
+            if needs_downscale:
+                v_filter = f"scale=1920:1080:flags=bicubic,{v_filter}"
+            a_filter = "aresample=async=1:first_pts=0,asetpts=N/SR/TB"
+
+            # Single pass with dual output mapping:
+            #   output 1: printable preview MP4 (video + lightweight 64k draft
+            #             AAC audio for quick previewing; this draft audio is
+            #             discarded in Step 4)
+            #   output 2: raw mono PCM WAV for DeepFilterNet, avoiding a
+            #             separate 384k-AAC-encode -> decode round trip
+            cmd = [
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
+                "-threads", "0",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concat_file_path,
+                "-map", "0:v:0",
+                "-map", "0:a:0",
+                "-vf", v_filter,
+                "-af", a_filter,
+                "-fps_mode", "cfr",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "20",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "64k",
+                "-t", f"{total_speech_duration:.3f}",
+                "-movflags", "+faststart",
+                str(step2_output),
+                "-map", "0:a:0",
+                "-af", a_filter,
+                "-c:a", "pcm_s16le",
+                "-ar", "48000",
+                "-ac", "1",
+                "-t", f"{total_speech_duration:.3f}",
+                str(raw_audio_path)
+            ]
+            run_ffmpeg_with_progress(cmd, total_speech_duration, "Silence Trimming")
+        finally:
+            if concat_file_path is not None:
+                try:
+                    os.unlink(concat_file_path)
+                except FileNotFoundError:
+                    pass
+
+        if not is_valid_file(step2_output):
+            print_error(f"[ERROR] Step 2 output file invalid or missing at '{step2_output}'")
+            sys.exit(1)
+        if not is_valid_file(raw_audio_path):
+            print_error(f"[ERROR] Step 2 output raw-audio.wav invalid or missing at '{raw_audio_path}'")
+            sys.exit(1)
+
+        print_success(f"[SUCCESS] Step 2 complete: Silences trimmed -> {step2_output.name}")
+        return True, speech_interval_count
     else:
         print_warning("No silence intervals to cut. Re-encoding video directly.")
         vf_args = ["-vf", "scale=1920:1080:flags=bicubic"] if needs_downscale else []
+        # Same dual-output mapping as the trimming branch above: preview MP4
+        # with draft 64k audio + raw mono PCM WAV for Step 3, in one pass.
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
             "-threads", "0",
             "-i", str(raw_video_path),
+            "-map", "0:v:0",
+            "-map", "0:a:0",
         ] + vf_args + [
             "-fps_mode", "cfr",
             "-c:v", "libx264",
@@ -469,15 +531,24 @@ def run_step2_trim_silences_raw(
             "-crf", "20",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
-            "-b:a", "384k",
+            "-b:a", "64k",
             "-movflags", "+faststart",
-            str(step2_output)
+            str(step2_output),
+            "-map", "0:a:0",
+            "-af", "aresample=async=1:first_pts=0",
+            "-c:a", "pcm_s16le",
+            "-ar", "48000",
+            "-ac", "1",
+            str(raw_audio_path)
         ]
 
     run_ffmpeg_with_progress(cmd, total_speech_duration, "Silence Trimming")
 
     if not is_valid_file(step2_output):
         print_error(f"[ERROR] Step 2 output file invalid or missing at '{step2_output}'")
+        sys.exit(1)
+    if not is_valid_file(raw_audio_path):
+        print_error(f"[ERROR] Step 2 output raw-audio.wav invalid or missing at '{raw_audio_path}'")
         sys.exit(1)
 
     print_success(f"[SUCCESS] Step 2 complete: Silences trimmed -> {step2_output.name}")
@@ -553,6 +624,7 @@ def run_step4_finalize_with_bgm(
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "384k",
+            "-ac", "2",
             "-movflags", "+faststart",
             str(final_output)
         ]
@@ -622,7 +694,7 @@ def run_step6_review(
 
     try:
         print_info(f"Running audio review on '{processed_audio_output.name}'...")
-        cmd_audio = [sys.executable, str(audio_review_py), str(processed_audio_output)]
+        cmd_audio = [sys.executable, str(audio_review_py), str(processed_audio_output), "--hop-sec", "1.0"]
         print(f"Executing: {' '.join(cmd_audio)}")
         try:
             subprocess.run(cmd_audio + ["--json-out", audio_json_path], check=True)
@@ -720,11 +792,13 @@ def run_step7_create_metadata(
         subprocess.run(cmd_step7, check=True)
     except subprocess.CalledProcessError as e:
         print_error(f"[ERROR] Step 7 failed with exit code {e.returncode}")
-        sys.exit(e.returncode)
+        raise RuntimeError(f"Step 7 metadata generation failed with exit code {e.returncode}") from e
 
     if not is_valid_file(metadata_output):
         print_error(f"[ERROR] Step 7 output metadata file invalid or missing at '{metadata_output}'")
-        sys.exit(1)
+        raise RuntimeError(
+            f"Step 7 output metadata file invalid or missing at '{metadata_output}'"
+        )
 
     print_success(f"[SUCCESS] Step 7 complete: Generated metadata -> {metadata_output.name}")
     return True
@@ -791,20 +865,110 @@ def main():
     step6_duration = 0.0
     step7_duration = 0.0
 
+    # Step 1 (Groq Cloud transcription) does not block Step 2 when Step 2 does
+    # not need the captions:
+    #   - Raw mode trims silences with Silero VAD directly on the audio.
+    #   - Webcam overlay mode with --all skips word-command detection.
+    # In those cases transcription runs in a background thread so the ~10-20s
+    # network wait overlaps with CPU-bound video processing. It is always
+    # joined before Step 7 (metadata generation), which parses the .srt files.
+    needs_step1_before_step2 = (not is_raw_mode) and (not args.all)
+
+    step1_thread: Optional[threading.Thread] = None
+    step1_error: list[BaseException] = []
+    # Duration of the actual transcription work, measured inside the background
+    # thread. Step 1 overlaps Steps 2-5, so timing it from spawn to join would
+    # wrongly absorb the wall time of those concurrent steps.
+    step1_work_elapsed = 0.0
+    step1_launched = False
+
+    def _step1_outputs_present() -> bool:
+        return is_valid_file(outputs["step1_1word_srt"]) and is_valid_file(outputs["step1_srt"])
+
+    def _finish_step1(raise_errors: bool = True) -> None:
+        """Join the background Step 1 thread (if launched) and record its summary."""
+        nonlocal step1_thread, step1_duration
+        if step1_thread is None:
+            return
+        if step1_thread.is_alive():
+            print_info("[INFO] Waiting for background Step 1 (transcription) to finish...")
+        step1_thread.join()
+        step1_thread = None
+        step1_duration = step1_work_elapsed
+        if step1_error:
+            status = "failed"
+        elif step1_launched:
+            status = "ran"
+        else:
+            status = "skipped"
+        # Step 1 is always the first step chronologically, but in the background
+        # path its summary is only recorded here at join time (after Steps 2-5
+        # have already been appended). Insert it at the front so summary.md's
+        # Steps and Timing lines stay in pipeline order.
+        summary.steps.insert(0, StepSummary(step_names[1], status, step1_duration))
+        if not step1_error and not _step1_outputs_present():
+            step1_error.append(
+                RuntimeError("Step 1 output SRT files invalid or missing after background transcription")
+            )
+        if step1_error:
+            err = step1_error[0]
+            if raise_errors:
+                print_error(f"[ERROR] Step 1 (background) failed: {err}")
+                raise err
+            print_warning(f"[WARN] Step 1 (background transcription) failed: {err}")
+
     try:
-        # Step 1: Transcribe Video using Groq Cloud
-        current_step_idx = 1
-        step_start_time = time.perf_counter()
-        force_run = run_step1_transcription(
-            webcam_path=main_video_path,
-            step1_srt_output=outputs["step1_srt"],
-            step1_1word_srt=outputs["step1_1word_srt"],
-            transcribe_cloud_py=scripts["transcribe_cloud_py"],
-            force_run=force_run
-        )
-        step1_duration = time.perf_counter() - step_start_time
-        summary.steps.append(StepSummary(step_names[1], "ran" if run_plan[1] else "skipped", step1_duration))
-        current_step_idx = None
+        # Step 1: Transcribe Video using Groq Cloud (background when Step 2
+        # does not need the captions; synchronous otherwise).
+        if not needs_step1_before_step2:
+            if force_run or not _step1_outputs_present():
+                step1_spawn_force = force_run
+
+                def _run_step1_background():
+                    nonlocal step1_work_elapsed
+                    work_start = time.perf_counter()
+                    try:
+                        run_step1_transcription(
+                            webcam_path=main_video_path,
+                            step1_srt_output=outputs["step1_srt"],
+                            step1_1word_srt=outputs["step1_1word_srt"],
+                            transcribe_cloud_py=scripts["transcribe_cloud_py"],
+                            force_run=step1_spawn_force,
+                        )
+                    except BaseException as exc:
+                        step1_error.append(exc)
+                    finally:
+                        step1_work_elapsed = time.perf_counter() - work_start
+
+                step1_thread = threading.Thread(
+                    name="step1-transcription", target=_run_step1_background, daemon=False
+                )
+                step1_thread.start()
+                step1_launched = True
+                # Mirrors synchronous semantics: a real Step 1 run forces the
+                # downstream steps, even while it completes asynchronously.
+                force_run = True
+                print_info("[INFO] Step 1 (transcription) launched in background; starting Step 2 in parallel...")
+            else:
+                step1_duration = 0.0
+                summary.steps.append(StepSummary(step_names[1], "skipped", step1_duration))
+                print_success(f"[SKIP] Step 1 complete: Transcribed SRT file already exists -> {outputs['step1_1word_srt'].name}")
+        else:
+            # Webcam overlay mode with voice commands: Step 2 parses word
+            # commands (e.g. "cam on/off") from the captions, so Step 1 must
+            # finish first.
+            current_step_idx = 1
+            step_start_time = time.perf_counter()
+            force_run = run_step1_transcription(
+                webcam_path=main_video_path,
+                step1_srt_output=outputs["step1_srt"],
+                step1_1word_srt=outputs["step1_1word_srt"],
+                transcribe_cloud_py=scripts["transcribe_cloud_py"],
+                force_run=force_run
+            )
+            step1_duration = time.perf_counter() - step_start_time
+            summary.steps.append(StepSummary(step_names[1], "ran" if run_plan[1] else "skipped", step1_duration))
+            current_step_idx = None
 
         # Step 2: Video Processing (Silence Trimming for --raw, or Single-Pass Mask + Trim)
         current_step_idx = 2
@@ -875,9 +1039,49 @@ def main():
         summary.steps.append(StepSummary(step_names[5], "ran" if run_plan[5] else "skipped", step5_duration))
         current_step_idx = None
 
+        # Make sure the background transcription (if any) finished before any
+        # consumer of the .srt files starts: Step 7 parses them for metadata.
+        if step1_thread is not None:
+            _finish_step1()
+
+        # Step 7 does not depend on Step 6 (review flags only end up in
+        # summary.md), so launch it in the background as soon as final.mp4 is
+        # verified. The LLM metadata generation then runs in parallel with the
+        # audio & video inspection.
+        step7_thread: Optional[threading.Thread] = None
+        step7_error: list[BaseException] = []
+        # Same as Step 1: Step 7 overlaps Step 6, so measure the metadata work
+        # itself inside the thread instead of spawn-to-join wall time.
+        step7_work_elapsed = 0.0
+        step7_spawn_force = force_run
+        step7_launch = run_plan[7] and (step7_spawn_force or not statuses[7])
+        if step7_launch:
+            def _run_step7_background():
+                nonlocal step7_work_elapsed
+                work_start = time.perf_counter()
+                try:
+                    run_step7_create_metadata(
+                        video_dir=video_dir,
+                        metadata_output=outputs["metadata_output"],
+                        title=args.title,
+                        auto_create_metadata_py=scripts["auto_create_metadata_py"],
+                        force_run=step7_spawn_force,
+                    )
+                except BaseException as exc:
+                    step7_error.append(exc)
+                finally:
+                    step7_work_elapsed = time.perf_counter() - work_start
+
+            step7_thread = threading.Thread(
+                name="step7-metadata", target=_run_step7_background, daemon=False
+            )
+            step7_thread.start()
+            print_info("[INFO] Step 7 (metadata) launched in background; running in parallel with Step 6...")
+
         # Step 6: Review Final Video (Audio & Video Inspection)
         current_step_idx = 6
-        step6_start_time = time.perf_counter()
+        step_start_time = time.perf_counter()
+        step6_start_time = step_start_time
         force_run_step6 = force_run
         force_run = run_step6_review(
             final_output=outputs["final_output"],
@@ -893,18 +1097,26 @@ def main():
         summary.steps.append(StepSummary(step_names[6], "skipped" if step6_skipped else "ran", step6_duration))
         current_step_idx = None
 
-        # Step 7: Generate Project Metadata
+        # Step 7: Generate Project Metadata (already running in the background
+        # if it was launched after Step 5; join it now that Step 6 is done)
         current_step_idx = 7
-        step_start_time = time.perf_counter()
-        run_step7_create_metadata(
-            video_dir=video_dir,
-            metadata_output=outputs["metadata_output"],
-            title=args.title,
-            auto_create_metadata_py=scripts["auto_create_metadata_py"],
-            force_run=force_run
-        )
-        step7_duration = time.perf_counter() - step_start_time
-        summary.steps.append(StepSummary(step_names[7], "ran" if run_plan[7] else "skipped", step7_duration))
+        if step7_thread is not None:
+            step7_thread.join()
+            if step7_error:
+                err = step7_error[0]
+                print_error(f"[ERROR] Step 7 (background) failed: {err}")
+                raise err
+            if not is_valid_file(outputs["metadata_output"]):
+                err = RuntimeError(
+                    f"Step 7 output metadata file invalid or missing at '{outputs['metadata_output']}'"
+                )
+                print_error(f"[ERROR] {err}")
+                raise err
+            step7_duration = step7_work_elapsed
+            summary.steps.append(StepSummary(step_names[7], "ran", step7_duration))
+        else:
+            step7_duration = 0.0
+            summary.steps.append(StepSummary(step_names[7], "skipped", step7_duration))
         current_step_idx = None
 
         total_duration = time.perf_counter() - pipeline_start_time
@@ -929,6 +1141,13 @@ def main():
         print_success("============================================================")
 
     except BaseException:
+        # If a background transcription is still running, let it finish so the
+        # .srt output is available for a resumed run, and record Step 1 in the
+        # summary before reporting the failure.
+        try:
+            _finish_step1(raise_errors=False)
+        except Exception:
+            pass
         if current_step_idx is not None:
             failed_name = step_names[current_step_idx]
             failed_dur = time.perf_counter() - step_start_time
