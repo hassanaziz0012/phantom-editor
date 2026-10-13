@@ -22,6 +22,7 @@ import sys
 import json
 import re
 import argparse
+from urllib.parse import urlparse, parse_qs
 from pathlib import Path
 
 pipeline_dir = Path(__file__).resolve().parent
@@ -42,11 +43,6 @@ try:
     from metadata.read_metadata import read_metadata
 except ImportError:
     from read_metadata import read_metadata
-
-try:
-    from projects.pipeline_status import is_valid_yt_url
-except ImportError:
-    from pipeline_status import is_valid_yt_url
 
 try:
     from projects.google_sheet_utils import sync_projects_to_sheet
@@ -77,6 +73,38 @@ COLOR_WHITE = "\033[97m"
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 GENERATED_PREFIXES = ("to-review", "final", "after-", "temp", "preview", "processed-audio")
+
+
+def is_valid_yt_url(url: str) -> bool:
+    """Check if a URL string is a valid YouTube URL (fast, no HTTP requests)."""
+    if not url or not isinstance(url, str):
+        return False
+    url = url.strip()
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = (parsed.hostname or "").lower()
+        valid_hosts = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "www.youtu.be"}
+        if hostname not in valid_hosts:
+            return False
+
+        if hostname in ("youtu.be", "www.youtu.be"):
+            path = parsed.path.strip("/")
+            return len(path) > 0
+        else:
+            if parsed.path == "/watch":
+                qs = parse_qs(parsed.query)
+                v_param = qs.get("v", [""])[0]
+                return len(v_param) > 0
+            elif parsed.path.startswith(("/embed/", "/v/", "/shorts/", "/live/")):
+                parts = [p for p in parsed.path.split("/") if p]
+                return len(parts) >= 2
+            elif len(parsed.path.strip("/")) > 0:
+                return True
+        return False
+    except Exception:
+        return False
 
 
 @dataclass

@@ -163,65 +163,51 @@ phantom pipeline organize /path/to/recording.mkv "Lead Name" --loom
 
 ---
 
-## ⚡ Video Processing Engine: [`process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)
+## ⚡ Video Processing Engine: `projects/process_video.py`
 
-The video processing engine executes an automated 7-step media pipeline that transforms raw footage into a polished review video (`to-review.mp4`), conducts automated audio and video quality reviews, and automatically generates YouTube metadata (`metadata.json`).
+`phantom projects process` runs a 7-step pipeline that turns raw footage into `final.mp4`, reviews it automatically, generates `metadata.json`, and writes a `summary.md` run report. The code lives in the `projects/pipeline/` package; `process_video.py` is only the entry point.
 
 It operates in two modes:
-* **Dual-Stream Mode** (`<webcam> [screen]`): Transcribes audio, detects voice triggers (`"webcam start"` / `"webcam stop"`), applies rounded webcam masking over the screen, and trims silences in a single pass.
-* **Raw Mode** (`--raw <raw_video>`): Trims silences directly on a pre-composed video without webcam masking.
+* **Webcam Mode** (`<webcam> [screen]`): Overlays a rounded webcam mask on the screen recording (toggled by `"webcam start"` / `"webcam stop"` voice commands, or always with `--all`) and trims silences in one FFmpeg pass.
+* **Raw Mode** (`--raw <raw_video>`): Trims silences directly from a pre-composed recording. Only the speech audio is extracted up front; the video is encoded once, at the end, straight from the source.
 
-```mermaid
-flowchart TD
-    Raw[Raw Footage: Dual-Stream or --raw] --> Step1[Step 1: Groq Cloud Transcription]
-    Step1 -->|*.srt & *-1word.srt| Step2[Step 2: Silence Trim ± Masking]
-    Step2 -->|after-trim-silences.mp4| Step3[Step 3: Vocal Audio Cleanup & Normalization]
-    Step3 -->|after-audio-processing.mp4| Step4{Step 4: Background Music?}
-    Step4 -->|Yes| Step4Run[Mix BGM via add_bgm_to_video.sh]
-    Step4 -->|No / Skipped| Step5[Step 5: Finalize Review File]
-    Step4Run -->|after-audio-processing-bgm.mp4| Step5
-    Step5 -->|to-review.mp4| Step6[Step 6: Review Audio & Video Inspection]
-    Step6 --> Step7[Step 7: Auto-Create Metadata]
-    Step1 -.->|*.srt| Step7
-    Step7 --> Output[metadata.json & to-review.mp4]
-```
+### Pipeline Steps
 
-### Pipeline Steps in Detail
+| # | Step | Raw mode | Webcam mode |
+| :--- | :--- | :--- | :--- |
+| 1 | Transcription (`transcribe_cloud.py`) | Background thread | Background with `--all`, otherwise before Step 2 (voice commands need the captions) |
+| 2 | Silence trim | Silero VAD + audio-only extraction -> `raw-audio.wav` | Webcam mask + silence trim -> `after-trim-silences.mp4` |
+| 3 | Audio processing (`process_audio.sh`) | DeepFilterNet + loudnorm -> `processed-audio.wav` | same |
+| 4 | Final output | Single-pass encode + mux (+ BGM mixed inline, black-frame QC inline) -> `final.mp4` | Remux processed audio (+ BGM via `add_bgm_to_video.sh`) -> `final.mp4` |
+| 5 | Verify | Structural check that `final.mp4` is not truncated or stuck on one frame | same |
+| 6 | Review (`audio_review.py`, `video_inspector.py`) | Audio review only (black frames were checked in Step 4) | Audio review + video inspector |
+| 7 | Metadata (`auto_create_metadata.py`) | Background thread, overlapping Step 6 | same |
 
-1. **Step 1: Cloud Transcription (`transcribe_cloud.py`)**
-   - Transcribes the raw audio track using the Groq Whisper cloud API.
-   - Generates both a standard sentence-level `.srt` and a word-level `*-1word.srt` subtitle file.
-2. **Step 2: Video Processing & Silence Trimming**
-   - **Dual-Stream Mode** ([`single_pass_mask_trim.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/single_pass_mask_trim.py)): Analyzes word-level SRT timestamps for voice triggers (`"webcam start"` and `"webcam stop"`), generates an anti-aliased rounded-corner mask for the webcam overlay, computes speech intervals with Silero VAD (`trim_silences.py`), and executes webcam overlay positioning and dead-air silence removal inside a single unified FFmpeg filtergraph, avoiding redundant re-encodings (`after-trim-silences.mp4`).
-   - **Raw Mode** (`--raw`): Analyzes speech intervals with Silero VAD and cuts silences directly from the pre-composed video (`after-trim-silences.mp4`).
-3. **Step 3: Vocal Audio Enhancement (`process_audio.sh`)**
-   - Strips and processes audio using DeepFilterNet noise suppression.
-   - Applies dual-pass EBU R128 `loudnorm` normalization and multiplexes the enhanced track back into the video (`after-audio-processing.mp4`).
-4. **Step 4: Background Music Addition (`add_bgm_to_video.sh`)**
-   - Mixes in background music from the local library or custom path with automated ducking and volume adjustment (`after-audio-processing-bgm.mp4`).
-   - Skipped automatically if no `--bgm` flag is passed.
-5. **Step 5: File Finalization**
-   - Safely copies the latest generated video file to `to-review.mp4`, preparing the cut for manual review.
-6. **Step 6: Quality Review & Inspection ([`audio_review.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/audio_review.py) & [`video_inspector.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py))**
-   - Runs `audio_review.py` using PANNs (Cnn14) inference to flag vocal bloopers, mouth noises, mic impacts, and unwanted sounds with timestamps and confidence ratings.
-   - Runs `video_inspector.py` scanning for black frames, freeze frames, and bad cuts.
-   - Displays all inspection findings directly in the terminal for manual verification (can be bypassed with `--skip-review`).
-7. **Step 7: Automatic Metadata Generation ([`auto_create_metadata.py`](file:///home/hassan/Desktop/programming/phantom-editor/metadata/auto_create_metadata.py))**
-   - Automatically inspects the project's transcript and generates an engaging video description, promotional tweet template, and video recommendations into `metadata.json`. (Video timestamps/chapters can be generated after manual review cuts via `phantom metadata timestamps`).
-   - Uses the provided `--title` if specified, or defaults to the formatted project folder name.
+### Smart Resumption
 
-### Smart Resumption & Caching
+A step is skipped when its output file already exists and is valid. Once any step really runs, every later step re-runs too, since its inputs changed. The review (Step 6) runs only when something upstream ran. Pass `--force` to re-run everything.
 
-`process_video.py` inspects intermediate output files and modification timestamps. If a step has already succeeded and its source has not changed, that step is skipped automatically. Pass `--force` to re-execute every step from scratch.
+### Code Layout (`projects/pipeline/`)
+
+| Module | Responsibility |
+| :--- | :--- |
+| `cli.py` | Argument parsing, input validation, building the run context, writing `summary.md` |
+| `runner.py` | `Step` definition and the runner: skipping, timing, background steps, failure attribution |
+| `steps/__init__.py` | The step list for each mode (names, outputs, background/ordering) |
+| `steps/*.py` | One module per step (`raw.py` and `webcam.py` hold the mode-specific Steps 2 and 4) |
+| `context.py` | `PipelineContext`, output paths and external script paths |
+| `status.py` | Pre-run overview and confirmation prompt |
+| `summary.py` | `RunSummary`, review flags and the `summary.md` report |
+| `ffmpeg.py`, `common.py` | Shared FFmpeg presets and helpers (`PipelineError`, output validation) |
 
 ### CLI Options
 
 ```bash
-# Dual-stream processing
-phantom pipeline process <webcam_video> [screen_video] [options]
+# Webcam + screen processing
+phantom projects process <webcam_video> [screen_video] [options]
 
 # Raw pre-composed video processing
-phantom pipeline process --raw <raw_video> [options]
+phantom projects process --raw <raw_video> [options]
 ```
 
 | Option | Short | Type | Default | Description |
@@ -236,32 +222,9 @@ phantom pipeline process --raw <raw_video> [options]
 | `--bgm` | `--bgm-track` | str | `None` | Background music track name or file path. |
 | `--volume` | | int (1–100) | `10` | Volume percentage for background music. |
 | `--skip-review` | | flag | `False` | Skip audio and video inspection review step. |
+| `--clean-intermediates` | | flag | `False` | Delete the Step 2 intermediate file once `final.mp4` exists. |
 | `--yes` | `-y` | flag | `False` | Skip interactive confirmation prompts and run automatically. |
 | `--force` | `-f` | flag | `False` | Force re-execution of all pipeline steps regardless of cached files. |
-
----
-
-## ✂️ Single-Pass Processor: [`single_pass_mask_trim.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/single_pass_mask_trim.py)
-
-Directly invoked by Step 2 of `process_video.py`, or callable standalone for targeted video builds.
-
-### Key Capabilities
-
-* **Voice-Triggered Webcam Overlay**: Searches the 1-word subtitle stream for `"webcam start"` and `"webcam stop"` commands to toggle between full-screen screencast and picture-in-picture webcam overlay.
-* **Interactive Fallback**: If no voice commands are detected and `--all` is not specified, prompts the user to choose full-screen webcam or top-right overlay. In non-interactive (`-y`) mode, defaults to top-right screen overlay.
-* **Rounded Mask Generation**: Synthesizes a transparent PNG mask with customizable corner radius (Pillow) to produce modern rounded corners on the webcam stream.
-* **Unified Complex Filtergraph**: Chains `overlay`, `select`, `setpts`, and audio resample filters into a single FFmpeg process, cutting encoding time by ~50% compared to sequential passes.
-
-### Standalone CLI Usage
-
-```bash
-python pipelines/single_pass_mask_trim.py \
-    webcam.mp4 \
-    screen.mp4 \
-    --srt webcam-1word.srt \
-    --output after-trim-silences.mp4 \
-    --preset portrait
-```
 
 ---
 
@@ -287,15 +250,3 @@ CONTENT_CALENDAR_SHEET_ID=your_google_sheet_id_here
 
 > [!NOTE]
 > Make sure the target Google Sheet is shared with `GOOGLE_SERVICE_ACCOUNT_EMAIL` as an **Editor**.
-
----
-
-## 🔍 Validation & Pipeline Utilities: [`pipeline_status.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/pipeline_status.py)
-
-Provides shared validation and terminal formatting helpers used across pipeline modules:
-
-* `is_valid_yt_url(url)`: Fast regex/URL validation without network requests.
-* `is_4k_video(video_path)`: Detects 4K video streams for downscaling.
-* `is_valid_video_file(video_path)`: Uses `ffprobe` to ensure video files are intact and non-zero length.
-* `get_pipeline_outputs(...)` & `compute_pipeline_status(...)`: Computes file dependency graphs and step execution requirements.
-* `print_pipeline_overview(...)` & `confirm_execution(...)`: Displays interactive pre-flight summaries before running heavy encoding tasks.
