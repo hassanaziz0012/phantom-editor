@@ -57,6 +57,44 @@ DEFAULT_TARGET_CLASSES = [
 ]
 
 
+class Cnn14Classifier(torch.nn.Module):
+    """Lightweight wrapper around a Cnn14 model that returns only clipwise_output.
+
+    This lets TorchScript trace/freeze a graph that skips the unused 2048-d
+    embedding tensor that eager ``AudioTagging.inference`` always computes.
+    """
+
+    def __init__(self, panns_model):
+        super().__init__()
+        self.model = panns_model
+
+    def forward(self, x):
+        return self.model(x)['clipwise_output']
+
+
+def build_inference_model(panns_model, batch_size: int, win_sec: float):
+    """
+    Traces and freezes Cnn14 with TorchScript for faster CPU inference.
+
+    Returns a callable mapping a float32 tensor [B, win_size] to clipwise_output
+    [B, num_classes]. Falls back to the eager PyTorch wrapper if tracing fails.
+    """
+    classifier = Cnn14Classifier(panns_model).eval()
+    dummy = torch.randn(batch_size, int(win_sec * SAMPLE_RATE))
+    try:
+        traced = torch.jit.trace(classifier, dummy, strict=False)
+        frozen_model = torch.jit.freeze(traced.eval())
+        print("TorchScript JIT model ready.", file=sys.stderr)
+        return frozen_model
+    except Exception as exc:  # noqa: BLE001 - any trace/freeze failure should fall back
+        print(
+            f"Warning: TorchScript JIT optimization failed ({exc}); "
+            "falling back to eager PyTorch.",
+            file=sys.stderr,
+        )
+        return classifier
+
+
 def extract_audio(input_path: str) -> str:
     """
     Extracts mono 32kHz WAV audio from any video/audio file using ffmpeg.
@@ -124,6 +162,9 @@ def make_windows(audio: np.ndarray, sr: int, win_sec: float, hop_sec: float):
 def run_batched_inference(model, windows: np.ndarray, batch_size: int):
     """
     Runs PANNs inference in batches to keep CPU memory/time reasonable.
+
+    ``model`` is a callable (frozen TorchScript or eager wrapper) mapping a
+    float32 tensor [B, win_size] to clipwise_output [B, num_classes].
     Returns array of shape [N, num_classes] of class probabilities.
     """
     all_probs = []
@@ -132,10 +173,12 @@ def run_batched_inference(model, windows: np.ndarray, batch_size: int):
         with tqdm(total=n, desc="Inference progress", unit="windows", file=sys.stderr) as pbar:
             for i in range(0, n, batch_size):
                 batch = windows[i:i + batch_size]
-                clipwise_output, _ = model.inference(batch)
+                # from_numpy shares memory with the contiguous batch slice (no copy)
+                batch_tensor = torch.from_numpy(batch)
+                clipwise_output = model(batch_tensor)
                 all_probs.append(clipwise_output)
                 pbar.update(len(batch))
-    return np.concatenate(all_probs, axis=0)
+    return torch.cat(all_probs, dim=0).cpu().numpy()
 
 
 def collect_hits(probs: np.ndarray, start_times: list, target_idx: dict,
@@ -298,8 +341,11 @@ def main():
         print("Loading PANNs model (CPU)...", file=sys.stderr)
         model = AudioTagging(checkpoint_path=None, device='cpu')
 
+        print("Optimizing model with TorchScript JIT...", file=sys.stderr)
+        inference_model = build_inference_model(model.model, args.batch_size, args.win_sec)
+
         print("Running inference...", file=sys.stderr)
-        probs = run_batched_inference(model, windows, args.batch_size)
+        probs = run_batched_inference(inference_model, windows, args.batch_size)
 
         # Show top detected classes across all 527 AudioSet classes in the entire audio
         if args.top_classes > 0:
