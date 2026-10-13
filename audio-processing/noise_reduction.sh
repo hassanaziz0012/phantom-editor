@@ -102,19 +102,35 @@ if [[ -n "$DURATION" && "$DURATION" -ge 15 && "$CORES" -gt 1 ]]; then
     OUT_CHUNK_DIR="$TMP_DIR/out_chunks"
     mkdir -p "$CHUNK_DIR" "$OUT_CHUNK_DIR"
 
-    # Calculate optimal segment length per core (minimum 10s per chunk)
-    CHUNK_LEN=$(( (DURATION + CORES - 1) / CORES ))
-    if [[ $CHUNK_LEN -lt 10 ]]; then
-        CHUNK_LEN=10
+    # Fine-grained chunking instead of a coarse per-core split. A fixed short chunk
+    # keeps every unit of work small and roughly uniform, so no single chunk with
+    # heavy speech/noise can become a straggler that leaves the other cores idle.
+    # A 7-minute file now yields ~21 chunks rather than 4 x ~105s chunks.
+    # Clamped to [10s, 25s] so we never emit impractically tiny or oversized chunks.
+    TARGET_CHUNK_LEN=20
+    MIN_CHUNK_LEN=10
+    MAX_CHUNK_LEN=25
+    CHUNK_LEN=$TARGET_CHUNK_LEN
+    if [[ $CHUNK_LEN -lt $MIN_CHUNK_LEN ]]; then
+        CHUNK_LEN=$MIN_CHUNK_LEN
+    elif [[ $CHUNK_LEN -gt $MAX_CHUNK_LEN ]]; then
+        CHUNK_LEN=$MAX_CHUNK_LEN
     fi
 
-    # Split audio into chunks
+    echo "Splitting audio into ${CHUNK_LEN}s chunks for dynamic scheduling across $CORES core(s)..."
+
+    # Split audio into chunks. `-c copy` on PCM cuts on sample boundaries, so the
+    # chunks are sample-exact and can be losslessly concatenated back together.
     ffmpeg -hide_banner -loglevel error -i "$INPUT_FILE" -f segment -segment_time "$CHUNK_LEN" -c copy "$CHUNK_DIR/chunk_%04d.wav"
 
-    # Run deep-filter in parallel across all CPU cores
+    # Dynamic work queue: xargs keeps exactly $CORES deep-filter jobs in flight and
+    # dispatches the next chunk the instant any core frees up, so total wall time
+    # tracks the total amount of work instead of the slowest single chunk.
+    # Zero-padded chunk_%04d.wav names mean a plain lexicographic `sort` is also
+    # numerically correct, keeping chunks in playback order.
     find "$CHUNK_DIR" -maxdepth 1 -name "chunk_*.wav" | sort | xargs -P "$CORES" -I {} deep-filter -o "$OUT_CHUNK_DIR" {}
 
-    # Concatenate processed audio chunks
+    # Concatenate processed audio chunks in numerical (playback) order
     CONCAT_LIST="$TMP_DIR/concat.txt"
     find "$OUT_CHUNK_DIR" -maxdepth 1 -name "chunk_*.wav" | sort | sed "s/^/file '/; s/$/'/" > "$CONCAT_LIST"
     ffmpeg -hide_banner -loglevel error -f concat -safe 0 -i "$CONCAT_LIST" -c copy "$GENERATED_FILE"
