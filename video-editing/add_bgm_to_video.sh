@@ -158,7 +158,7 @@ process_video() {
         ffmpeg -loglevel error -threads 0 -i "$VIDEO_FILE" -i "$PROCESSED_AUDIO_FILE" -stream_loop -1 -i "$BGM_FILE" \
             -filter_complex "[2:a]volume=${VOLUME}/100[music];[1:a][music]amix=inputs=2:duration=first:dropout_transition=0[out_a]" \
             -map 0:v:0 -map "[out_a]" \
-            -c:v copy -c:a aac -b:a 256k \
+            -c:v copy -c:a aac -b:a 256k -ac 2 \
             -shortest "$OUTPUT_FILE" -progress "$TEMP_PROGRESS_FILE" &
     else
         # Standalone mode: mix video's original audio with BGM
