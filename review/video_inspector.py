@@ -60,14 +60,21 @@ def get_video_metadata(video_path: str) -> dict:
 
 def run_inspection(video_path: str, args) -> tuple:
     """Runs ffmpeg blackdetect and freezedetect filters and parses outputs in real time."""
-    # Build filtergraph
+    # Build filtergraph with optional downscaling for performance
     black_filter = f"blackdetect=d={args.black_duration}:pic_th={args.black_pic_th}:pix_th={args.black_pix_th}"
     freeze_filter = f"freezedetect=d={args.freeze_duration}:n={args.freeze_noise}"
     
+    if args.scale_width and args.scale_width > 0:
+        scale_filter = f"scale={args.scale_width}:-2:flags=fast_bilinear"
+        vf_chain = f"{scale_filter},{black_filter},{freeze_filter}"
+    else:
+        vf_chain = f"{black_filter},{freeze_filter}"
+    
     cmd = [
         'ffmpeg', '-y',
+        '-threads', '0',
         '-i', video_path,
-        '-vf', f"{black_filter},{freeze_filter}",
+        '-vf', vf_chain,
         '-f', 'null', '-'
     ]
 
@@ -94,70 +101,78 @@ def run_inspection(video_path: str, args) -> tuple:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
-        bufsize=1
+        bufsize=4096
     )
 
     buffer = ""
     total_duration = args.total_duration
 
+    def handle_line(line_text: str):
+        nonlocal active_freeze_start
+        line_clean = line_text.strip()
+        if not line_clean:
+            return
+
+        # Parse blackdetect logs
+        black_match = black_regex.search(line_clean)
+        if black_match:
+            start = float(black_match.group(1))
+            end = float(black_match.group(2))
+            dur = float(black_match.group(3))
+            black_glitches.append((start, end, dur))
+            # Clear progress line to output glitch warning cleanly
+            sys.stdout.write("\r" + " " * 80 + "\r")
+            print(colorize(f"⚠️  BLACK DETECTED: {format_time(start)} --> {format_time(end)} (Duration: {dur:.2f}s)", Colors.WARNING))
+
+        # Parse freezedetect logs
+        freeze_start_match = freeze_start_regex.search(line_clean)
+        if freeze_start_match:
+            active_freeze_start = float(freeze_start_match.group(1))
+
+        freeze_end_match = freeze_end_regex.search(line_clean)
+        if freeze_end_match:
+            end = float(freeze_end_match.group(1))
+            dur = float(freeze_end_match.group(2))
+            start = active_freeze_start if active_freeze_start is not None else (end - dur)
+            freeze_glitches.append((start, end, dur))
+            active_freeze_start = None
+            # Clear progress line to output glitch warning cleanly
+            sys.stdout.write("\r" + " " * 80 + "\r")
+            print(colorize(f"⚠️  FREEZE DETECTED: {format_time(start)} --> {format_time(end)} (Duration: {dur:.2f}s)", Colors.WARNING))
+
+        # Parse progress time
+        time_match = time_regex.search(line_clean)
+        if time_match and total_duration > 0:
+            cur_time_str = time_match.group(1)
+            cur_sec = parse_time_to_seconds(cur_time_str)
+            pct = min(100.0, (cur_sec / total_duration) * 100.0)
+
+            # Generate simple text progress bar (width of 20)
+            bar_len = 20
+            filled_len = int(round(bar_len * pct / 100.0))
+            bar = '=' * filled_len + '-' * (bar_len - filled_len)
+
+            sys.stdout.write(f"\rScanning: [{bar}] {pct:.1f}% ({format_time(cur_sec)} / {format_time(total_duration)})")
+            sys.stdout.flush()
+
     try:
         while True:
-            char = process.stderr.read(1)
-            if not char:
+            chunk = process.stderr.read(4096)
+            if not chunk:
                 # Check for process completion
                 if process.poll() is not None:
+                    if buffer:
+                        handle_line(buffer)
+                        buffer = ""
                     break
                 continue
-            
-            if char in ('\r', '\n'):
-                if buffer:
-                    line = buffer.strip()
-                    
-                    # Parse blackdetect logs
-                    black_match = black_regex.search(line)
-                    if black_match:
-                        start = float(black_match.group(1))
-                        end = float(black_match.group(2))
-                        dur = float(black_match.group(3))
-                        black_glitches.append((start, end, dur))
-                        # Clear progress line to output glitch warning cleanly
-                        sys.stdout.write("\r" + " " * 80 + "\r")
-                        print(colorize(f"⚠️  BLACK DETECTED: {format_time(start)} --> {format_time(end)} (Duration: {dur:.2f}s)", Colors.WARNING))
-                    
-                    # Parse freezedetect logs
-                    freeze_start_match = freeze_start_regex.search(line)
-                    if freeze_start_match:
-                        active_freeze_start = float(freeze_start_match.group(1))
-                    
-                    freeze_end_match = freeze_end_regex.search(line)
-                    if freeze_end_match:
-                        end = float(freeze_end_match.group(1))
-                        dur = float(freeze_end_match.group(2))
-                        start = active_freeze_start if active_freeze_start is not None else (end - dur)
-                        freeze_glitches.append((start, end, dur))
-                        active_freeze_start = None
-                        # Clear progress line to output glitch warning cleanly
-                        sys.stdout.write("\r" + " " * 80 + "\r")
-                        print(colorize(f"⚠️  FREEZE DETECTED: {format_time(start)} --> {format_time(end)} (Duration: {dur:.2f}s)", Colors.WARNING))
-                    
-                    # Parse progress time
-                    time_match = time_regex.search(line)
-                    if time_match and total_duration > 0:
-                        cur_time_str = time_match.group(1)
-                        cur_sec = parse_time_to_seconds(cur_time_str)
-                        pct = min(100.0, (cur_sec / total_duration) * 100.0)
-                        
-                        # Generate simple text progress bar (width of 20)
-                        bar_len = 20
-                        filled_len = int(round(bar_len * pct / 100.0))
-                        bar = '=' * filled_len + '-' * (bar_len - filled_len)
-                        
-                        sys.stdout.write(f"\rScanning: [{bar}] {pct:.1f}% ({format_time(cur_sec)} / {format_time(total_duration)})")
-                        sys.stdout.flush()
-                        
-                    buffer = ""
-            else:
-                buffer += char
+
+            buffer += chunk
+            lines = re.split(r'[\r\n]+', buffer)
+            buffer = lines.pop()  # Keep uncompleted trailing line
+            for l in lines:
+                handle_line(l)
+
     except KeyboardInterrupt:
         process.terminate()
         sys.stdout.write("\r" + " " * 80 + "\r")
@@ -244,6 +259,8 @@ def print_report(video_path: str, meta: dict, black_glitches: list, freeze_glitc
     print(colorize("Scan Parameters:", Colors.BOLD + Colors.CYAN))
     print(f"  • Black Detect:  min_duration={args.black_duration}s, pixel_th={args.black_pix_th}, pic_th={args.black_pic_th}")
     print(f"  • Freeze Detect: min_duration={args.freeze_duration}s (tail_threshold={args.tail_freeze_duration}s), noise_tolerance={args.freeze_noise}")
+    scale_msg = f"{args.scale_width}px (disabled)" if args.scale_width == 0 else f"{args.scale_width}px"
+    print(f"  • Inspection Scale: {scale_msg}")
     print("-" * 80)
 
     # 2. Detailed glitches
@@ -276,6 +293,26 @@ def print_report(video_path: str, meta: dict, black_glitches: list, freeze_glitc
         print(colorize("Note: Review these timestamps in your video editor to fix bad frames/glitches.", Colors.DIM))
 
     print("=" * 80)
+    
+    # Write JSON output if requested
+    if args.json_out:
+        output_data = {
+            "video_path": os.path.abspath(video_path),
+            "width": width,
+            "height": height,
+            "duration": dur,
+            "fps": fps_display,
+            "black_glitches": [
+                {"start": start, "end": end, "duration": dur, "type": "black"}
+                for start, end, dur in black_glitches
+            ],
+            "freeze_glitches": [
+                {"start": start, "end": end, "duration": dur, "type": "freeze"}
+                for start, end, dur in freeze_glitches
+            ]
+        }
+        with open(args.json_out, "w") as f:
+            json.dump(output_data, f, indent=2)
 
 def main():
     parser = argparse.ArgumentParser(description="Inspects video for properties (resolution, aspect ratio) and scans for glitches (black screens, freeze frames).")
@@ -286,6 +323,8 @@ def main():
     parser.add_argument("--freeze-duration", "-fd", type=float, default=0.5, help="Minimum duration of frozen video in seconds (default: 0.5).")
     parser.add_argument("--tail-freeze-duration", "-tfd", type=float, default=2.0, help="Minimum duration of frozen video at the very end of video in seconds before flagging (default: 2.0).")
     parser.add_argument("--freeze-noise", "-fn", type=float, default=0.003, help="Noise tolerance threshold for freeze detection (default: 0.003).")
+    parser.add_argument("--scale-width", "-sw", type=int, default=640, help="Downscale width for faster inspection (default: 640, 0 to disable).")
+    parser.add_argument("--json-out", default=None, help="Optional path to output JSON with detected glitches (default: None, prints to terminal only)")
     
     args = parser.parse_args()
 
