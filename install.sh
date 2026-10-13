@@ -14,14 +14,16 @@ if [ ! -f "$PHANTOM_SRC" ]; then
     exit 1
 fi
 
+# Ensure target directory exists
+mkdir -p "$HOME/.local/bin"
+
 # Make sure the source script is executable
 chmod +x "$PHANTOM_SRC"
 
 echo "Copying phantom CLI to $PHANTOM_DEST..."
-# Use sudo to copy to /usr/local/bin
-sudo cp "$PHANTOM_SRC" "$PHANTOM_DEST"
+cp "$PHANTOM_SRC" "$PHANTOM_DEST"
 
 # Ensure the copied file is executable
-sudo chmod +x "$PHANTOM_DEST"
+chmod +x "$PHANTOM_DEST"
 
 echo "Successfully updated phantom CLI at $PHANTOM_DEST!"
