@@ -1,24 +1,42 @@
 #!/bin/bash
  
 set -e
-
+ 
 # Get the directory of the current script to reliably call the other scripts
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
+ 
 show_usage() {
-    echo "Usage: $0 [-R|--recursive] <path>"
+    echo "Usage: $0 [-R|--recursive] [--pipeline-mode] [--output-file <path>] <path>"
     echo "Options:"
-    echo "  -R, --recursive   Process all video files inside the specified folder path"
+    echo "  -R, --recursive          Process all video files inside the specified folder path"
+    echo "  --pipeline-mode          Pipeline mode: output only processed-audio.wav without video remux"
+    echo "  --output-file <path>     Output file path for pipeline mode (required with --pipeline-mode)"
 }
-
+ 
 RECURSIVE=false
+PIPELINE_MODE=false
+OUTPUT_FILE=""
 INPUT_PATH=""
-
+ 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -R|--recursive)
             RECURSIVE=true
             shift
+            ;;
+        --pipeline-mode)
+            PIPELINE_MODE=true
+            shift
+            ;;
+        --output-file)
+            if [[ -n "$2" ]]; then
+                OUTPUT_FILE="$2"
+                shift 2
+            else
+                echo "Error: --output-file requires a path argument."
+                show_usage
+                exit 1
+            fi
             ;;
         -h|--help)
             show_usage
@@ -40,8 +58,14 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
+ 
 if [[ -z "$INPUT_PATH" ]]; then
+    show_usage
+    exit 1
+fi
+ 
+if [[ "$PIPELINE_MODE" = true && -z "$OUTPUT_FILE" ]]; then
+    echo "Error: --pipeline-mode requires --output-file <path> argument."
     show_usage
     exit 1
 fi
@@ -50,7 +74,8 @@ process_video() {
     local INPUT_MP4="$1"
     local OUTPUT_MP4="$2"
     local IS_RECURSIVE="$3"
-
+    local IS_PIPELINE_MODE="$4"
+ 
     if [ "$IS_RECURSIVE" = "true" ]; then
         local TEMP_DIR
         TEMP_DIR=$(mktemp -d)
@@ -69,11 +94,22 @@ process_video() {
         echo "--- Step 3: Applying noise reduction (DeepFilterNet) ---"
         "$SCRIPT_DIR/noise_reduction.sh" "$RAW_WAV" --output-file "$NOISE_REDUCED_WAV"
         
-        echo "--- Step 4: Applying normalization & remuxing into video ---"
-        ffmpeg -y -i "$INPUT_MP4" -i "$NOISE_REDUCED_WAV" \
-            -c:v copy -map 0:v:0 -map 1:a:0 \
-            -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k "$OUTPUT_MP4" \
+        echo "--- Step 4: Applying normalization ---"
+        ffmpeg -y -i "$NOISE_REDUCED_WAV" \
+            -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s24le -ar 48000 "$PROCESSED_WAV" \
             -hide_banner -loglevel warning
+        
+        if [ "$IS_PIPELINE_MODE" = "true" ]; then
+            # Pipeline mode: copy processed audio to output location (OUTPUT_MP4 is actually the audio output path)
+            cp "$PROCESSED_WAV" "$OUTPUT_MP4"
+            echo "Pipeline mode: Processed audio saved to $OUTPUT_MP4"
+        else
+            echo "--- Step 5: Remuxing normalized audio into video ---"
+            ffmpeg -y -i "$INPUT_MP4" -i "$NOISE_REDUCED_WAV" \
+                -c:v copy -map 0:v:0 -map 1:a:0 \
+                -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k "$OUTPUT_MP4" \
+                -hide_banner -loglevel warning
+        fi
         
         rm -rf "$TEMP_DIR"
     else
@@ -86,7 +122,7 @@ process_video() {
         local TEMP_DIR="$FILE_DIR/temp"
         local RAW_WAV="$TEMP_DIR/raw-audio.wav"
         local NOISE_REDUCED_WAV="$TEMP_DIR/noise-reduced.wav"
-        local PROCESSED_WAV="$FILE_DIR/processed-audio.wav"
+        local PROCESSED_WAV="${OUTPUT_MP4:-$FILE_DIR/processed-audio.wav}"
         local FINAL_MP4="$FILE_DIR/after-audio-processing.mp4"
         
         echo "--- Step 1: Creating temp directory ---"
@@ -98,19 +134,31 @@ process_video() {
         echo "--- Step 3: Applying noise reduction (DeepFilterNet) ---"
         "$SCRIPT_DIR/noise_reduction.sh" "$RAW_WAV" --output-file "$NOISE_REDUCED_WAV"
         
-        echo "--- Step 4: Applying normalization, exporting processed audio & remuxing video ---"
-        ffmpeg -y -i "$INPUT_MP4" -i "$NOISE_REDUCED_WAV" \
-            -c:v copy -map 0:v:0 -map 1:a:0 \
-            -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k "$FINAL_MP4" \
-            -map 1:a:0 -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s24le -ar 48000 "$PROCESSED_WAV" \
-            -hide_banner -loglevel warning
+        if [ "$IS_PIPELINE_MODE" = "true" ]; then
+            echo "--- Step 4: Applying normalization, exporting processed audio (no video remux) ---"
+            ffmpeg -y -i "$NOISE_REDUCED_WAV" \
+                -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s24le -ar 48000 "$PROCESSED_WAV" \
+                -hide_banner -loglevel warning
+        else
+            echo "--- Step 4: Applying normalization, exporting processed audio & remuxing video ---"
+            ffmpeg -y -i "$INPUT_MP4" -i "$NOISE_REDUCED_WAV" \
+                -c:v copy -map 0:v:0 -map 1:a:0 \
+                -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k "$FINAL_MP4" \
+                -map 1:a:0 -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s24le -ar 48000 "$PROCESSED_WAV" \
+                -hide_banner -loglevel warning
+        fi
         
         # Clean up temp directory
         rm -rf "$TEMP_DIR"
         
-        echo "Audio processing pipeline complete!"
-        echo "Final processed audio is located at: $PROCESSED_WAV"
-        echo "Final combined video is located at: $FINAL_MP4"
+        if [ "$IS_PIPELINE_MODE" = "true" ]; then
+            echo "Audio processing pipeline complete (pipeline mode)!"
+            echo "Final processed audio is located at: $PROCESSED_WAV"
+        else
+            echo "Audio processing pipeline complete!"
+            echo "Final processed audio is located at: $PROCESSED_WAV"
+            echo "Final combined video is located at: $FINAL_MP4"
+        fi
     fi
 }
 
@@ -162,7 +210,7 @@ if [ "$RECURSIVE" = true ]; then
         mkdir -p "$(dirname "$OUTPUT_FILE")"
 
         # Run in a subshell to ensure set -e handles errors within process_video properly
-        if (set -e; process_video "$VIDEO_FILE" "$OUTPUT_FILE" "true"); then
+        if (set -e; process_video "$VIDEO_FILE" "$OUTPUT_FILE" "true" "$PIPELINE_MODE"); then
             SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
             echo "Successfully processed: $VIDEO_FILE"
             echo "Output saved to: $OUTPUT_FILE"
@@ -182,5 +230,6 @@ else
         echo "Error: File '$INPUT_PATH' does not exist."
         exit 1
     fi
-    process_video "$INPUT_PATH" "" "false"
+    process_video "$INPUT_PATH" "$OUTPUT_FILE" "false" "$PIPELINE_MODE"
+    exit $?
 fi
