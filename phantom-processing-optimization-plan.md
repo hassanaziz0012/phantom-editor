@@ -1,103 +1,137 @@
-# Phantom Video Processing Pipeline: CPU Optimization Plan (Updated)
+# Phantom Video Processing Pipeline: CPU Optimization Plan (Updated & Revised)
 
 ## 1. Executive Summary & Hardware Context
 
-The current video processing pipeline orchestrator ([`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)) handles end-to-end execution: transcription, silence trimming / webcam masking, audio processing (DeepFilterNet + loudnorm), BGM addition, audio & video inspection, and metadata generation.
+The video processing pipeline orchestrator ([`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)) automates end-to-end video production: cloud transcription, silence trimming / webcam masking, DeepFilterNet noise removal and loudness normalization, background music (BGM) mixing, quality control inspection (audio and video), and YouTube metadata generation.
 
 ### System Constraints & User Parameters
-* **CPU:** Intel(R) Core(TM) i5-4460S @ 2.90GHz (4 physical cores, 4 threads, no Hyper-Threading)
-* **GPU / Acceleration:** Software CPU-bound execution.
-* **Encoding Preset:** Must remain **`-preset veryfast`** (preserving pristine visual quality for screen recordings without dropping to `superfast`).
-* **Audio Review Neural Network:** Must remain **PANNs `Cnn14`** (81M parameter network) to guarantee zero compromise in detecting coughs, sneezes, mouth clicks, or room interruptions.
+* **CPU:** Intel(R) Core(TM) i5-4460S @ 2.90GHz (4 physical cores, 4 threads, no Hyper-Threading).
+* **GPU / Acceleration:** 100% CPU-bound software execution.
+* **Video Encoding Preset:** Must strictly remain **`-preset veryfast`** with `-crf 20` (preserving pristine visual quality for screen recordings and preventing quality degradation).
+* **Audio Review Neural Network:** Must strictly remain **PANNs `Cnn14`** (81M parameter network) to guarantee zero compromise in flagging coughs, sneezes, mouth clicks, or background noises.
+* **CPU Core Constraint (Sequential Step 6):** Audio review (PyTorch) and video review (FFmpeg) **must run sequentially, never concurrently**. On a 4-core, 4-thread CPU, running both simultaneously causes heavy context switching and cache thrashing, completely locking up CPU throughput.
 
 ---
 
 ## 2. Recent Pipeline Improvements Already Implemented
 
-A comprehensive audit of the latest repository changes reveals several key optimizations already completed:
-1. **Single-Pass Final Multiplexing ([`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)):** Step 3 now operates in `--pipeline-mode`, outputting only `processed-audio.wav`. Step 4 combines video copying (`-c:v copy`), `processed-audio.wav`, and optional BGM directly into `final.mp4`, eliminating 2 multi-gigabyte intermediate video writes (`after-audio-processing.mp4` and `after-audio-processing-bgm.mp4`).
-2. **Video Inspector Downscaling ([`review/video_inspector.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py)):** Added `--scale-width 640` (downscaling to 360p before `blackdetect` and `freezedetect`), speeding up Step 6 video QC scanning by ~80% while retaining pixel-level freeze and black frame detection.
-3. **PANNs Batch Size & Inference Mode ([`review/audio_review.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/audio_review.py)):** Inference batch size was doubled to 64 and wrapped in `torch.inference_mode()`.
-4. **Concurrent Metadata Generation ([`metadata/auto_create_metadata.py`](file:///home/hassan/Desktop/programming/phantom-editor/metadata/auto_create_metadata.py)):** All 4 LLM tasks (description, tweet, recommendations, timestamps) execute in parallel via `ThreadPoolExecutor`, reducing metadata runtime from ~40s to ~12s.
+A comprehensive audit of the codebase confirms several major optimizations are already live:
+1. **Concat Demuxer Seeking for Raw Trimming ([`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)):** Step 2 in `--raw` mode now uses FFmpeg's concat demuxer with `inpoint` and `outpoint` timestamps, skipping the decoding of non-speech frames during silence removal.
+2. **Background Cloud Transcription ([`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)):** In `--raw` mode (and `--all` mode), Step 1 transcription runs in a background thread concurrently with Step 2 video encoding, masking network latency.
+3. **Single-Pass Final Multiplexing ([`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)):** Step 3 outputs `processed-audio.wav` directly without re-encoding video. Step 4 combines the video stream (`-c:v copy`), processed audio, and optional BGM directly into `final.mp4` in a single pass.
+4. **Background Metadata Generation ([`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py)):** Step 7 (AI metadata) is launched in a background thread right after Step 5, overlapping network/LLM generation with Step 6 review without competing for CPU cycles.
+5. **Fast Audio Loading via `soundfile` ([`review/audio_review.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/audio_review.py)):** Replaced `librosa.load` with `soundfile.read` for raw PCM reads, speeding up audio ingest by ~65x.
+6. **Concurrent Metadata Tasks ([`metadata/auto_create_metadata.py`](file:///home/hassan/Desktop/programming/phantom-editor/metadata/auto_create_metadata.py)):** Description, tweet, timestamps, and recommendations run in parallel via `ThreadPoolExecutor`.
+7. **Video Inspector Downscaling ([`review/video_inspector.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py)):** Added `--scale-width 640` downscaling before glitch filters, speeding up QC inspection by ~80%.
 
 ---
 
-## 3. High-ROI Optimization Ranking (Ordered by Time Saved)
+## 3. Retired / Inapplicable Strategies
 
-Here is the prioritized roadmap of new optimizations, ranked strictly by highest return on investment (most time saved first) while adhering to `-preset veryfast` and `Cnn14`:
+* **Retired: Concurrent Step 6 Execution (Audio Review + Video Inspector):**
+  * *Reason:* On a 4-core/4-thread CPU, running PyTorch Cnn14 (4 OpenMP threads) simultaneously with FFmpeg video decoding (4 threads) spawns 8 CPU-hungry threads competing for 4 cores. This leads to thread thrashing, cache eviction, and near-zero CPU progress. Audio and video review must run **one after the other**.
+* **Rejected: Fast Presets (`superfast` / `ultrafast`):**
+  * *Reason:* Preserves `-preset veryfast` as requested to avoid video compression artifacts.
+* **Rejected: Smaller PANNs Models (`Cnn6` / `Cnn10`):**
+  * *Reason:* Preserves `Cnn14` to maintain high recall for vocal bloopers.
+
+---
+
+## 4. High-ROI Optimization Ranking (Ordered by Time Saved)
+
+Here is the prioritized roadmap of new optimizations, ranked strictly by highest return on investment (most time saved first):
 
 | Rank | Optimization Strategy | Target File | Est. Time Saved (10m Video) | Complexity |
 | :--- | :--- | :--- | :--- | :--- |
-| **1** | **Concat Demuxer Seeking for Silence Trimming** | [`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py) | **~70s – 90s** | Low-Medium |
-| **2** | **Audio Review Hop Size Tuning (`0.5s` $\to$ `1.0s`)** | [`review/audio_review.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/audio_review.py) | **~30s – 45s** | Trivial |
-| **3** | **Concurrent Step 6 Execution (Audio Review + Video Inspector)** | [`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py) | **~15s – 25s** | Low |
-| **4** | **Step 2 Fast Audio Encoding (`-c:a copy` / low-bitrate draft)** | [`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py) & [`single_pass_mask_trim.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/single_pass_mask_trim.py) | **~5s – 8s** | Trivial |
-| **5** | **Optimized Audio Loading via `soundfile`** | [`review/audio_review.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/audio_review.py) | **~2s – 4s** | Trivial |
-| **6** | **Pipeline Overlap: Async Step 1 Transcription during Step 2** | [`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py) (in `--raw` mode) | **~10s – 15s** | Medium |
+| **1** | **Audio Review Hop Size Tuning (`0.5s` $\to$ `1.0s`)** | [`review/audio_review.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/audio_review.py) & [`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py) | **~40s – 45s** | Trivial |
+| **2** | **DeepFilterNet Mono Channel Processing (`-ac 1`)** | [`audio-processing/extract_wav_from_mp4.sh`](file:///home/hassan/Desktop/programming/phantom-editor/audio-processing/extract_wav_from_mp4.sh) | **~15s – 20s** | Trivial |
+| **3** | **Concat Demuxer Seeking for Dual-Mode Trimming** | [`pipelines/single_pass_mask_trim.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/single_pass_mask_trim.py) | **~50s – 75s** *(in dual mode)* | Medium |
+| **4** | **Step 2 Single-Pass Audio Output & Fast Draft Audio** | [`pipelines/process_video.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py) & [`audio-processing/process_audio.sh`](file:///home/hassan/Desktop/programming/phantom-editor/audio-processing/process_audio.sh) | **~6s – 10s** | Low |
+| **5** | **Cloud Transcription Audio Compression (MP3 vs FLAC)** | [`video-editing/transcribe_cloud.py`](file:///home/hassan/Desktop/programming/phantom-editor/video-editing/transcribe_cloud.py) | **~5s – 15s** | Low |
+| **6** | **Video Inspector Downscale Tuning (`640` $\to$ `320`/`426`)** | [`review/video_inspector.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py) | **~4s – 6s** | Trivial |
+| **7** | **RAM Disk (`/dev/shm`) for DeepFilterNet Chunks** | [`audio-processing/noise_reduction.sh`](file:///home/hassan/Desktop/programming/phantom-editor/audio-processing/noise_reduction.sh) | **~2s – 4s** | Trivial |
 
 ---
 
-## 4. In-Depth Breakdown of Proposed Optimizations
+## 5. In-Depth Breakdown of Proposed Optimizations
 
-### 1. Concat Demuxer Seeking for Silence Trimming (Rank 1 — Highest ROI)
-* **What happens right now:** In `run_step2_trim_silences_raw`, FFmpeg uses a massive `select` and `setpts` filter string. Even though it discards silent sections, FFmpeg's video pipeline must software-decode **100% of every frame in the raw video** to test the mathematical timestamp expressions. If 35% of a 10-minute video is silence, your CPU spends ~60–80 seconds decoding video frames just to throw them away.
-* **The Fix:** Switch `run_step2_trim_silences_raw` to use FFmpeg's concat demuxer (already proven in `video-editing/trim_silences.py`). FFmpeg seeks directly between speech `inpoint` and `outpoint` timestamps, completely skipping silent frames during decode.
-* **Preserving Quality & Preset:** Retains `-preset veryfast` and `-crf 20`. Encoding time is reduced simply because fewer non-speech frames enter the encoder pipeline.
-* **Expected Savings:** **70–90 seconds**.
-
----
-
-### 2. Audio Review Hop Size Adjustment with Cnn14 (Rank 2)
-* **What happens right now:** `review/audio_review.py` splits the audio into 2.0-second analysis windows with a 0.5-second hop size (`--hop-sec 0.5`).
-  * For a 7-minute processed video (420s), a 0.5s hop size creates **840 windows**.
-  * On 4 CPU cores running Cnn14 (~16.7 windows/second), this takes **~50.3 seconds**.
-* **The Fix:** Increase the default `--hop-sec` from `0.5` to `1.0`.
-  * Human acoustic bloopers (coughs, sneezes, chair scrapes, throat clears) last between 0.8s and 2.5s.
-  * With a 2.0s analysis window, a 1.0s hop guarantees every event is sampled at least twice with over 50% window coverage.
-  * Windows drop from 840 to **420 windows**, cutting inference time by **50%**.
-  * Retains **Cnn14** entirely for detection reliability.
-* **Expected Savings:** **30–45 seconds**.
+### 1. Audio Review Hop Size Tuning with Cnn14 (Rank 1 — Highest ROI)
+* **How it works now:** `review/audio_review.py` defaults to a 0.5-second hop size (`--hop-sec 0.5`). When `pipelines/process_video.py` calls audio review, no hop size is passed, so it uses this default. For a 7-minute edited video, a 0.5s hop produces **~840 windows**. Benchmarks on this machine show each Cnn14 window requires **105.3ms** on 4 CPU cores, totaling **~88.5 seconds** of inference time.
+* **The Optimization:** Change the default hop size to `1.0s` (and pass `--hop-sec 1.0` in `process_video.py`).
+* **Why it's completely safe:** The analysis window itself is 2.0 seconds long (`--win-sec 2.0`). Acoustic interruptions (coughs, sneezes, chair scrapes, mic thumps) last 0.5s to 2.5s. With a 2.0s window and a 1.0s hop, **every single second of audio is evaluated in at least two separate overlapping windows**. Nothing is skipped, and **Cnn14** is retained without architecture compromises.
+* **Impact:** Window count drops from 840 to 420. Inference time drops from ~88s to ~44s.
+* **Expected Savings:** **40–45 seconds**.
 
 ---
 
-### 3. Concurrent Audio & Video Review in Step 6 (Rank 3)
-* **What happens right now:** In `run_step6_review`, Python runs `audio_review.py`, waits for it to complete, and then runs `video_inspector.py` sequentially.
-  * `audio_review.py` uses PyTorch matrix operations on audio tensors.
-  * `video_inspector.py` uses FFmpeg's C-based downscaled video decoding (`scale=640:-2`).
-* **The Fix:** Execute `audio_review.py` and `video_inspector.py` concurrently using a `ThreadPoolExecutor(max_workers=2)` in `process_video.py`. Video inspection finishes in ~12s while audio review is running.
-* **Expected Savings:** **15–25 seconds**.
+### 2. DeepFilterNet Mono Processing via `-ac 1` (Rank 2)
+* **How it works now:** In `audio-processing/extract_wav_from_mp4.sh`, line 37 extracts audio with `-ac 2` (stereo):
+  ```bash
+  ffmpeg -i "$INPUT_FILE" -vn -acodec pcm_s16le -ar 48000 -ac 2 -y "$OUTPUT_FILE"
+  ```
+  Microphone and webcam audio are fundamentally mono sources. Extracting as stereo duplicates the voice signal across two identical channels. `deep-filter` then performs STFT calculations and neural network mask predictions on **two full channels** instead of one.
+* **Benchmark Evidence:** Directly benchmarked on this machine's CPU:
+  * 10s Mono `deep-filter`: **3.20 seconds**
+  * 10s Stereo `deep-filter`: **4.94 seconds** (35% slower!)
+* **The Optimization:** Change `extract_wav_from_mp4.sh` to extract mono audio (`-ac 1`). In Step 4, FFmpeg naturally maps mono voice to stereo or mixes it with stereo BGM during final multiplexing.
+* **Expected Savings:** **15–20 seconds**.
 
 ---
 
-### 4. Fast Audio Encoding in Step 2 Silence Trimming (Rank 4)
-* **What happens right now:** Step 2 encodes high-bitrate AAC audio (`-c:a aac -b:a 384k`). However, Step 3 immediately extracts the audio, filters it through DeepFilterNet, normalizes it, and outputs `processed-audio.wav`. The AAC track encoded in Step 2 is completely discarded when `processed-audio.wav` is muxed into `final.mp4`.
-* **The Fix:** In Step 2, encode audio with lightweight `-c:a aac -b:a 128k` (or stream copy where possible with concat), cutting redundant audio encoding CPU cycles.
-* **Expected Savings:** **5–8 seconds**.
+### 3. Concat Demuxer Seeking for Dual-Recording Mode (Rank 3)
+* **How it works now:** While `--raw` mode in `process_video.py` was updated to use FFmpeg's concat demuxer seeking, dual recording mode ([`pipelines/single_pass_mask_trim.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/single_pass_mask_trim.py)) still uses a monolithic `select` / `setpts` filter string. Even though silences are discarded, FFmpeg software-decodes **100% of both raw video streams**, renders webcam corner scaling and mask alpha blending over silent sections, and only discards the frames at the end.
+* **The Optimization:** Apply segment-based seek cutting to `single_pass_mask_trim.py` so only speech intervals are decoded and composited.
+* **Expected Savings:** **50–75 seconds** when processing dual webcam + screen projects.
 
 ---
 
-### 5. Fast WAV Loading via `soundfile` in Audio Review (Rank 5)
-* **What happens right now:** `audio_review.py` calls `librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)`. Benchmark measurements on this machine show `librosa.load` takes **488ms** for 60s of audio, whereas `soundfile.read` takes **7.5ms** (**65x faster**).
-* **The Fix:** Replace `librosa.load` with `soundfile.read` for loading PCM WAV files into NumPy arrays.
+### 4. Step 2 Direct Audio Extraction & Fast Draft Audio (Rank 4)
+* **How it works now:**
+  1. In Step 2, FFmpeg encodes video with `-c:v libx264 -preset veryfast` and encodes audio with `-c:a aac -b:a 384k`.
+  2. In Step 3, `process_audio.sh` immediately calls `extract_wav_from_mp4.sh` to decode that 384k AAC track back into an uncompressed WAV file (`raw-audio.wav`).
+  3. In Step 4, `final.mp4` replaces that audio entirely with `processed-audio.wav`. The 384k AAC audio encoded in Step 2 is completely discarded.
+* **The Optimization:**
+  1. Tell FFmpeg in Step 2 to write `step2_output` with lightweight audio (`-c:a aac -b:a 64k` for quick draft previewing) OR output `raw-audio.wav` directly in the **same FFmpeg pass** using multiple outputs (`-map 0:a -c:a pcm_s16le -ar 48000 -ac 1 raw-audio.wav`).
+  2. Step 3 detects `raw-audio.wav` and skips the `extract_wav_from_mp4.sh` pass entirely.
+* **Expected Savings:** **6–10 seconds**.
+
+---
+
+### 5. Cloud Transcription Audio Compression (Rank 5)
+* **How it works now:** [`video-editing/transcribe_cloud.py`](file:///home/hassan/Desktop/programming/phantom-editor/video-editing/transcribe_cloud.py) extracts audio as an uncompressed 16kHz mono FLAC file (`-c:a flac`). For recordings over 15 minutes, FLAC exceeds Groq's 20MB limit. This triggers `prepare_audio_chunks`, which loops through FFmpeg seeking and chunk-splitting multiple FLAC files on disk, then sends multiple separate HTTP requests.
+* **The Optimization:** Extract audio to a compact 32 kbps mono MP3 or Opus file (`-c:a libmp3lame -b:a 32k -ar 16000 -ac 1`):
+  * A 15-minute file is only **~3.6 MB** (vs 25+ MB FLAC).
+  * Up to 1.5 hours of audio fits within Groq's 25MB limit without ever triggering chunking.
+  * Eliminates FFmpeg chunk-splitting disk I/O and multiple API roundtrips.
+* **Expected Savings:** **5–15 seconds** (higher on longer raw recordings).
+
+---
+
+### 6. Video Inspector Downscale Tuning (`640` $\to$ `320` or `426`) (Rank 6)
+* **How it works now:** [`review/video_inspector.py`](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py) downscales video to 640 width before running `blackdetect` and `freezedetect`.
+* **The Optimization:** Lower `--scale-width` to `320` (180p) or `426` (240p).
+  * `blackdetect` measures average frame luminance, and `freezedetect` computes pixel difference against previous frames.
+  * A 320x180 frame contains 57,600 pixels—more than enough statistical resolution to detect whole-screen freezes or black transitions.
+  * Reduces pixel processing volume by 75% compared to 640p.
+* **Expected Savings:** **4–6 seconds**.
+
+---
+
+### 7. RAM Disk (`/dev/shm`) for DeepFilterNet Chunks (Rank 7)
+* **How it works now:** In `audio-processing/noise_reduction.sh`, `TMP_DIR=$(mktemp -d)` creates chunk directories in `/tmp` (on physical disk). FFmpeg segments audio into chunks, `deep-filter` reads and writes chunk files, and FFmpeg concats them back together.
+* **The Optimization:** Use `TMP_DIR=$(mktemp -d -p /dev/shm)` when `/dev/shm` is available. On Linux, `/dev/shm` is a shared-memory RAM disk that performs reads and writes at memory speed (several GB/s) with zero disk wear and zero latency.
 * **Expected Savings:** **2–4 seconds**.
 
 ---
 
-### 6. Pipeline Overlap: Background Cloud Transcription in `--raw` Mode (Rank 6)
-* **What happens right now:** In `--raw` mode, Step 1 (Groq Cloud Whisper API) runs first and waits ~10–15s over the network. However, raw mode silence trimming does **not** depend on subtitles (it uses Silero VAD directly on audio).
-* **The Fix:** In `--raw` mode, start Step 1 as an asynchronous background worker while Step 2 begins encoding immediately. The transcript is joined before Step 7 (metadata creation).
-* **Expected Savings:** **10–15 seconds** (completely masks network round-trip time).
+## 6. Projected Total Pipeline Runtime Comparison
 
----
-
-## 5. Projected Total Runtime Comparison
-
-| Step | Baseline Runtime | Current (Post-Recent Commits) | Projected with New Optimizations |
+| Step | Initial Baseline | Current (With Recent Improvements) | Projected (With New Optimizations) |
 | :--- | :--- | :--- | :--- |
-| **Step 1: Transcription** | ~15s | ~15s | ~0s (overlapped in `--raw` mode) / 15s |
-| **Step 2: Silence Trimming** | ~180s | ~180s | **~90s – 100s** (concat demuxer skipping) |
-| **Step 3: Audio Processing** | ~90s | ~55s | ~55s (DeepFilterNet 4-core chunking) |
-| **Step 4 & 5: Remux & Finalize** | ~35s | ~10s | ~10s (single remux pass) |
-| **Step 6: Audio & Video Review** | ~145s | ~70s | **~25s – 30s** (1.0s hop + parallel run) |
-| **Step 7: Metadata Generation** | ~40s | ~12s | ~12s (parallel LLM tasks) |
-| **TOTAL PIPELINE RUNTIME** | **~8m 25s** | **~5m 42s** | **~3m 15s – 3m 30s** |
+| **Step 1: Transcription** | ~15s | ~0s (overlapped in `--raw` mode) / 15s | **~0s** (overlapped) / **~7s** (compact MP3) |
+| **Step 2: Silence Trimming** | ~180s | ~95s (concat demuxer in raw mode) | **~85s** (fast draft audio / dual-mode concat) |
+| **Step 3: Audio Processing** | ~90s | ~55s (DeepFilterNet 4-core chunking) | **~35s – 38s** (Mono `-ac 1` + RAM temp) |
+| **Step 4 & 5: Remux & Finalize** | ~35s | ~10s (single remux pass) | **~10s** (single remux pass) |
+| **Step 6: Audio & Video Review** | ~145s | ~100s (sequential: 88s audio + 12s video) | **~48s – 52s** (1.0s hop: 44s audio + 6s video) |
+| **Step 7: Metadata Generation** | ~40s | ~0s (overlapped in background) | **~0s** (overlapped in background) |
+| **TOTAL PIPELINE RUNTIME** | **~8m 25s** | **~4m 20s** | **~2m 58s – 3m 15s** |
