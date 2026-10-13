@@ -6,7 +6,7 @@ set -e
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PHANTOM_SRC="$SCRIPT_DIR/phantom"
-PHANTOM_DEST="/usr/local/bin/phantom"
+PHANTOM_DEST="$HOME/.local/bin/phantom"
 
 # Ensure the phantom source file exists
 if [ ! -f "$PHANTOM_SRC" ]; then
