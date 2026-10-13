@@ -1,9 +1,9 @@
 #!/bin/bash
-
+ 
 BGM_DIR="${BGM_DIR:-$HOME/Videos/Asset Library/BGM}"
-
+ 
 show_usage() {
-    echo "Usage: $0 <path_to_video_or_folder> <bgm_track> [--volume <percentage>] [-R|--recursive]"
+    echo "Usage: $0 <path_to_video_or_folder> <bgm_track> [--volume <percentage>] [-R|--recursive] [--pipeline-mode] [--processed-audio <path>]"
     echo ""
     echo "Options for specifying the BGM track:"
     echo "  1. Full path to the BGM file."
@@ -18,19 +18,23 @@ show_usage() {
     fi
     echo ""
     echo "Optional arguments:"
-    echo "  --volume <percentage>   Set the BGM volume (1-100). Default is 10%."
-    echo "  -R, --recursive         Recursively process videos if input path is a folder."
+    echo "  --volume <percentage>      Set the BGM volume (1-100). Default is 10%."
+    echo "  -R, --recursive            Recursively process videos if input path is a folder."
+    echo "  --pipeline-mode            Pipeline mode: single remux pass with pre-processed audio."
+    echo "  --processed-audio <path>   Path to pre-processed audio file (required with --pipeline-mode)."
 }
-
+ 
 if [ "$#" -eq 0 ]; then
     show_usage
     exit 1
 fi
-
+ 
 VOLUME=10  # Default volume percentage
 RECURSIVE=false
+PIPELINE_MODE=false
+PROCESSED_AUDIO=""
 POSITIONAL_ARGS=()
-
+ 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
@@ -47,6 +51,19 @@ while [[ "$#" -gt 0 ]]; do
                 exit 1
             fi
             ;;
+        --pipeline-mode)
+            PIPELINE_MODE=true
+            shift
+            ;;
+        --processed-audio)
+            if [[ -n "$2" ]]; then
+                PROCESSED_AUDIO="$2"
+                shift 2
+            else
+                echo "Error: --processed-audio requires a path argument."
+                exit 1
+            fi
+            ;;
         -*)
             echo "Error: Unknown argument '$1'."
             show_usage
@@ -58,24 +75,24 @@ while [[ "$#" -gt 0 ]]; do
             ;;
     esac
 done
-
+ 
 if [ "${#POSITIONAL_ARGS[@]}" -lt 2 ]; then
     echo "Error: Missing arguments."
     echo ""
     show_usage
     exit 1
 fi
-
+ 
 if [ "${#POSITIONAL_ARGS[@]}" -gt 2 ]; then
     echo "Error: Too many positional arguments specified."
     echo ""
     show_usage
     exit 1
 fi
-
+ 
 INPUT_PATH="${POSITIONAL_ARGS[0]}"
 BGM_INPUT="${POSITIONAL_ARGS[1]}"
-
+ 
 # Validate BGM track
 if [ -f "$BGM_INPUT" ]; then
     BGM_FILE="$BGM_INPUT"
@@ -87,12 +104,25 @@ else
     echo "Error: BGM track '$BGM_INPUT' not found."
     exit 1
 fi
+ 
+# Validate pipeline mode requirements
+if [ "$PIPELINE_MODE" = true ] && [ -z "$PROCESSED_AUDIO" ]; then
+    echo "Error: --pipeline-mode requires --processed-audio <path> argument."
+    exit 1
+fi
+ 
+if [ "$PIPELINE_MODE" = true ] && [ ! -f "$PROCESSED_AUDIO" ]; then
+    echo "Error: Processed audio file '$PROCESSED_AUDIO' not found."
+    exit 1
+fi
 
 process_video() {
     local VIDEO_FILE="$1"
     local OUTPUT_FILE="$2"
+    local IS_PIPELINE_MODE="${3:-false}"
+    local PROCESSED_AUDIO_FILE="${4:-}"
     
-    if [ -z "$OUTPUT_FILE" ]; then
+    if [ -z "$OUTPUT_FILE" ] && [ "$IS_PIPELINE_MODE" = "false" ]; then
         local VIDEO_DIR=$(dirname "$VIDEO_FILE")
         local VIDEO_BASENAME=$(basename "$VIDEO_FILE")
         local VIDEO_NAME="${VIDEO_BASENAME%.*}"
@@ -102,6 +132,10 @@ process_video() {
     echo "Video file: $VIDEO_FILE"
     echo "BGM file: $BGM_FILE"
     echo "Selected volume: $VOLUME%"
+    if [ "$IS_PIPELINE_MODE" = "true" ]; then
+        echo "Processed audio: $PROCESSED_AUDIO_FILE"
+        echo "Pipeline mode: single remux pass"
+    fi
     echo "Starting..."
 
     # Get the total duration of the video in seconds
@@ -116,11 +150,23 @@ process_video() {
     local TEMP_PROGRESS_FILE
     TEMP_PROGRESS_FILE=$(mktemp)
 
-    # Start ffmpeg process with progress output redirected to a temporary file
-    ffmpeg -loglevel error -threads 0 -i "$VIDEO_FILE" -stream_loop -1 -i "$BGM_FILE" \
-        -filter_complex "[1:a]volume=${VOLUME}/100[music];[0:a][music]amix=inputs=2:duration=first" \
-        -c:v copy -c:a aac -b:a 256k \
-        -shortest "$OUTPUT_FILE" -progress "$TEMP_PROGRESS_FILE" &
+    if [ "$IS_PIPELINE_MODE" = "true" ]; then
+        # Pipeline mode: use pre-processed audio + BGM, copy video stream
+        # Input 0: video file (video only, ignore its audio)
+        # Input 1: processed audio (main audio track)
+        # Input 2: BGM file (looped)
+        ffmpeg -loglevel error -threads 0 -i "$VIDEO_FILE" -i "$PROCESSED_AUDIO_FILE" -stream_loop -1 -i "$BGM_FILE" \
+            -filter_complex "[2:a]volume=${VOLUME}/100[music];[1:a][music]amix=inputs=2:duration=first:dropout_transition=0[out_a]" \
+            -map 0:v:0 -map "[out_a]" \
+            -c:v copy -c:a aac -b:a 256k \
+            -shortest "$OUTPUT_FILE" -progress "$TEMP_PROGRESS_FILE" &
+    else
+        # Standalone mode: mix video's original audio with BGM
+        ffmpeg -loglevel error -threads 0 -i "$VIDEO_FILE" -stream_loop -1 -i "$BGM_FILE" \
+            -filter_complex "[1:a]volume=${VOLUME}/100[music];[0:a][music]amix=inputs=2:duration=first" \
+            -c:v copy -c:a aac -b:a 256k \
+            -shortest "$OUTPUT_FILE" -progress "$TEMP_PROGRESS_FILE" &
+    fi
 
     local FFMPEG_PID=$!
 
@@ -204,7 +250,7 @@ if [ -d "$INPUT_PATH" ]; then
         OUTPUT_FILE="$OUTPUT_DIR/$REL_PATH"
         mkdir -p "$(dirname "$OUTPUT_FILE")"
 
-        if process_video "$VIDEO_FILE" "$OUTPUT_FILE"; then
+        if process_video "$VIDEO_FILE" "$OUTPUT_FILE" "false" ""; then
             SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
         else
             echo "Failed to process: $VIDEO_FILE"
@@ -223,6 +269,6 @@ else
         echo "Error: Video file or directory '$INPUT_PATH' not found."
         exit 1
     fi
-    process_video "$INPUT_PATH"
+    process_video "$INPUT_PATH" "" "false" ""
     exit $?
 fi
