@@ -3,9 +3,9 @@
 Organize a raw video recording into YouTube Videos or Loom Outreach folders.
 
 Usage:
-    phantom pipeline organize <video_file> <project_name> (--ytlong | --loom)
+    phantom projects organize <video_file> <project_name> (--ytlong | --loom)
     or
-    python pipelines/organize.py <video_file> <project_name> (--ytlong | --loom)
+    python projects/organize.py <video_file> <project_name> (--ytlong | --loom)
 """
 
 import os

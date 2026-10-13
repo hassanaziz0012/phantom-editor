@@ -44,12 +44,12 @@ except ImportError:
     from read_metadata import read_metadata
 
 try:
-    from pipelines.pipeline_status import is_valid_yt_url
+    from projects.pipeline_status import is_valid_yt_url
 except ImportError:
     from pipeline_status import is_valid_yt_url
 
 try:
-    from pipelines.google_sheet_utils import sync_projects_to_sheet
+    from projects.google_sheet_utils import sync_projects_to_sheet
 except ImportError:
     try:
         from google_sheet_utils import sync_projects_to_sheet

@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 
 load_dotenv(repo_root / ".env")
 
-from pipelines.google_sheet_utils import get_sheets_service, get_spreadsheet_id
+from projects.google_sheet_utils import get_sheets_service, get_spreadsheet_id
 
 logger = logging.getLogger("phantom.ideas.export")
 

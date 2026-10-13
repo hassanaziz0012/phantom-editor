@@ -15,7 +15,7 @@ show_usage() {
     echo "Usage: phantom <command> [arguments]"
     echo ""
     echo "Commands:"
-    echo "  pipeline:"
+    echo "  projects:"
     echo "    status [arguments]"
     echo "    process <webcam_video> [screen_video] [--raw <raw_video>] [arguments]"
     echo "    newvideo <project_name>"
@@ -108,37 +108,37 @@ COMMAND="$1"
 shift
 
 case "$COMMAND" in
-    pipeline)
+    projects)
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "status" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/current_pipeline.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/projects/current_pipeline.py" "$@"
         elif [ "$SUBCOMMAND" = "process" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom pipeline process <webcam_video> [screen_video] [arguments]"
-                echo "       phantom pipeline process --raw <raw_video> [arguments]"
+                echo "Usage: phantom projects process <webcam_video> [screen_video] [arguments]"
+                echo "       phantom projects process --raw <raw_video> [arguments]"
                 exit 1
             fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/process_video.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/projects/process_video.py" "$@"
         elif [ "$SUBCOMMAND" = "newvideo" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom pipeline newvideo <project_name>"
+                echo "Usage: phantom projects newvideo <project_name>"
                 exit 1
             fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/newvideo.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/projects/newvideo.py" "$@"
         elif [ "$SUBCOMMAND" = "organize" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom pipeline organize <video_file> <project_name> (--ytlong | --loom)"
+                echo "Usage: phantom projects organize <video_file> <project_name> (--ytlong | --loom)"
                 exit 1
             fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/pipelines/organize.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/projects/organize.py" "$@"
         else
-            echo "Unknown pipeline subcommand: $SUBCOMMAND"
-            echo "Usage: phantom pipeline status [arguments]"
-            echo "       phantom pipeline process <webcam_video> [screen_video] [arguments]"
-            echo "       phantom pipeline process --raw <raw_video> [arguments]"
-            echo "       phantom pipeline newvideo <project_name>"
-            echo "       phantom pipeline organize <video_file> <project_name> (--ytlong | --loom)"
+            echo "Unknown projects subcommand: $SUBCOMMAND"
+            echo "Usage: phantom projects status [arguments]"
+            echo "       phantom projects process <webcam_video> [screen_video] [arguments]"
+            echo "       phantom projects process --raw <raw_video> [arguments]"
+            echo "       phantom projects newvideo <project_name>"
+            echo "       phantom projects organize <video_file> <project_name> (--ytlong | --loom)"
             exit 1
         fi
         ;;

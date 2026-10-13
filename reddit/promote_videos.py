@@ -45,7 +45,7 @@ from metadata.recommendations.embed_my_videos import (
     fetch_embeddings_batch,
     resolve_api_key as resolve_gemini_key,
 )
-from pipelines.google_sheet_utils import get_sheets_service
+from projects.google_sheet_utils import get_sheets_service
 from reddit.scrape_subreddit import SubredditPostItem, scrape_subreddit
 
 # Configure logging

@@ -104,14 +104,24 @@ def format_duration(seconds: float) -> str:
     return f"{minutes}m {rem_seconds:.2f}s"
 
 
-def get_pipeline_outputs(webcam_path: Path, video_dir: Path, bgm: str | None) -> dict:
-    """Compute and return step output file paths given webcam input and options."""
+def get_pipeline_outputs(webcam_path: Path, video_dir: Path, bgm: str | None, raw_mode: bool = False) -> dict:
+    """Compute and return step output file paths given webcam input and options.
+
+    In ``--raw`` mode Step 2 only extracts the trimmed speech audio
+    (``raw-audio.wav``) and Step 4 performs the single-pass final encode, so the
+    intermediate ``after-trim-silences.mp4`` is never created and Step 4 always
+    runs to produce ``final.mp4`` (with or without BGM).
+    """
     ext = webcam_path.suffix or ".mp4"
-    step4_needed = bool(bgm)
+    # Raw mode: Step 2's product is audio, not video.
+    step2_output = video_dir / "raw-audio.wav" if raw_mode else video_dir / "after-trim-silences.mp4"
+    # Raw mode: Step 4 is the one-pass video encode + audio multiplex, so it is
+    # always required. Webcam mode keeps Step 4 as an optional BGM/finalize pass.
+    step4_needed = True if raw_mode else bool(bgm)
     return {
         "step1_srt": video_dir / f"{webcam_path.stem}.srt",
         "step1_1word_srt": video_dir / f"{webcam_path.stem}-1word.srt",
-        "step2_output": video_dir / "after-trim-silences.mp4",
+        "step2_output": step2_output,
         "processed_audio_output": video_dir / "processed-audio.wav",
         "step4_needed": step4_needed,
         "final_output": video_dir / f"final{ext}",
@@ -124,7 +134,8 @@ def compute_pipeline_status(outputs: dict, force: bool, skip_review: bool = Fals
     step1_complete = is_valid_file(outputs["step1_1word_srt"]) and is_valid_file(outputs["step1_srt"])
     step2_complete = is_valid_file(outputs["step2_output"])
     step3_complete = is_valid_file(outputs["processed_audio_output"])
-    # Step 4 (BGM + finalize) is combined with step 3 - final_output is the result
+    # In raw mode Step 4 encodes final.mp4 (video + processed audio in one pass),
+    # so its result is final_output. In webcam mode it is an optional BGM pass.
     step4_complete = is_valid_file(outputs["final_output"]) if outputs["step4_needed"] else True
 
     latest_output = outputs["final_output"] if outputs["step4_needed"] else outputs["final_output"]
@@ -205,6 +216,8 @@ def print_pipeline_overview(
 
     if args.bgm:
         print(f" BGM track:        {args.bgm} (Volume: {args.volume}%)")
+    elif raw_mode:
+        print_warning(" BGM track:        None specified (final encode runs without BGM)")
     else:
         print_warning(" BGM track:        None specified (Step 4 will be skipped)")
     if webcam_is_4k:
@@ -220,21 +233,30 @@ def print_pipeline_overview(
     s1_str = format_status(True, run_plan[1], statuses[1], args.force)
     s2_str = format_status(True, run_plan[2], statuses[2], args.force)
     s3_str = format_status(True, run_plan[3], statuses[3], args.force)
-    s4_str = format_status(bool(args.bgm), run_plan[4], statuses[4], args.force, "No BGM specified")
+    # Raw mode always needs Step 4: it is the single-pass final encode, not an
+    # optional BGM remux.
+    step4_needed = True if raw_mode else bool(args.bgm)
+    s4_str = format_status(step4_needed, run_plan[4], statuses[4], args.force, "No BGM specified")
     s5_str = format_status(True, run_plan[5], statuses[5], args.force)
     s6_str = format_status(not getattr(args, "skip_review", False), run_plan[6], statuses[6], args.force, "Skipped via --skip-review")
     s7_str = format_status(True, run_plan[7], statuses[7], args.force)
 
     step2_name = (
-        "Trim Silences via Silero VAD (trim_silences.py)"
+        "Extract speech intervals (Silero VAD) + audio-only concat -> raw-audio.wav"
         if raw_mode else
         "Single-pass Masking & Silence Trimming (FFmpeg combined)"
+    )
+
+    step4_name = (
+        "Final encode & multiplex (video + processed audio in one pass) -> final.mp4"
+        if raw_mode else
+        "Add BGM + Finalize (single remux pass) -> final.mp4"
     )
 
     print(f" 1. Transcribe video via Groq cloud (transcribe_cloud.py)    {s1_str}")
     print(f" 2. {step2_name:<56} {s2_str}")
     print(f" 3. Process audio (DeepFilterNet + normalize) -> processed-audio.wav {s3_str}")
-    print(f" 4. Add BGM + Finalize (single remux pass) -> final.mp4      {s4_str}")
+    print(f" 4. {step4_name:<56} {s4_str}")
     print(f" 5. Verify final output                                      {s5_str}")
     print(f" 6. Review final video (audio_review.py & video_inspector.py) {s6_str}")
     print(f" 7. Auto-generate project metadata (metadata.json)           {s7_str}")

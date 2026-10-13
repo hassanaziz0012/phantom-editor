@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 
 load_dotenv(repo_root / ".env")
 
-from pipelines.google_sheet_utils import get_sheets_service, get_spreadsheet_id
+from projects.google_sheet_utils import get_sheets_service, get_spreadsheet_id
 
 WRITTEN_SHEET_NAME = "Written"
 DEFAULT_WRITTEN_HEADERS = ["Post", "Platform", "Status", "URL", "Media"]

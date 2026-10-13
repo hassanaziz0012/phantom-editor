@@ -2,9 +2,9 @@
 """
 Create a new video project folder inside the 'YT Projects' directory.
 Usage:
-    phantom pipeline newvideo <project_name>
+    phantom projects newvideo <project_name>
     or
-    python pipelines/newvideo.py <project_name>
+    python projects/newvideo.py <project_name>
 """
 
 import os
@@ -74,7 +74,7 @@ def create_video_project(project_name: str, base_dir: Path = DEFAULT_YT_PROJECTS
         print(f"{COLOR_YELLOW}Next steps:{COLOR_RESET}")
         print(f"  1. Script the video (.excalidraw presentation) in: {project_dir}")
         print(f"  2. Record raw footage into: {project_dir}")
-        print(f"  3. Run pipeline processing: `phantom pipeline process`")
+        print(f"  3. Run pipeline processing: `phantom projects process`")
         return project_dir
     except Exception as e:
         print_error(f"Failed to create project folder: {e}")
