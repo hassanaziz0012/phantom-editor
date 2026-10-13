@@ -5,8 +5,10 @@ import subprocess
 import json
 import uuid
 import time
+import threading
 from pathlib import Path
 from dataclasses import dataclass
+from typing import Callable
 
 # Terminal ANSI Color Constants
 COLOR_GREEN = "\033[92m"
@@ -373,14 +375,140 @@ def get_google_doc_shorts(doc_id: str, credentials_file: Path, token_file: Path)
     return shorts
 
 
-def run_ffmpeg_with_progress(cmd: list[str], total_duration: float, description: str = "Encoding") -> None:
+# --- Inline video quality-control (blackdetect / freezedetect) parsing ---
+# FFmpeg emits these filter logs at AV_LOG_INFO on stderr while the encode runs,
+# so an encode that captures QC inline must run with -loglevel info.
+BLACK_DETECT_RE = re.compile(
+    r'black_start:([0-9.]+)\s+black_end:([0-9.]+)\s+black_duration:([0-9.]+)'
+)
+FREEZE_START_RE = re.compile(r'freeze_start:\s*([0-9.]+)')
+FREEZE_END_RE = re.compile(
+    r'freeze_end:\s*([0-9.]+)\s+freeze_duration:\s*([0-9.]+)'
+)
+# Newer FFmpeg releases (7+) log freeze_duration and freeze_end on separate
+# lines and prefix them with the filter metadata name (e.g.
+# "lavfi.freezedetect.freeze_end: 3"). Capture those individually as a fallback.
+FREEZE_END_ONLY_RE = re.compile(r'freeze_end:\s*([0-9.]+)')
+FREEZE_DURATION_ONLY_RE = re.compile(r'freeze_duration:\s*([0-9.]+)')
+
+
+class VideoQCCollector:
+    """Accumulates black-screen and freeze-frame glitches reported by FFmpeg's
+    ``blackdetect`` / ``freezedetect`` filters while a video encode is running.
+
+    Feed each stderr line to :meth:`handle_line` in real time, then call
+    :meth:`finalize` once the encode exits. ``glitches`` is a list of dicts
+    shaped exactly like the ``summary.video_flags`` entries rendered into
+    ``summary.md``::
+
+        {"type": "black"|"freeze", "start": float, "end": float, "duration": float}
+    """
+
+    def __init__(self, tail_freeze_duration: float = 2.0):
+        self.glitches: list[dict] = []
+        self.tail_freeze_duration = tail_freeze_duration
+        self._active_freeze_start: float | None = None
+        self._pending_freeze_duration: float | None = None
+
+    def _append_black(self, start: float, end: float, duration: float) -> None:
+        self.glitches.append(
+            {"type": "black", "start": start, "end": end, "duration": duration}
+        )
+        print_warning(f"⚠️  BLACK DETECTED: {start:.2f}s -> {end:.2f}s ({duration:.2f}s)")
+
+    def _append_freeze(self, start: float, end: float, duration: float) -> None:
+        self.glitches.append(
+            {"type": "freeze", "start": start, "end": end, "duration": duration}
+        )
+        print_warning(f"⚠️  FREEZE DETECTED: {start:.2f}s -> {end:.2f}s ({duration:.2f}s)")
+
+    def handle_line(self, line: str) -> None:
+        """Parse a single FFmpeg stderr line, appending any glitch it reports."""
+        if not line:
+            return
+
+        black_match = BLACK_DETECT_RE.search(line)
+        if black_match:
+            self._append_black(
+                float(black_match.group(1)),
+                float(black_match.group(2)),
+                float(black_match.group(3)),
+            )
+
+        freeze_start_match = FREEZE_START_RE.search(line)
+        if freeze_start_match:
+            self._active_freeze_start = float(freeze_start_match.group(1))
+
+        # Older FFmpeg logs freeze_end and freeze_duration on one line.
+        combined_end_match = FREEZE_END_RE.search(line)
+        if combined_end_match:
+            end = float(combined_end_match.group(1))
+            duration = float(combined_end_match.group(2))
+            start = (
+                self._active_freeze_start
+                if self._active_freeze_start is not None
+                else max(0.0, end - duration)
+            )
+            self._append_freeze(start, end, duration)
+            self._active_freeze_start = None
+            self._pending_freeze_duration = None
+            return
+
+        # Newer FFmpeg logs freeze_duration and freeze_end separately.
+        duration_only_match = FREEZE_DURATION_ONLY_RE.search(line)
+        if duration_only_match:
+            self._pending_freeze_duration = float(duration_only_match.group(1))
+
+        end_only_match = FREEZE_END_ONLY_RE.search(line)
+        if end_only_match:
+            end = float(end_only_match.group(1))
+            if self._active_freeze_start is not None:
+                start = self._active_freeze_start
+                duration = max(0.0, end - start)
+            elif self._pending_freeze_duration is not None:
+                duration = self._pending_freeze_duration
+                start = max(0.0, end - duration)
+            else:
+                start = end
+                duration = 0.0
+            self._append_freeze(start, end, duration)
+            self._active_freeze_start = None
+            self._pending_freeze_duration = None
+
+    def finalize(self, total_duration: float = 0.0) -> None:
+        """Flush a freeze that was still active when the video ended.
+
+        Mirrors the standalone inspector's tail-freeze behaviour: only report
+        trailing freezes at least ``tail_freeze_duration`` seconds long.
+        """
+        if (
+            self._active_freeze_start is not None
+            and total_duration > self._active_freeze_start
+        ):
+            duration = total_duration - self._active_freeze_start
+            if duration >= self.tail_freeze_duration:
+                self._append_freeze(self._active_freeze_start, total_duration, duration)
+        self._active_freeze_start = None
+        self._pending_freeze_duration = None
+
+
+def run_ffmpeg_with_progress(
+    cmd: list[str],
+    total_duration: float,
+    description: str = "Encoding",
+    stderr_line_callback: Callable[[str], None] | None = None,
+) -> None:
     """
     Run ffmpeg with a progress bar.
-    
+
     Args:
         cmd: ffmpeg command list (without -progress flag)
         total_duration: Total duration of the output in seconds
         description: Description to show in progress bar
+        stderr_line_callback: Optional callback invoked with every stderr line as
+            it is produced (e.g. ``VideoQCCollector.handle_line``). stderr is
+            always drained on a background thread so it can never fill the pipe
+            and stall ffmpeg, even without a callback.
     """
     # Insert -progress pipe:1 before the output file
     output_idx = -1
@@ -397,6 +525,9 @@ def run_ffmpeg_with_progress(cmd: list[str], total_duration: float, description:
     
     start_time = time.time()
     last_update = 0
+
+    # Collected for error reporting; also streamed to stderr_line_callback.
+    stderr_lines: list[str] = []
     
     try:
         process = subprocess.Popen(
@@ -406,6 +537,26 @@ def run_ffmpeg_with_progress(cmd: list[str], total_duration: float, description:
             text=True,
             bufsize=1
         )
+
+        def _drain_stderr() -> None:
+            try:
+                for raw_line in process.stderr:
+                    line = raw_line.rstrip("\r\n")
+                    if not line:
+                        continue
+                    stderr_lines.append(line)
+                    if stderr_line_callback is not None:
+                        try:
+                            stderr_line_callback(line)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        stderr_thread = threading.Thread(
+            target=_drain_stderr, name="ffmpeg-stderr", daemon=True
+        )
+        stderr_thread.start()
         
         # Progress bar constants
         BAR_WIDTH = 50
@@ -454,14 +605,15 @@ def run_ffmpeg_with_progress(cmd: list[str], total_duration: float, description:
                 sys.stdout.write(f"\r  {description}: |{bar}| 100.0%")
                 sys.stdout.flush()
         
-        # Wait for process to complete
-        stdout, stderr = process.communicate()
+        # stdout is exhausted; wait for ffmpeg to exit and the stderr thread to finish
+        process.wait()
+        stderr_thread.join()
         
         if process.returncode != 0:
             print()  # New line after progress bar
             print_error(f"[ERROR] ffmpeg failed with exit code {process.returncode}")
-            if stderr:
-                print_error(stderr.strip())
+            if stderr_lines:
+                print_error("\n".join(stderr_lines[-40:]))
             sys.exit(process.returncode)
         
         print()  # New line after progress bar
