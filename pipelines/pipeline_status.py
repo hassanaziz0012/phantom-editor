@@ -112,9 +112,8 @@ def get_pipeline_outputs(webcam_path: Path, video_dir: Path, bgm: str | None) ->
         "step1_srt": video_dir / f"{webcam_path.stem}.srt",
         "step1_1word_srt": video_dir / f"{webcam_path.stem}-1word.srt",
         "step2_output": video_dir / "after-trim-silences.mp4",
-        "step3_output": video_dir / "after-audio-processing.mp4",
+        "processed_audio_output": video_dir / "processed-audio.wav",
         "step4_needed": step4_needed,
-        "step4_output": video_dir / "after-audio-processing-bgm.mp4",
         "final_output": video_dir / f"final{ext}",
         "metadata_output": video_dir / "metadata.json",
     }
@@ -124,10 +123,11 @@ def compute_pipeline_status(outputs: dict, force: bool, skip_review: bool = Fals
     """Determine step completion statuses and execution plan."""
     step1_complete = is_valid_file(outputs["step1_1word_srt"]) and is_valid_file(outputs["step1_srt"])
     step2_complete = is_valid_file(outputs["step2_output"])
-    step3_complete = is_valid_file(outputs["step3_output"])
-    step4_complete = is_valid_file(outputs["step4_output"]) if outputs["step4_needed"] else True
+    step3_complete = is_valid_file(outputs["processed_audio_output"])
+    # Step 4 (BGM + finalize) is combined with step 3 - final_output is the result
+    step4_complete = is_valid_file(outputs["final_output"]) if outputs["step4_needed"] else True
 
-    latest_output = outputs["step4_output"] if outputs["step4_needed"] else outputs["step3_output"]
+    latest_output = outputs["final_output"] if outputs["step4_needed"] else outputs["final_output"]
     step5_complete = is_valid_file(outputs["final_output"]) and (
         not is_valid_file(latest_output) or outputs["final_output"].stat().st_mtime >= latest_output.stat().st_mtime
     )
@@ -151,7 +151,7 @@ def compute_pipeline_status(outputs: dict, force: bool, skip_review: bool = Fals
         run2 = run1 or not step2_complete
         run3 = run2 or not step3_complete
         run4 = outputs["step4_needed"] and (run3 or not step4_complete)
-        run5 = (run4 if outputs["step4_needed"] else run3) or not step5_complete
+        run5 = run4 or not step5_complete
         run6 = not skip_review and run5
         run7 = run5 or not step7_complete
         run_plan = {1: run1, 2: run2, 3: run3, 4: run4, 5: run5, 6: run6, 7: run7}
@@ -233,9 +233,9 @@ def print_pipeline_overview(
 
     print(f" 1. Transcribe video via Groq cloud (transcribe_cloud.py)    {s1_str}")
     print(f" 2. {step2_name:<56} {s2_str}")
-    print(f" 3. Process audio via process_audio.sh                       {s3_str}")
-    print(f" 4. Add background music (add_bgm_to_video.sh)               {s4_str}")
-    print(f" 5. Rename final video file to 'final{ext}'               {s5_str}")
+    print(f" 3. Process audio (DeepFilterNet + normalize) -> processed-audio.wav {s3_str}")
+    print(f" 4. Add BGM + Finalize (single remux pass) -> final.mp4      {s4_str}")
+    print(f" 5. Verify final output                                      {s5_str}")
     print(f" 6. Review final video (audio_review.py & video_inspector.py) {s6_str}")
     print(f" 7. Auto-generate project metadata (metadata.json)           {s7_str}")
     print_info("============================================================")

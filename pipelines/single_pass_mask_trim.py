@@ -42,7 +42,7 @@ def run_single_pass_mask_trim(
     video_dir: Path | None = None,
     force_run: bool = False,
     skip_confirm: bool = False
-) -> bool:
+) -> tuple[bool, int]:
     """Step 2: Single-Pass Video Processing (Masking + Silence Trimming)."""
     if video_dir is None:
         video_dir = step2_output.parent
@@ -61,7 +61,7 @@ def run_single_pass_mask_trim(
                 dur = float(json.loads(res.stdout).get("format", {}).get("duration", 0))
                 if dur > 0:
                     print_success(f"[SKIP] Step 2 complete: Single-pass video file already exists -> {step2_output.name}")
-                    return force_run
+                    return force_run, 0
             except Exception:
                 pass
 
@@ -208,7 +208,7 @@ def run_single_pass_mask_trim(
         print_error(f"[ERROR] Single-pass output file invalid or missing at '{step2_output}'")
         sys.exit(1)
     print_success(f"[SUCCESS] Step 2 complete: Single-pass video created -> {step2_output.name}")
-    return True
+    return True, len(speech_intervals)
 
 
 def main():

@@ -12,6 +12,7 @@ import shutil
 import time
 import argparse
 import subprocess
+import tempfile
 from pathlib import Path
 
 pipeline_dir = Path(__file__).resolve().parent
@@ -34,6 +35,166 @@ from pipeline_status import (
 )
 from single_pass_mask_trim import run_single_pass_mask_trim
 from trim_silences import get_speech_intervals, get_silence_trim_expressions
+from dataclasses import dataclass, field
+from typing import Optional
+import json
+
+
+@dataclass
+class StepSummary:
+    """Summary of a single pipeline step."""
+    name: str
+    status: str  # "ran", "skipped", "failed"
+    duration_seconds: float
+
+
+@dataclass
+class RunSummary:
+    """Complete summary of a pipeline run."""
+    project_title: str
+    raw_input_filename: str
+    mode: str  # "raw pre-composed" or "webcam overlay"
+    bgm_track: Optional[str]
+    resolution: str  # e.g., "1920x1080"
+    fps: float
+    final_duration: float  # seconds
+    steps: list[StepSummary] = field(default_factory=list)
+    speech_interval_count: int = 0
+    audio_flags: list[dict] = field(default_factory=list)
+    video_flags: list[dict] = field(default_factory=list)
+    output_files: list[str] = field(default_factory=list)
+    total_execution_time: float = 0.0
+
+
+def format_timestamp(seconds: float) -> str:
+    """Format seconds into mm:ss (or hh:mm:ss if >= 1 hour). Never raw seconds."""
+    seconds = max(0.0, seconds)
+    total_sec = int(round(seconds))
+    if total_sec < 3600:
+        minutes = total_sec // 60
+        secs = total_sec % 60
+        return f"{minutes:02d}:{secs:02d}"
+    else:
+        hours = total_sec // 3600
+        minutes = (total_sec % 3600) // 60
+        secs = total_sec % 60
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def format_duration_concise(seconds: float) -> str:
+    """Format duration in seconds as '9.9s' or '2m52s'."""
+    seconds = max(0.0, seconds)
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    total_sec = int(round(seconds))
+    if total_sec < 3600:
+        minutes = total_sec // 60
+        secs = total_sec % 60
+        return f"{minutes}m{secs:02d}s"
+    else:
+        hours = total_sec // 3600
+        minutes = (total_sec % 3600) // 60
+        secs = total_sec % 60
+        return f"{hours}h{minutes:02d}m{secs:02d}s"
+
+
+def write_summary(summary: RunSummary, output_dir: Path) -> Path:
+    """Write the run summary as a Markdown file according to exact spec."""
+    summary_path = output_dir / "summary.md"
+
+    # Title
+    title_line = f"# phantom pipeline: {summary.project_title}"
+
+    # Mode line
+    bgm_info = summary.bgm_track if summary.bgm_track else "no BGM"
+    mode_line = f"Mode: {summary.mode}, {bgm_info}"
+
+    # Input line: Input: <raw filename> (<resolution>, <fps>fps) -> final.mp4 (<mm:ss>)
+    fps_val = summary.fps
+    fps_str = f"{int(fps_val)}" if fps_val.is_integer() else f"{fps_val:g}"
+    final_dur_str = format_timestamp(summary.final_duration)
+    input_line = f"Input: {summary.raw_input_filename} ({summary.resolution}, {fps_str}fps) -> final.mp4 ({final_dur_str})"
+
+    # Steps line: Steps: <ran steps, comma-separated> (skipped: <skipped steps>)
+    ran_parts = []
+    skipped_parts = []
+    for step in summary.steps:
+        if step.status == "ran":
+            ran_parts.append(step.name)
+        elif step.status == "failed":
+            ran_parts.append(f"{step.name} (failed)")
+        elif step.status == "skipped":
+            skipped_parts.append(step.name)
+
+    steps_line = f"Steps: {', '.join(ran_parts)}"
+    if skipped_parts:
+        steps_line += f" (skipped: {', '.join(skipped_parts)})"
+
+    # Review flags section
+    review_step = next((s for s in summary.steps if "Review" in s.name), None)
+    if review_step is None or review_step.status != "ran":
+        review_body = "review not run"
+    else:
+        flag_lines = []
+        for af in summary.audio_flags:
+            start_ts = format_timestamp(af.get("start", 0))
+            end_ts = format_timestamp(af.get("end", 0))
+            label = af.get("label", af.get("class", "Unknown"))
+            conf = float(af.get("confidence", 0))
+            if conf < 0.25:
+                conf_str = f"conf {conf:.2f}, borderline"
+            else:
+                conf_str = f"conf {conf:.2f}"
+            flag_lines.append(f"- Audio: {label} @ {start_ts}-{end_ts} ({conf_str})")
+
+        for vf in summary.video_flags:
+            start_ts = format_timestamp(vf.get("start", 0))
+            end_ts = format_timestamp(vf.get("end", 0))
+            dur = float(vf.get("duration", 0))
+            vtype = vf.get("type", "Unknown")
+            end_sec = float(vf.get("end", 0))
+            at_end = ""
+            if summary.final_duration > 0 and end_sec >= summary.final_duration - 3.0:
+                at_end = " (at end of video)"
+            flag_lines.append(f"- Video: {vtype} @ {start_ts}-{end_ts} ({dur:.1f}s){at_end}")
+
+        if flag_lines:
+            review_body = "\n".join(flag_lines)
+        else:
+            review_body = "none"
+
+    # Timing section: <step> <duration> | <step> <duration> | ... | total <duration>
+    timing_parts = []
+    for step in summary.steps:
+        if step.status == "ran":
+            timing_parts.append(f"{step.name} {format_duration_concise(step.duration_seconds)}")
+        elif step.status == "failed":
+            timing_parts.append(f"{step.name} failed")
+    timing_parts.append(f"total {format_duration_concise(summary.total_execution_time)}")
+    timing_line = " | ".join(timing_parts)
+
+    # Outputs section: <comma-separated relative filenames that exist on disk>
+    outputs_line = ", ".join(summary.output_files)
+
+    md = f"""{title_line}
+{mode_line}
+{input_line}
+{steps_line}
+
+## Review flags
+{review_body}
+
+## Timing
+{timing_line}
+
+## Outputs
+{outputs_line}
+"""
+
+    with open(summary_path, "w") as f:
+        f.write(md)
+
+    return summary_path
 
 
 def parse_cli_args() -> argparse.Namespace:
@@ -126,6 +287,11 @@ def parse_cli_args() -> argparse.Namespace:
         "--skip-review",
         action="store_true",
         help="Skip audio and video inspection review step."
+    )
+    parser.add_argument(
+        "--clean-intermediates",
+        action="store_true",
+        help="Delete intermediate files (after-trim-silences.mp4) after final.mp4 is verified."
     )
 
     args = parser.parse_args()
@@ -243,12 +409,13 @@ def run_step2_trim_silences_raw(
     raw_video_path: Path,
     step2_output: Path,
     force_run: bool
-) -> bool:
-    """Step 2 (Raw Mode): Silence Trimming on pre-composed video (skips webcam mask attachment)."""
+) -> tuple[bool, int]:
+    """Step 2 (Raw Mode): Silence Trimming on pre-composed video (skips webcam mask attachment).
+    Returns: (force_run, speech_interval_count)"""
     print_info("\n--- [Step 2/7] Silence Trimming on Raw Video ---")
     if not force_run and is_valid_file(step2_output):
         print_success(f"[SKIP] Step 2 complete: Trimmed video file already exists -> {step2_output.name}")
-        return force_run
+        return force_run, 0
 
     video_info = get_video_info(raw_video_path)
     needs_downscale = is_4k_video(raw_video_path)
@@ -261,6 +428,7 @@ def run_step2_trim_silences_raw(
     print_info("Analyzing audio for speech intervals with Silero VAD...")
     speech_intervals = get_speech_intervals(raw_video_path)
     print_info(f"Detected {len(speech_intervals)} active speech intervals.")
+    speech_interval_count = len(speech_intervals)
 
     select_expr, shift_expr, total_speech_duration = get_silence_trim_expressions(speech_intervals)
 
@@ -313,22 +481,22 @@ def run_step2_trim_silences_raw(
         sys.exit(1)
 
     print_success(f"[SUCCESS] Step 2 complete: Silences trimmed -> {step2_output.name}")
-    return True
+    return True, speech_interval_count
 
 
 def run_step3_process_audio(
     step2_output: Path,
-    step3_output: Path,
+    processed_audio_output: Path,
     process_audio_sh: Path,
     force_run: bool
 ) -> bool:
-    """Step 3: Process Audio."""
-    print_info("\n--- [Step 3/7] Processing Audio ---")
-    if not force_run and is_valid_file(step3_output):
-        print_success(f"[SKIP] Step 3 complete: Audio processed video file already exists -> {step3_output.name}")
+    """Step 3: Process Audio (pipeline mode - outputs processed-audio.wav only)."""
+    print_info("\n--- [Step 3/7] Processing Audio (DeepFilterNet + Normalize) ---")
+    if not force_run and is_valid_file(processed_audio_output):
+        print_success(f"[SKIP] Step 3 complete: Processed audio file already exists -> {processed_audio_output.name}")
         return force_run
 
-    cmd_step3 = ["bash", str(process_audio_sh), str(step2_output)]
+    cmd_step3 = ["bash", str(process_audio_sh), "--pipeline-mode", "--output-file", str(processed_audio_output), str(step2_output)]
     print(f"Executing: {' '.join(cmd_step3)}")
     try:
         subprocess.run(cmd_step3, check=True)
@@ -336,38 +504,59 @@ def run_step3_process_audio(
         print_error(f"[ERROR] Step 3 failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
-    if not is_valid_file(step3_output):
-        print_error(f"[ERROR] Step 3 output file invalid or missing at '{step3_output}'")
+    if not is_valid_file(processed_audio_output):
+        print_error(f"[ERROR] Step 3 output file invalid or missing at '{processed_audio_output}'")
         sys.exit(1)
-    print_success(f"[SUCCESS] Step 3 complete: Audio processed -> {step3_output.name}")
+    print_success(f"[SUCCESS] Step 3 complete: Processed audio saved -> {processed_audio_output.name}")
     return True
 
 
-def run_step4_add_bgm(
-    step3_output: Path,
-    step4_output: Path,
+def run_step4_finalize_with_bgm(
+    step2_output: Path,
+    processed_audio_output: Path,
+    final_output: Path,
     bgm: str | None,
     volume: int,
     add_bgm_sh: Path,
     force_run: bool
-) -> tuple[Path, bool]:
-    """Step 4: Add Background Music."""
-    print_info("\n--- [Step 4/7] Adding Background Music ---")
-    if not bgm:
-        print_warning("[WARNING] Step 4 skipped: No BGM track specified with --bgm.")
-        return step3_output, force_run
+) -> bool:
+    """Step 4: Add BGM (if specified) and Finalize in a single remux pass.
+    
+    Takes after-trim-silences.mp4 (video) + processed-audio.wav (audio) + BGM (optional)
+    and writes directly to final.mp4.
+    """
+    print_info("\n--- [Step 4/7] Finalizing Output (Add BGM + Single Remux Pass) ---")
+    if not force_run and is_valid_file(final_output):
+        print_success(f"[SKIP] Step 4 complete: Final video file already exists -> {final_output.name}")
+        return force_run
 
-    if not force_run and is_valid_file(step4_output):
-        print_success(f"[SKIP] Step 4 complete: BGM video file already exists -> {step4_output.name}")
-        return step4_output, force_run
+    if bgm:
+        print_info(f"Adding BGM track: {bgm} at {volume}% volume")
+        cmd_step4 = [
+            "bash", str(add_bgm_sh),
+            str(step2_output), bgm,
+            "--volume", str(volume),
+            "--pipeline-mode",
+            "--processed-audio", str(processed_audio_output),
+            str(final_output)
+        ]
+    else:
+        print_info("No BGM specified. Remuxing video with processed audio only.")
+        # Simple remux: video from step2_output + audio from processed_audio_output
+        cmd_step4 = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-stats", "-y",
+            "-threads", "0",
+            "-i", str(step2_output),
+            "-i", str(processed_audio_output),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "384k",
+            "-movflags", "+faststart",
+            str(final_output)
+        ]
 
-    cmd_step4 = [
-        "bash",
-        str(add_bgm_sh),
-        str(step3_output),
-        bgm,
-        "--volume", str(volume)
-    ]
     print(f"Executing: {' '.join(cmd_step4)}")
     try:
         subprocess.run(cmd_step4, check=True)
@@ -375,43 +564,38 @@ def run_step4_add_bgm(
         print_error(f"[ERROR] Step 4 failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
-    if not is_valid_file(step4_output):
-        print_error(f"[ERROR] Step 4 output file invalid or missing at '{step4_output}'")
+    if not is_valid_file(final_output):
+        print_error(f"[ERROR] Step 4 output file invalid or missing at '{final_output}'")
         sys.exit(1)
+    print_success(f"[SUCCESS] Step 4 complete: Final video saved -> {final_output.name}")
+    return True
 
-    print_success(f"[SUCCESS] Step 4 complete: Added BGM -> {step4_output.name}")
-    return step4_output, True
 
-
-def run_step5_finalize(
-    current_latest_video: Path,
+def run_step5_verify_final(
     final_output: Path,
     force_run: bool
 ) -> bool:
-    """Step 5: Finalize Output File Name."""
-    print_info("\n--- [Step 5/7] Finalizing Output File Name ---")
-    if not force_run and is_valid_file(final_output) and (not is_valid_file(current_latest_video) or final_output.stat().st_mtime >= current_latest_video.stat().st_mtime):
-        print_success(f"[SKIP] Step 5 complete: Final review video file already exists -> {final_output.name}")
+    """Step 5: Verify Final Output File."""
+    print_info("\n--- [Step 5/7] Verifying Final Output ---")
+    if not force_run and is_valid_file(final_output):
+        print_success(f"[SKIP] Step 5 complete: Final video file verified -> {final_output.name}")
         return force_run
-    else:
-        if final_output.exists():
-            print_warning(f"Overwriting existing output file: {final_output.name}")
-            try:
-                final_output.unlink()
-            except Exception as e:
-                print_error(f"Error removing existing file '{final_output}': {e}")
 
-        shutil.copy2(str(current_latest_video), str(final_output))
-        print_success(f"[SUCCESS] Step 5 complete: Copied final video file to -> {final_output.name}")
-        return True
+    if not is_valid_file(final_output):
+        print_error(f"[ERROR] Step 5 failed: Final video file missing or invalid at '{final_output}'")
+        sys.exit(1)
+    print_success(f"[SUCCESS] Step 5 complete: Final video verified -> {final_output.name}")
+    return True
 
 
 def run_step6_review(
     final_output: Path,
+    processed_audio_output: Path,
     audio_review_py: Path,
     video_inspector_py: Path,
     force_run: bool,
-    skip_review: bool = False
+    skip_review: bool = False,
+    summary: RunSummary | None = None
 ) -> bool:
     """Step 6: Review Final Video (Audio & Video Inspection)."""
     print_info("\n--- [Step 6/7] Reviewing Final Video (Audio & Video Inspection) ---")
@@ -427,24 +611,84 @@ def run_step6_review(
         print_error(f"[ERROR] Step 6 review failed: Final review video file missing or invalid at '{final_output}'")
         sys.exit(1)
 
-    print_info(f"Running audio review on '{final_output.name}'...")
-    cmd_audio = [sys.executable, str(audio_review_py), str(final_output)]
-    print(f"Executing: {' '.join(cmd_audio)}")
-    try:
-        subprocess.run(cmd_audio, check=True)
-    except subprocess.CalledProcessError as e:
-        print_error(f"[ERROR] Step 6 audio review failed with exit code {e.returncode}")
-        sys.exit(e.returncode)
+    audio_flags = []
+    video_flags = []
 
-    print()
-    print_info(f"Running video quality inspector on '{final_output.name}'...")
-    cmd_video = [sys.executable, str(video_inspector_py), str(final_output)]
-    print(f"Executing: {' '.join(cmd_video)}")
+    # Temporary files for JSON output
+    audio_json_fd, audio_json_path = tempfile.mkstemp(suffix=".json")
+    os.close(audio_json_fd)
+    video_json_fd, video_json_path = tempfile.mkstemp(suffix=".json")
+    os.close(video_json_fd)
+
     try:
-        subprocess.run(cmd_video, check=True)
-    except subprocess.CalledProcessError as e:
-        print_error(f"[ERROR] Step 6 video inspection failed with exit code {e.returncode}")
-        sys.exit(e.returncode)
+        print_info(f"Running audio review on '{processed_audio_output.name}'...")
+        cmd_audio = [sys.executable, str(audio_review_py), str(processed_audio_output)]
+        print(f"Executing: {' '.join(cmd_audio)}")
+        try:
+            subprocess.run(cmd_audio + ["--json-out", audio_json_path], check=True)
+        except subprocess.CalledProcessError as e:
+            print_error(f"[ERROR] Step 6 audio review failed with exit code {e.returncode}")
+            sys.exit(e.returncode)
+
+        if os.path.exists(audio_json_path):
+            try:
+                with open(audio_json_path, "r") as f:
+                    audio_data = json.load(f)
+                for item in audio_data:
+                    audio_flags.append({
+                        "start": float(item.get("start", 0)),
+                        "end": float(item.get("end", 0)),
+                        "label": str(item.get("label", item.get("class", "Unknown"))),
+                        "confidence": float(item.get("confidence", 0))
+                    })
+            except Exception:
+                pass
+
+        print()
+        print_info(f"Running video quality inspector on '{final_output.name}'...")
+        cmd_video = [sys.executable, str(video_inspector_py), str(final_output)]
+        print(f"Executing: {' '.join(cmd_video)}")
+        try:
+            subprocess.run(cmd_video + ["--json-out", video_json_path], check=True)
+        except subprocess.CalledProcessError as e:
+            print_error(f"[ERROR] Step 6 video inspection failed with exit code {e.returncode}")
+            sys.exit(e.returncode)
+
+        if os.path.exists(video_json_path):
+            try:
+                with open(video_json_path, "r") as f:
+                    video_data = json.load(f)
+                for item in video_data.get("black_glitches", []):
+                    video_flags.append({
+                        "type": "black",
+                        "start": float(item.get("start", 0)),
+                        "end": float(item.get("end", 0)),
+                        "duration": float(item.get("duration", 0))
+                    })
+                for item in video_data.get("freeze_glitches", []):
+                    video_flags.append({
+                        "type": "freeze",
+                        "start": float(item.get("start", 0)),
+                        "end": float(item.get("end", 0)),
+                        "duration": float(item.get("duration", 0))
+                    })
+            except Exception:
+                pass
+    finally:
+        if os.path.exists(audio_json_path):
+            try:
+                os.remove(audio_json_path)
+            except OSError:
+                pass
+        if os.path.exists(video_json_path):
+            try:
+                os.remove(video_json_path)
+            except OSError:
+                pass
+
+    if summary is not None:
+        summary.audio_flags = audio_flags
+        summary.video_flags = video_flags
 
     print_success(f"[SUCCESS] Step 6 complete: Finished audio & video review for -> {final_output.name}")
     return True
@@ -508,115 +752,231 @@ def main():
 
     pipeline_start_time = time.perf_counter()
     force_run = args.force
-
-    # Step 1: Transcribe Video using Groq Cloud
-    step1_start = time.perf_counter()
-    force_run = run_step1_transcription(
-        webcam_path=main_video_path,
-        step1_srt_output=outputs["step1_srt"],
-        step1_1word_srt=outputs["step1_1word_srt"],
-        transcribe_cloud_py=scripts["transcribe_cloud_py"],
-        force_run=force_run
+    
+    # Initialize RunSummary
+    video_info = get_video_info(main_video_path)
+    project_title = args.title if args.title else video_dir.name.replace("-", " ").replace("_", " ").title()
+    mode_str = "raw pre-composed" if is_raw_mode else "webcam overlay"
+    bgm_track = args.bgm if args.bgm else None
+    resolution_str = f"{video_info.width}x{video_info.height}"
+    
+    summary = RunSummary(
+        project_title=project_title,
+        raw_input_filename=main_video_path.name,
+        mode=mode_str,
+        bgm_track=bgm_track,
+        resolution=resolution_str,
+        fps=video_info.fps,
+        final_duration=0.0,  # Will be updated after final output
     )
-    step1_duration = time.perf_counter() - step1_start
 
-    # Step 2: Video Processing (Silence Trimming for --raw, or Single-Pass Mask + Trim)
-    step2_start = time.perf_counter()
-    if is_raw_mode:
-        force_run = run_step2_trim_silences_raw(
-            raw_video_path=main_video_path,
-            step2_output=outputs["step2_output"],
+    step_names = {
+        1: "Transcription",
+        2: "Silence Trimming" if is_raw_mode else "Mask & Silence Trim",
+        3: "Audio Processing",
+        4: "BGM + Finalize",
+        5: "Verify Final",
+        6: "Audio & Video Review",
+        7: "Auto Create Metadata",
+    }
+
+    current_step_idx = None
+    step_start_time = 0.0
+
+    step1_duration = 0.0
+    step2_duration = 0.0
+    step3_duration = 0.0
+    step4_duration = 0.0
+    step5_duration = 0.0
+    step6_duration = 0.0
+    step7_duration = 0.0
+
+    try:
+        # Step 1: Transcribe Video using Groq Cloud
+        current_step_idx = 1
+        step_start_time = time.perf_counter()
+        force_run = run_step1_transcription(
+            webcam_path=main_video_path,
+            step1_srt_output=outputs["step1_srt"],
+            step1_1word_srt=outputs["step1_1word_srt"],
+            transcribe_cloud_py=scripts["transcribe_cloud_py"],
             force_run=force_run
         )
-    else:
-        force_run = run_single_pass_mask_trim(
-            webcam_path=main_video_path,
-            screen_path=screen_path,
-            step1_1word_srt=outputs["step1_1word_srt"],
+        step1_duration = time.perf_counter() - step_start_time
+        summary.steps.append(StepSummary(step_names[1], "ran" if run_plan[1] else "skipped", step1_duration))
+        current_step_idx = None
+
+        # Step 2: Video Processing (Silence Trimming for --raw, or Single-Pass Mask + Trim)
+        current_step_idx = 2
+        step_start_time = time.perf_counter()
+        speech_interval_count = 0
+        if is_raw_mode:
+            force_run, speech_interval_count = run_step2_trim_silences_raw(
+                raw_video_path=main_video_path,
+                step2_output=outputs["step2_output"],
+                force_run=force_run
+            )
+        else:
+            force_run, speech_interval_count = run_single_pass_mask_trim(
+                webcam_path=main_video_path,
+                screen_path=screen_path,
+                step1_1word_srt=outputs["step1_1word_srt"],
+                step2_output=outputs["step2_output"],
+                preset=args.preset,
+                width=args.width,
+                all_overlay=args.all,
+                video_dir=video_dir,
+                force_run=force_run,
+                skip_confirm=args.yes
+            )
+        step2_duration = time.perf_counter() - step_start_time
+        summary.speech_interval_count = speech_interval_count
+        summary.steps.append(StepSummary(step_names[2], "ran" if run_plan[2] else "skipped", step2_duration))
+        current_step_idx = None
+
+        # Step 3: Process Audio (pipeline mode - outputs processed-audio.wav only)
+        current_step_idx = 3
+        step_start_time = time.perf_counter()
+        force_run = run_step3_process_audio(
             step2_output=outputs["step2_output"],
-            preset=args.preset,
-            width=args.width,
-            all_overlay=args.all,
-            video_dir=video_dir,
-            force_run=force_run,
-            skip_confirm=args.yes
+            processed_audio_output=outputs["processed_audio_output"],
+            process_audio_sh=scripts["process_audio_sh"],
+            force_run=force_run
         )
-    step2_duration = time.perf_counter() - step2_start
+        step3_duration = time.perf_counter() - step_start_time
+        summary.steps.append(StepSummary(step_names[3], "ran" if run_plan[3] else "skipped", step3_duration))
+        current_step_idx = None
 
-    # Step 3: Process Audio
-    step3_start = time.perf_counter()
-    force_run = run_step3_process_audio(
-        step2_output=outputs["step2_output"],
-        step3_output=outputs["step3_output"],
-        process_audio_sh=scripts["process_audio_sh"],
-        force_run=force_run
-    )
-    step3_duration = time.perf_counter() - step3_start
+        # Step 4: Add BGM (if specified) and Finalize in single remux pass
+        current_step_idx = 4
+        step_start_time = time.perf_counter()
+        force_run = run_step4_finalize_with_bgm(
+            step2_output=outputs["step2_output"],
+            processed_audio_output=outputs["processed_audio_output"],
+            final_output=outputs["final_output"],
+            bgm=args.bgm,
+            volume=args.volume,
+            add_bgm_sh=scripts["add_bgm_sh"],
+            force_run=force_run
+        )
+        step4_duration = time.perf_counter() - step_start_time
+        step4_status = "ran" if run_plan[4] else "skipped"
+        summary.steps.append(StepSummary(step_names[4], step4_status, step4_duration))
+        current_step_idx = None
 
-    # Step 4: Add Background Music
-    step4_start = time.perf_counter()
-    current_latest_video, force_run = run_step4_add_bgm(
-        step3_output=outputs["step3_output"],
-        step4_output=outputs["step4_output"],
-        bgm=args.bgm,
-        volume=args.volume,
-        add_bgm_sh=scripts["add_bgm_sh"],
-        force_run=force_run
-    )
-    step4_duration = time.perf_counter() - step4_start
+        # Step 5: Verify Final Output
+        current_step_idx = 5
+        step_start_time = time.perf_counter()
+        force_run = run_step5_verify_final(
+            final_output=outputs["final_output"],
+            force_run=force_run
+        )
+        step5_duration = time.perf_counter() - step_start_time
+        summary.steps.append(StepSummary(step_names[5], "ran" if run_plan[5] else "skipped", step5_duration))
+        current_step_idx = None
 
-    # Step 5: Finalize Output File Name
-    step5_start = time.perf_counter()
-    force_run = run_step5_finalize(
-        current_latest_video=current_latest_video,
-        final_output=outputs["final_output"],
-        force_run=force_run
-    )
-    step5_duration = time.perf_counter() - step5_start
+        # Step 6: Review Final Video (Audio & Video Inspection)
+        current_step_idx = 6
+        step6_start_time = time.perf_counter()
+        force_run_step6 = force_run
+        force_run = run_step6_review(
+            final_output=outputs["final_output"],
+            processed_audio_output=outputs["processed_audio_output"],
+            audio_review_py=scripts["audio_review_py"],
+            video_inspector_py=scripts["video_inspector_py"],
+            force_run=force_run,
+            skip_review=getattr(args, "skip_review", False),
+            summary=summary
+        )
+        step6_duration = time.perf_counter() - step6_start_time
+        step6_skipped = getattr(args, "skip_review", False) or (not force_run_step6 and not statuses[6])
+        summary.steps.append(StepSummary(step_names[6], "skipped" if step6_skipped else "ran", step6_duration))
+        current_step_idx = None
 
-    # Step 6: Review Final Video (Audio & Video Inspection)
-    step6_start = time.perf_counter()
-    force_run = run_step6_review(
-        final_output=outputs["final_output"],
-        audio_review_py=scripts["audio_review_py"],
-        video_inspector_py=scripts["video_inspector_py"],
-        force_run=force_run,
-        skip_review=getattr(args, "skip_review", False)
-    )
-    step6_duration = time.perf_counter() - step6_start
+        # Step 7: Generate Project Metadata
+        current_step_idx = 7
+        step_start_time = time.perf_counter()
+        run_step7_create_metadata(
+            video_dir=video_dir,
+            metadata_output=outputs["metadata_output"],
+            title=args.title,
+            auto_create_metadata_py=scripts["auto_create_metadata_py"],
+            force_run=force_run
+        )
+        step7_duration = time.perf_counter() - step_start_time
+        summary.steps.append(StepSummary(step_names[7], "ran" if run_plan[7] else "skipped", step7_duration))
+        current_step_idx = None
 
-    # Step 7: Generate Project Metadata
-    step7_start = time.perf_counter()
-    run_step7_create_metadata(
-        video_dir=video_dir,
-        metadata_output=outputs["metadata_output"],
-        title=args.title,
-        auto_create_metadata_py=scripts["auto_create_metadata_py"],
-        force_run=force_run
-    )
-    step7_duration = time.perf_counter() - step7_start
+        total_duration = time.perf_counter() - pipeline_start_time
+        step2_label = "Step 2 (Silence Trimming):" if is_raw_mode else "Step 2 (Mask & Silence Trim):"
 
-    total_duration = time.perf_counter() - pipeline_start_time
+        print()
+        print_success("============================================================")
+        print_success(" 🎉 FULL VIDEO PROCESSING PIPELINE COMPLETED SUCCESSFULLY!")
+        print_success(f" Final review video saved at: {outputs['final_output']}")
+        print_success(f" Project metadata saved at:   {outputs['metadata_output']}")
+        print_info("------------------------------------------------------------")
+        print_info(" Step Execution Timing Summary:")
+        print(f"  Step 1 (Transcription):        {format_duration(step1_duration)}")
+        print(f"  {step2_label:<32}{format_duration(step2_duration)}")
+        print(f"  Step 3 (Audio Processing):      {format_duration(step3_duration)}")
+        print(f"  Step 4 (BGM + Finalize):        {format_duration(step4_duration)}")
+        print(f"  Step 5 (Verify Final):          {format_duration(step5_duration)}")
+        print(f"  Step 6 (Audio & Video Review):  {format_duration(step6_duration)}")
+        print(f"  Step 7 (Auto Create Metadata):  {format_duration(step7_duration)}")
+        print_info("------------------------------------------------------------")
+        print_success(f" Total Execution Time:            {format_duration(total_duration)}")
+        print_success("============================================================")
 
-    step2_label = "Step 2 (Silence Trimming):" if is_raw_mode else "Step 2 (Mask & Silence Trim):"
+    except BaseException:
+        if current_step_idx is not None:
+            failed_name = step_names[current_step_idx]
+            failed_dur = time.perf_counter() - step_start_time
+            summary.steps.append(StepSummary(failed_name, "failed", failed_dur))
+            for rem_idx in range(current_step_idx + 1, 8):
+                summary.steps.append(StepSummary(step_names[rem_idx], "skipped", 0.0))
+        raise
+    finally:
+        total_duration = time.perf_counter() - pipeline_start_time
+        summary.total_execution_time = total_duration
 
-    print()
-    print_success("============================================================")
-    print_success(" 🎉 FULL VIDEO PROCESSING PIPELINE COMPLETED SUCCESSFULLY!")
-    print_success(f" Final review video saved at: {outputs['final_output']}")
-    print_success(f" Project metadata saved at:   {outputs['metadata_output']}")
-    print_info("------------------------------------------------------------")
-    print_info(" Step Execution Timing Summary:")
-    print(f"  Step 1 (Transcription):        {format_duration(step1_duration)}")
-    print(f"  {step2_label:<32}{format_duration(step2_duration)}")
-    print(f"  Step 3 (Audio Processing):      {format_duration(step3_duration)}")
-    print(f"  Step 4 (Background Music):      {format_duration(step4_duration)}")
-    print(f"  Step 5 (Finalize File):         {format_duration(step5_duration)}")
-    print(f"  Step 6 (Audio & Video Review):  {format_duration(step6_duration)}")
-    print(f"  Step 7 (Auto Create Metadata):  {format_duration(step7_duration)}")
-    print_info("------------------------------------------------------------")
-    print_success(f" Total Execution Time:            {format_duration(total_duration)}")
-    print_success("============================================================")
+        if outputs["final_output"].exists():
+            try:
+                final_video_info = get_video_info(outputs["final_output"])
+                summary.final_duration = final_video_info.duration
+            except Exception:
+                summary.final_duration = 0.0
+        else:
+            summary.final_duration = 0.0
+
+        # Clean up intermediate files if requested
+        if getattr(args, "clean_intermediates", False) and outputs["final_output"].exists():
+            step2_file = outputs["step2_output"]
+            if step2_file.exists():
+                try:
+                    step2_file.unlink()
+                    print_info(f"Cleaned up intermediate file: {step2_file.name}")
+                except Exception as e:
+                    print_warning(f"Could not delete intermediate file {step2_file}: {e}")
+
+        candidate_files = [
+            outputs["step1_srt"],
+            outputs["step1_1word_srt"],
+            outputs["step2_output"],
+            outputs["processed_audio_output"],
+            outputs["final_output"],
+            outputs["metadata_output"],
+            video_dir / "trimmed.srt",
+            video_dir / "trimmed-1word.srt",
+        ]
+        output_files = []
+        for p in candidate_files:
+            if p.exists() and p.name not in output_files:
+                output_files.append(p.name)
+        summary.output_files = output_files
+
+        write_summary(summary, video_dir)
+        print_success(f" Run summary saved at: {video_dir / 'summary.md'}")
 
 
 if __name__ == "__main__":
