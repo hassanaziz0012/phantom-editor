@@ -34,7 +34,7 @@ ffmpeg -loglevel error -i "$INPUT_FILE" \
        -vn \
        -acodec pcm_s16le \
        -ar 48000 \
-       -ac 2 \
+       -ac 1 \
        -y \
        "$OUTPUT_FILE"
 
