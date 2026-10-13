@@ -20,6 +20,7 @@ show_usage() {
     echo "    process <webcam_video> [screen_video] [--raw <raw_video>] [arguments]"
     echo "    newvideo <project_name>"
     echo "    organize <video_file> <project_name> (--ytlong | --loom)"
+    echo "    cleanup [<project_path>] [--full]"
     echo ""
     echo "  audio:"
     echo "    process [-R|--recursive] <path>"
@@ -132,6 +133,8 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/projects/organize.py" "$@"
+        elif [ "$SUBCOMMAND" = "cleanup" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/projects/cleanup.py" "$@"
         else
             echo "Unknown projects subcommand: $SUBCOMMAND"
             echo "Usage: phantom projects status [arguments]"
@@ -139,6 +142,7 @@ case "$COMMAND" in
             echo "       phantom projects process --raw <raw_video> [arguments]"
             echo "       phantom projects newvideo <project_name>"
             echo "       phantom projects organize <video_file> <project_name> (--ytlong | --loom)"
+            echo "       phantom projects cleanup [<project_path>] [--full]"
             exit 1
         fi
         ;;
