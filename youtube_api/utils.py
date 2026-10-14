@@ -110,6 +110,25 @@ def resolve_channel_id(youtube, channel_input: str) -> str:
     raise ValueError(f"Could not resolve YouTube channel ID for input: {channel_input!r}")
 
 
+# ── Video ID Extraction ─────────────────────────────────────────────────────────
+
+def extract_video_id(input_str: str) -> str:
+    """
+    Extract the 11-character YouTube video ID from a raw ID or any common URL format
+    (watch?v=, youtu.be/, shorts/, embed/, v/, live/).
+    """
+    input_str = input_str.strip()
+
+    if re.fullmatch(r"[a-zA-Z0-9_-]{11}", input_str):
+        return input_str
+
+    match = re.search(r"(?:v=|/v/|embed/|shorts/|live/|youtu\.be/|/e/)([a-zA-Z0-9_-]{11})", input_str)
+    if match:
+        return match.group(1)
+
+    raise ValueError(f"Could not extract a valid YouTube video ID from: '{input_str}'")
+
+
 # ── Terminal Display Utilities ──────────────────────────────────────────────────
 
 def supports_color() -> bool:
