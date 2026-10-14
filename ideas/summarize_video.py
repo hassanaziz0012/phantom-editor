@@ -13,7 +13,6 @@ import argparse
 import json
 import logging
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -34,6 +33,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from agentic.ask_openrouter import ask_openrouter
+from youtube_api.utils import extract_video_id
 
 load_dotenv()
 
@@ -60,35 +60,6 @@ class VideoSummaryResponse(BaseModel):
         ...,
         description="A list of key takeaways, main lessons, or actionable insights from the YouTube video.",
     )
-
-
-def extract_video_id(input_str: str) -> str:
-    """
-    Extracts the 11-character YouTube video ID from various URL formats or raw ID.
-
-    Examples:
-        - https://www.youtube.com/watch?v=dQw4w9WgXcQ -> dQw4w9WgXcQ
-        - https://youtu.be/dQw4w9WgXcQ -> dQw4w9WgXcQ
-        - https://www.youtube.com/shorts/dQw4w9WgXcQ -> dQw4w9WgXcQ
-        - dQw4w9WgXcQ -> dQw4w9WgXcQ
-    """
-    input_str = input_str.strip()
-
-    # Raw 11-char ID
-    if re.fullmatch(r"[a-zA-Z0-9_-]{11}", input_str):
-        return input_str
-
-    # YouTube URL patterns
-    patterns = [
-        r"(?:v=|\/v\/|embed\/|shorts\/|youtu\.be\/|\/e\/)([a-zA-Z0-9_-]{11})",
-        r"^([a-zA-Z0-9_-]{11})$",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, input_str)
-        if match:
-            return match.group(1)
-
-    raise ValueError(f"Could not extract a valid YouTube video ID from: '{input_str}'")
 
 
 def get_video_metadata(video_url: str) -> Dict[str, Any]:

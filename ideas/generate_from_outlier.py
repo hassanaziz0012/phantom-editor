@@ -34,6 +34,8 @@ if str(repo_root) not in sys.path:
 
 from dotenv import load_dotenv
 
+from youtube_api.utils import extract_video_id
+
 load_dotenv()
 
 # Logging setup
@@ -67,35 +69,6 @@ class Colors:
     RED = "\033[31m"
     GRAY = "\033[90m"
     WHITE = "\033[97m"
-
-
-# ── Video ID Extraction ────────────────────────────────────────────────────────
-
-def extract_video_id(input_str: str) -> str:
-    """
-    Extracts the 11-character YouTube video ID from various URL formats or raw ID.
-
-    Examples:
-        - https://www.youtube.com/watch?v=dQw4w9WgXcQ -> dQw4w9WgXcQ
-        - https://youtu.be/dQw4w9WgXcQ -> dQw4w9WgXcQ
-        - https://www.youtube.com/shorts/dQw4w9WgXcQ -> dQw4w9WgXcQ
-        - dQw4w9WgXcQ -> dQw4w9WgXcQ
-    """
-    input_str = input_str.strip()
-
-    if re.fullmatch(r"[a-zA-Z0-9_-]{11}", input_str):
-        return input_str
-
-    patterns = [
-        r"(?:v=|\/v\/|embed\/|shorts\/|youtu\.be\/|\/e\/)([a-zA-Z0-9_-]{11})",
-        r"^([a-zA-Z0-9_-]{11})$",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, input_str)
-        if match:
-            return match.group(1)
-
-    raise ValueError(f"Could not extract a valid YouTube video ID from: '{input_str}'")
 
 
 # ── Video Metadata Fetching ───────────────────────────────────────────────────

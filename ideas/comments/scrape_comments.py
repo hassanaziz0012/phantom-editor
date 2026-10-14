@@ -12,14 +12,13 @@ import argparse
 import json
 import logging
 import os
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Add project root to sys.path
-repo_root = Path(__file__).resolve().parent.parent
+repo_root = Path(__file__).resolve().parent.parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
@@ -28,6 +27,8 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+from youtube_api.utils import extract_video_id
 
 load_dotenv()
 
@@ -86,38 +87,6 @@ def format_relative_time(iso_str: str) -> str:
         return f"{years}y ago"
     except Exception:
         return iso_str
-
-
-# ── Video ID Extraction ────────────────────────────────────────────────────────
-
-def extract_video_id(input_str: str) -> str:
-    """
-    Extracts the 11-character YouTube video ID from various URL formats or raw ID.
-
-    Supported formats:
-      - https://www.youtube.com/watch?v=dQw4w9WgXcQ
-      - https://youtu.be/dQw4w9WgXcQ
-      - https://www.youtube.com/shorts/dQw4w9WgXcQ
-      - https://www.youtube.com/embed/dQw4w9WgXcQ
-      - https://www.youtube.com/v/dQw4w9WgXcQ
-      - dQw4w9WgXcQ
-    """
-    input_str = input_str.strip()
-
-    # Raw 11-char ID
-    if re.fullmatch(r"[a-zA-Z0-9_-]{11}", input_str):
-        return input_str
-
-    patterns = [
-        r"(?:v=|\/v\/|embed\/|shorts\/|youtu\.be\/|\/e\/)([a-zA-Z0-9_-]{11})",
-        r"^([a-zA-Z0-9_-]{11})$",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, input_str)
-        if match:
-            return match.group(1)
-
-    raise ValueError(f"Could not extract a valid YouTube video ID from: '{input_str}'")
 
 
 # ── YouTube Client Initialization ──────────────────────────────────────────────
