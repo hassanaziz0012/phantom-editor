@@ -25,6 +25,12 @@ Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a 
 
 * **Usage**: `python youtube_api/upload_video.py /path/to/video.mp4` or via `phantom yt upload <video_path>`
 
+### [video_info.py](../youtube_api/video_info.py)
+Shows quick details about any YouTube video: a direct thumbnail URL, views/likes/comments, and an outlier score — the video's views divided by the median views of the channel's recent uploads of the same format (Shorts vs long-form). Baseline videos younger than 14 days are excluded, and a note is shown if the video itself is that new.
+
+* **Usage**: `python youtube_api/video_info.py <video_url_or_id> [--fresh] [--json]` or via `phantom yt info <video> [--fresh] [--json]`
+* **Caching**: The channel's last 50 uploads are cached in `youtube_api/cache/baselines.json` for 24 hours. A cold lookup costs 3 quota units; a cached one costs 1. `--fresh` forces a refetch.
+
 ### [utils.py](../youtube_api/utils.py)
 Utility functions containing API authentication, channel ID resolution, Jaccard text similarity helpers, and logarithmic scoring algorithms.
 
