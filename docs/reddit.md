@@ -111,7 +111,49 @@ Scrapes post results from a Reddit search (`https://www.reddit.com/search/?q=...
 
 ---
 
-### 4. [analyze_post.py](../reddit/analyze_post.py)
+### 4. [scrape_profile.py](../reddit/scrape_profile.py)
+
+Scrapes a Reddit user's profile (`https://www.reddit.com/user/<name>/`) from a username, `u/name`, or any profile URL. Uses the logged-in Chrome profile `~/Desktop/browser-profiles/p9222` on port `9222`, and like `serve.py` reads Reddit's `.json` endpoints with `fetch()` from a reddit.com tab instead of rendering the profile.
+
+* **Account**: karma breakdown (post/comment/awarder/awardee, karma per day), cake day and account age, bio, avatar, banner, followers, contributions (with Reddit's posts/comments split), contributor status, gold earned, employee/mod/premium/verified/suspended flags, trophies, and moderated communities.
+* **Posts**: score, upvote ratio, comments, crossposts, awards, flair, type, body or media link, NSFW/spoiler/locked/archived/pinned/stickied/OC/edited flags, and removal status (moderators, AutoModerator filter, Reddit's filters, admins, legal, copyright, deleted). For mod removals it also fetches the mod's or AutoModerator's removal comment.
+* **Comments**: score, the post they're on and its author, reply vs. top-level, comments on own posts, controversial, edited, collapsed, and removed/deleted.
+* **Views & insights**: views, shares, reposts, and top countries from `/poststats` and `/commentstats`. Reddit only shows these to the author, so they're only filled in when the profile belongs to the logged-in account. Reddit doesn't show insights for removed posts or for comments older than 90 days, and shows large view counts rounded (`12K`); those fields are listed in `insights.rounded`.
+* **Summary**: removal rate by status, average/median scores, top post and comment, total views, most active subreddits, most active weekday and hour (UTC), and notes explaining any missing data.
+
+* **CLI Usage**:
+  ```bash
+  # Username, u/name, or full profile URL
+  phantom reddit profile spez
+  phantom reddit profile "https://www.reddit.com/user/spez/" --posts 50 --comments 50
+
+  # Top posts and comments of the past year, as JSON
+  phantom reddit profile u/spez --sort top --time year --json
+
+  # Skip the per-item insights requests on your own profile
+  phantom reddit profile No_Nefariousness2052 --no-views
+  ```
+
+* **Direct Python**:
+  ```bash
+  uv run python reddit/scrape_profile.py <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--no-views] [--no-removal-reasons] [--headless] [--port <int>] [--json]
+  ```
+
+* **Key Options**:
+  - `user`: Username, `u/name`, or a `reddit.com/user/<name>` URL (required).
+  - `--posts`: Maximum number of posts to scrape (default: `25`, `0` to skip).
+  - `--comments`: Maximum number of comments to scrape (default: `25`, `0` to skip).
+  - `--sort`: `new` (default), `hot`, `top`, `controversial`.
+  - `--time`: `all` (default), `year`, `month`, `week`, `day`, `hour` (for `top` and `controversial`).
+  - `--no-views`: Skip fetching views & insights (one request per post/comment on your own profile).
+  - `--no-removal-reasons`: Skip looking up the mod's comment on mod-removed posts.
+  - `--headless`: Run Chrome in headless mode if starting a new instance.
+  - `--port`: Chrome CDP port (default: `9222`).
+  - `--json`: Output raw JSON to stdout.
+
+---
+
+### 5. [analyze_post.py](../reddit/analyze_post.py)
 
 Scrapes a Reddit post via `scrape_reddit_post.py` and runs sentiment and community reception analysis using Groq (`openai/gpt-oss-120b`) with structured Pydantic outputs (`RedditPostAnalysis`).
 
@@ -138,7 +180,7 @@ Scrapes a Reddit post via `scrape_reddit_post.py` and runs sentiment and communi
 
 ---
 
-### 5. [promote_videos.py](../reddit/promote_videos.py)
+### 6. [promote_videos.py](../reddit/promote_videos.py)
 
 Outreach engine that identifies authentic video promotion opportunities across targeted subreddits:
 
