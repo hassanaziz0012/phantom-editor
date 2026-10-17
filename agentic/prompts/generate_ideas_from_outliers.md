@@ -21,7 +21,7 @@ Return your response as a JSON list, like this:
     {
         "source": "any specific thing in the video that inspired this idea",
         "idea": "a short 1-2 sentence explanation of the content idea, described as a core concept — not tied to a specific format",
-        "best_formats": ["e.g. YT Short, Twitter thread, LinkedIn post, IG carousel — 1-3 formats this idea naturally fits"],
+        "best_formats": ["1-3 formats this idea naturally fits, using ONLY these exact names: YT video, YT short, LinkedIn post, Twitter thread, IG carousel, Substack newsletter, Reddit post"],
         "confidence_score": "0-10 (how confident are you that this is a good idea for my content)"
     }
 ]

@@ -10,7 +10,7 @@ Sheet Columns:
   - Source: Source comment or reference text along with URL
   - Source Type: e.g. "YT Comments", "Reddit", "Twitter", etc.
   - Confidence Score: Optional rating (e.g. 0-10)
-  - Best Formats: e.g. "YT Short, Twitter thread"
+  - Best Formats: multi-select dropdown, e.g. "YT short, Twitter thread"
 """
 
 from __future__ import annotations
@@ -40,6 +40,56 @@ logger = logging.getLogger("phantom.ideas.export")
 IDEAS_SHEET_NAME = "Ideas"
 DEFAULT_IDEAS_HEADERS = ["Idea", "Source", "Source Type", "Confidence Score", "Best Formats"]
 
+# Options of the "Best Formats" multi-select dropdown in the sheet (must match exactly)
+BEST_FORMAT_OPTIONS = ["YT video", "YT short", "LinkedIn post", "Twitter thread", "IG carousel", "Substack newsletter", "Reddit post"]
+BEST_FORMAT_ALIASES = {
+    "youtube video": "YT video",
+    "youtube": "YT video",
+    "yt long-form": "YT video",
+    "youtube short": "YT short",
+    "youtube shorts": "YT short",
+    "yt shorts": "YT short",
+    "yt short series": "YT short",
+    "short": "YT short",
+    "linkedin": "LinkedIn post",
+    "linkedin carousel": "LinkedIn post",
+    "twitter post": "Twitter thread",
+    "twitter": "Twitter thread",
+    "tweet": "Twitter thread",
+    "x thread": "Twitter thread",
+    "x post": "Twitter thread",
+    "instagram carousel": "IG carousel",
+    "instagram post": "IG carousel",
+    "ig post": "IG carousel",
+    "substack": "Substack newsletter",
+    "substack post": "Substack newsletter",
+    "newsletter": "Substack newsletter",
+    "reddit": "Reddit post",
+    "reddit thread": "Reddit post",
+}
+
+
+def normalize_best_formats(best_formats: Union[List[str], str, None]) -> List[str]:
+    """
+    Maps free-form format names onto the sheet's dropdown options so they render as chips.
+    Unrecognized formats are dropped.
+    """
+    items = best_formats if isinstance(best_formats, list) else str(best_formats or "").split(",")
+    lookup = {opt.lower(): opt for opt in BEST_FORMAT_OPTIONS}
+    lookup.update(BEST_FORMAT_ALIASES)
+
+    normalized: List[str] = []
+    for item in items:
+        key = " ".join(str(item).strip().lower().split())
+        if not key:
+            continue
+        option = lookup.get(key)
+        if option is None:
+            logger.warning("Dropping unrecognized format %r (not a Best Formats dropdown option)", item)
+        elif option not in normalized:
+            normalized.append(option)
+    return normalized
+
 
 @dataclass
 class ContentIdea:
@@ -53,11 +103,7 @@ class ContentIdea:
         if not headers:
             headers = DEFAULT_IDEAS_HEADERS
 
-        formats_str = ""
-        if isinstance(self.best_formats, list):
-            formats_str = ", ".join(str(f).strip() for f in self.best_formats if str(f).strip())
-        elif self.best_formats is not None:
-            formats_str = str(self.best_formats).strip()
+        formats_str = ", ".join(normalize_best_formats(self.best_formats))
 
         row: List[str] = []
         for h in headers:
@@ -200,11 +246,13 @@ def export_ideas_to_sheet(
     if not rows_to_append:
         return {"appended_count": 0, "updates": {}}
 
+    # OVERWRITE fills the empty rows below the table, which already carry the
+    # Best Formats dropdown; INSERT_ROWS would add fresh rows without it.
     append_result = service.spreadsheets().values().append(
         spreadsheetId=sheet_id,
         range=f"{sheet_name}!A:E",
         valueInputOption="USER_ENTERED",
-        insertDataOption="INSERT_ROWS",
+        insertDataOption="OVERWRITE",
         body={"values": rows_to_append},
     ).execute()
 
@@ -250,7 +298,7 @@ def main():
         "--best-formats",
         type=str,
         default="",
-        help="Best formats (e.g. 'YT Short, Twitter thread').",
+        help=f"Comma-separated best formats, from: {', '.join(BEST_FORMAT_OPTIONS)}.",
     )
     parser.add_argument(
         "--sheet-id",
