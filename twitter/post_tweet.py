@@ -3,51 +3,43 @@ import asyncio
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 from playwright.async_api import async_playwright
 
 # Setup import path for sibling modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from substack.post_note import post_substack_note
+from substack.post_note import post_substack_note, get_cdp_browser_context, get_clean_page
 from threads.post_thread import post_thread
 
-# Get the absolute path to the data/auth.json file relative to this script
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-AUTH_FILE_PATH = os.path.join(SCRIPT_DIR, "data", "auth.json")
+PROFILE_DIR = Path.home() / "Desktop" / "browser-profiles" / "p9222"
+CDP_PORT = 9222
 
-async def _run_post_tweet(content: str, use_image: bool = False, headless: bool = True, status: dict = None):
+async def _run_post_tweet(content: str, use_image: bool = False):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless)
+        # Attach to (or launch) a headful Chrome on the p9222 profile via CDP.
+        # Chrome is left running afterwards; only our tab is closed.
+        context = await get_cdp_browser_context(p, profile_path=PROFILE_DIR, port=CDP_PORT, headless=False)
+        page = await get_clean_page(context)
         temp_image_path = None
         try:
-            if os.path.exists(AUTH_FILE_PATH):
-                context = await browser.new_context(storage_state=AUTH_FILE_PATH)
-            else:
-                context = await browser.new_context()
-
-            page = await context.new_page()
             await page.goto("https://x.com/intent/post")
 
             # Check if redirect to login page occurs
             await page.wait_for_timeout(2000)
 
+            tweet_box = page.locator('div[data-testid="tweetTextarea_0"]').first
             if "login" in page.url or "i/flow/login" in page.url:
-                if headless:
-                    raise Exception("Authentication required (redirected to login).")
-                else:
-                    print("\n" + "="*80)
-                    print("🔑 MANUAL ACTION REQUIRED: Please log in in the opened browser window.")
-                    print("Solve any CAPTCHAs, verification puzzles, or 2FA prompts.")
-                    print("Once logged in, you should be redirected to the tweet composer automatically.")
-                    print("="*80 + "\n")
-                    
-                    # Wait up to 5 minutes for user login and redirect
-                    tweet_box = page.locator('div[data-testid="tweetTextarea_0"]').first
-                    await tweet_box.wait_for(state="visible", timeout=300000)
+                print("\n" + "="*80)
+                print("🔑 MANUAL ACTION REQUIRED: Please log in in the opened browser window.")
+                print("Solve any CAPTCHAs, verification puzzles, or 2FA prompts.")
+                print("Once logged in, you should be redirected to the tweet composer automatically.")
+                print("="*80 + "\n")
+
+                # Wait up to 5 minutes for user login and redirect
+                await tweet_box.wait_for(state="visible", timeout=300000)
             else:
-                timeout = 10000 if headless else 30000
-                tweet_box = page.locator('div[data-testid="tweetTextarea_0"]').first
-                await tweet_box.wait_for(state="visible", timeout=timeout)
+                await tweet_box.wait_for(state="visible", timeout=30000)
 
             # 1. Type the content
             await tweet_box.click()
@@ -99,19 +91,12 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {{
             # 3. Click Post immediately
             post_button = page.locator('button[data-testid="tweetButton"]').first
             await post_button.click()
-            if status is not None:
-                status["posted"] = True
 
             print(f"Tweet posted: {content}")
             await page.wait_for_timeout(3000)
 
-            # Save state on success
-            os.makedirs(os.path.dirname(AUTH_FILE_PATH), exist_ok=True)
-            await context.storage_state(path=AUTH_FILE_PATH)
-            print(f"Session state saved to {AUTH_FILE_PATH}")
-            
         finally:
-            await browser.close()
+            await page.close()
             if temp_image_path and os.path.exists(temp_image_path):
                 try:
                     os.remove(temp_image_path)
@@ -119,16 +104,7 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {{
                     pass
 
 async def post_tweet(content: str, use_image: bool = False, substack: bool = False, threads: bool = False):
-    status = {"posted": False}
-    try:
-        print("Launching browser in headless mode...")
-        await _run_post_tweet(content, use_image, headless=True, status=status)
-    except Exception as e:
-        if status["posted"]:
-            raise e
-        print(f"Headless mode encountered an issue: {e}")
-        print("Restarting browser in headed mode...")
-        await _run_post_tweet(content, use_image, headless=False, status=status)
+    await _run_post_tweet(content, use_image)
 
     if substack:
         await post_substack_note(text=content)
