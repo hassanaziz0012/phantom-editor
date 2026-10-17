@@ -79,7 +79,39 @@ Scrapes posts from any subreddit feed (`best`, `hot`, `new`, `rising`, or `top` 
 
 ---
 
-### 3. [analyze_post.py](../reddit/analyze_post.py)
+### 3. [scrape_search.py](../reddit/scrape_search.py)
+
+Scrapes post results from a Reddit search (`https://www.reddit.com/search/?q=...&type=posts`), scrolling to lazy-load more results until the limit is reached or results run out. Each result includes title, subreddit, author, relative and ISO post date, votes, comment count, thumbnail (if any), and URL.
+
+* **CLI Usage**:
+  ```bash
+  # Search posts (relevance, all time)
+  phantom reddit scrapesearch "automate video editing"
+
+  # Unquoted multi-word queries also work
+  phantom reddit scrapesearch automate video editing --limit 40
+
+  # Sort and time window
+  phantom reddit scrapesearch "automate video editing" --sort top --time month
+  phantom reddit scrapesearch "automate video editing" --sort new --json
+  ```
+
+* **Direct Python**:
+  ```bash
+  uv run python reddit/scrape_search.py <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]
+  ```
+
+* **Key Options**:
+  - `query`: Search query (required).
+  - `--sort`: `relevance` (default), `hot`, `top`, `new`, `comments`.
+  - `--time`: `all` (default), `year`, `month`, `week`, `day`, `hour`.
+  - `--limit`: Target number of posts to scrape (default: `20`).
+  - `--headless`: Run Chrome in headless mode.
+  - `--json`: Output raw JSON to stdout.
+
+---
+
+### 4. [analyze_post.py](../reddit/analyze_post.py)
 
 Scrapes a Reddit post via `scrape_reddit_post.py` and runs sentiment and community reception analysis using Groq (`openai/gpt-oss-120b`) with structured Pydantic outputs (`RedditPostAnalysis`).
 
@@ -106,7 +138,7 @@ Scrapes a Reddit post via `scrape_reddit_post.py` and runs sentiment and communi
 
 ---
 
-### 4. [promote_videos.py](../reddit/promote_videos.py)
+### 5. [promote_videos.py](../reddit/promote_videos.py)
 
 Outreach engine that identifies authentic video promotion opportunities across targeted subreddits:
 
