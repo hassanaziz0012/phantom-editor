@@ -3,7 +3,8 @@ Reddit Post Scraper using Playwright & Chrome DevTools Protocol (CDP).
 
 Scrapes post engagement metrics (title, author, subreddit, upvote count, upvote ratio,
 view count, total comment count, and top comments) from any Reddit post URL by attaching
-to a persistent native Google Chrome instance via CDP.
+to a persistent native Google Chrome instance via CDP. The tab loads the post's .json
+URL rather than the page, so Chrome doesn't have to run Reddit's web app (see reddit_json.py).
 
 Usage:
     uv run python reddit/scrape_reddit_post.py "https://www.reddit.com/r/..."
@@ -15,7 +16,6 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +23,7 @@ import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 from playwright.async_api import async_playwright, BrowserContext, Page
 from pydantic import BaseModel, Field
@@ -31,6 +32,8 @@ from pydantic import BaseModel, Field
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+
+from reddit.reddit_json import check_post_data, decode_response, json_url, post_fields, seconds_until_reset
 
 # ==============================================================================
 # Configuration & Constants
@@ -307,8 +310,15 @@ async def scrape_reddit_post(
 
         page = await get_clean_page(context)
         try:
+            post_url = url
+            if "/comments/" not in urlsplit(url).path:
+                # Share links (/r/<sub>/s/<id>, redd.it/<id>) only redirect to the post, so follow
+                # the redirect first and fetch the .json of the post it lands on
+                await page.goto(url, wait_until="commit", timeout=30000)
+                post_url = page.url
+            target_url = json_url(post_url)
             if not quiet:
-                print(f"[*] Navigating to: {url}")
+                print(f"[*] Navigating to: {target_url}")
 
             # Navigate with retry logic for rate limits (HTTP 429) & transient HTTP/network failures
             max_retries = 3
@@ -321,10 +331,14 @@ async def scrape_reddit_post(
                 try:
                     if not quiet and attempt > 1:
                         print(f"[*] Retry attempt {attempt - 1}/{max_retries} for {url}...")
-                    response = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    response = await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
                     if response and response.status in (429, 502, 503, 504):
                         retry_after = response.headers.get("retry-after") if response else None
                         attempt_desc = "initial attempt" if attempt == 1 else f"retry {attempt - 1}/{max_retries}"
+                        # On a rate limit, wait until Reddit says its window resets; otherwise use the fixed delay
+                        reset_wait = seconds_until_reset(response.headers) if response.status == 429 else None
+                        wait = reset_wait if reset_wait is not None else retry_delay
+                        wait_reason = "until Reddit's rate limit resets" if reset_wait is not None else "default delay"
                         if not quiet:
                             print(f"[!] Warning: Received HTTP {response.status} on {attempt_desc}")
                             if retry_after:
@@ -340,10 +354,10 @@ async def scrape_reddit_post(
 
                         if attempt < max_nav_attempts:
                             if not quiet:
-                                print(f"[*] Sleeping {retry_delay}s before retry {attempt}/{max_retries}...")
+                                print(f"[*] Sleeping {wait:.0f}s ({wait_reason}) before retry {attempt}/{max_retries}...")
                             else:
-                                print(f"[*] Sleeping {retry_delay}s before retry {attempt}/{max_retries}...", file=sys.stderr)
-                            await asyncio.sleep(retry_delay)
+                                print(f"[*] Sleeping {wait:.0f}s ({wait_reason}) before retry {attempt}/{max_retries}...", file=sys.stderr)
+                            await asyncio.sleep(wait)
                             continue
                         else:
                             last_err = RuntimeError(
@@ -372,263 +386,11 @@ async def scrape_reddit_post(
                     raise last_err
                 raise RuntimeError(f"Failed to navigate to {url}: Navigation was not successful.")
 
-            # Wait for the main post component to be available
-            try:
-                await page.wait_for_selector("shreddit-post, article, [role='main']", timeout=15000)
-            except Exception:
-                if not quiet:
-                    print("[!] Warning: Main post selector wait timed out, continuing with available DOM...")
-
-            # Gentle scroll to trigger loading of top comments
-            await asyncio.sleep(2)
-            await page.evaluate("window.scrollBy(0, 600)")
-            await asyncio.sleep(1.5)
-
-            # -------------------------------------------------------------
-            # 1. Extract Post Metrics (Upvotes, Views, Title, Subreddit)
-            # -------------------------------------------------------------
-            post_elem = page.locator("shreddit-post").first
-            has_shreddit = await post_elem.count() > 0
-
-            post_title = ""
-            score_val = "0"
-            upvote_ratio_val = None
-            comment_count_val = "0"
-            subreddit_val = "reddit"
-            author_val = "unknown"
-
-            if has_shreddit:
-                post_title = await post_elem.get_attribute("post-title") or ""
-                score_val = await post_elem.get_attribute("score") or "0"
-                upvote_ratio_val = await post_elem.get_attribute("upvote-ratio")
-                comment_count_val = await post_elem.get_attribute("comment-count") or "0"
-                subreddit_val = await post_elem.get_attribute("subreddit-name") or "reddit"
-                author_val = await post_elem.get_attribute("author") or "unknown"
-
-            # Fallback for title using accessibility role 'heading'
-            if not post_title:
-                heading_loc = page.get_by_role("heading", level=1)
-                if await heading_loc.count() > 0:
-                    post_title = (await heading_loc.first.inner_text()).strip()
-                else:
-                    headings = await page.get_by_role("heading").all_inner_texts()
-                    if headings:
-                        post_title = headings[0].strip()
-
-            # Fallback for upvote score
-            if score_val == "0":
-                upvote_btn = page.get_by_role("button", name=re.compile(r"upvote", re.I))
-                if await upvote_btn.count() > 0:
-                    score_text = await upvote_btn.first.inner_text()
-                    digits = re.findall(r"\d+[\d,.]*[kKmM]?", score_text)
-                    if digits:
-                        score_val = digits[0]
-
-            # -------------------------------------------------------------
-            # Extract View Count (Post Insights)
-            # -------------------------------------------------------------
-            # Post views on Reddit are only visible to the author/moderator in the "Post Insights" bar
-            # below the post buttons (e.g. '1.5K views  See More Insights').
-            view_count_val = "Not publicly visible"
-
-            # Wait briefly for post insights to render if available
-            try:
-                await page.wait_for_selector(
-                    "shreddit-post-insights, [data-testid='post-insights'], faceplate-tracker[source='post_insights'], text=/views/i",
-                    timeout=2500,
-                )
-            except Exception:
-                pass
-
-            # Strategy A: JavaScript evaluation for Post Insights element, nearby text, or eye icon container
-            try:
-                js_view = await page.evaluate("""() => {
-                    // 1. Check dedicated post-insights custom element, testid, or faceplate tracker
-                    const insightsEl = document.querySelector('shreddit-post-insights, [data-testid="post-insights"], faceplate-tracker[source="post_insights"]');
-                    if (insightsEl) {
-                        const text = insightsEl.innerText || insightsEl.textContent || '';
-                        const m = text.match(/(\\d+[\\d,.]*\\s*[kKmMbB]?)\\s*(?:total\\s*)?views/i) ||
-                                  text.match(/(?:total\\s*)?views[:\\s]*(\\d+[\\d,.]*\\s*[kKmMbB]?)/i);
-                        if (m) return m[1].trim() + " views";
-                    }
-
-                    // 2. Check elements containing or adjacent to "See More Insights" or "Post Insights"
-                    const insightLinks = Array.from(document.querySelectorAll('a, button, span, div, p')).filter(el =>
-                        /see\\s+more\\s+insights|post\\s+insights/i.test(el.innerText || '')
-                    );
-                    for (const el of insightLinks) {
-                        const container = el.closest('div, section, faceplate-tracker, shreddit-post-insights') || el.parentElement;
-                        if (container) {
-                            const text = container.innerText || container.textContent || '';
-                            const m = text.match(/(\\d+[\\d,.]*\\s*[kKmMbB]?)\\s+views/i);
-                            if (m) return m[1].trim() + " views";
-                        }
-                    }
-
-                    // 3. Check inside shreddit-post or article
-                    const post = document.querySelector('shreddit-post, article, [role="main"]');
-                    if (post) {
-                        const postText = post.innerText || '';
-                        const m = postText.match(/\\b(\\d+[\\d,.]*\\s*[kKmMbB]?)\\s+views\\b/i);
-                        if (m) return m[1].trim() + " views";
-                    }
-
-                    // 4. Global body text search
-                    const bodyText = document.body ? document.body.innerText : '';
-                    const m = bodyText.match(/\\b(\\d+[\\d,.]*\\s*[kKmMbB]?)\\s+views\\b/i);
-                    if (m) return m[1].trim() + " views";
-
-                    return null;
-                }""")
-                if js_view:
-                    view_count_val = js_view
-            except Exception:
-                pass
-
-            # Strategy B: Fallback locator text regex if Strategy A didn't find it
-            if view_count_val == "Not publicly visible":
-                # Search inside shreddit-post
-                if has_shreddit:
-                    post_text = await post_elem.inner_text()
-                    view_match = re.search(r"\b(\d+[\d,.]*\s*[kKmMbB]?)\s+views\b", post_text, re.IGNORECASE)
-                    if view_match:
-                        view_count_val = f"{view_match.group(1).strip()} views"
-
-                # Search inside entire page body
-                if view_count_val == "Not publicly visible":
-                    full_body_text = await page.locator("body").inner_text()
-                    view_match = re.search(r"\b(\d+[\d,.]*\s*[kKmMbB]?)\s+views\b", full_body_text, re.IGNORECASE)
-                    if view_match:
-                        view_count_val = f"{view_match.group(1).strip()} views"
-
-                # Search via get_by_text unanchored pattern
-                if view_count_val == "Not publicly visible":
-                    view_locator = page.get_by_text(re.compile(r"\b\d+[\d,.]*[kKmMbB]?\s+views\b", re.I))
-                    if await view_locator.count() > 0:
-                        raw_view_text = await view_locator.first.inner_text()
-                        view_match = re.search(r"(\d+[\d,.]*\s*[kKmMbB]?)\s+views", raw_view_text, re.I)
-                        if view_match:
-                            view_count_val = f"{view_match.group(1).strip()} views"
-
-            # -------------------------------------------------------------
-            # 2. Extract Post Body (Text, Media, or External Link)
-            # -------------------------------------------------------------
-            post_body_val = ""
-            if has_shreddit:
-                # 1. Primary: Role-based paragraph extraction within post
-                paragraphs = post_elem.get_by_role("paragraph")
-                p_count = await paragraphs.count()
-                if p_count > 0:
-                    p_texts = []
-                    for i in range(p_count):
-                        txt = (await paragraphs.nth(i).inner_text()).strip()
-                        if txt:
-                            p_texts.append(txt)
-                    if p_texts:
-                        post_body_val = "\n\n".join(p_texts)
-
-                # 2. Semantic slot fallback for text-body container
-                if not post_body_val:
-                    text_body_slot = post_elem.locator("[slot='text-body']")
-                    if await text_body_slot.count() > 0:
-                        post_body_val = (await text_body_slot.first.inner_text()).strip()
-
-                # 3. Fallbacks for media (image, video) and external link posts
-                if not post_body_val:
-                    post_type = await post_elem.get_attribute("post-type") or ""
-                    content_href = await post_elem.get_attribute("content-href") or ""
-                    permalink = await post_elem.get_attribute("permalink") or ""
-
-                    images = post_elem.get_by_role("img", name=re.compile(r"post|preview|image", re.I))
-                    if await images.count() > 0:
-                        img_src = await images.first.get_attribute("src")
-                        if img_src:
-                            post_body_val = f"[Image: {img_src}]"
-
-                    if not post_body_val and content_href and content_href != permalink and not content_href.endswith(permalink):
-                        if post_type in ["image", "gallery"]:
-                            post_body_val = f"[Image: {content_href}]"
-                        elif post_type in ["video", "crosspost"]:
-                            post_body_val = f"[{post_type.capitalize()}: {content_href}]"
-                        else:
-                            post_body_val = f"[Link: {content_href}]"
-            else:
-                # Fallback for non-shreddit layout via article role
-                article_elem = page.get_by_role("article").first
-                if await article_elem.count() > 0:
-                    paragraphs = article_elem.get_by_role("paragraph")
-                    p_count = await paragraphs.count()
-                    if p_count > 0:
-                        p_texts = [(await paragraphs.nth(i).inner_text()).strip() for i in range(p_count)]
-                        post_body_val = "\n\n".join([t for t in p_texts if t])
-
-            # -------------------------------------------------------------
-            # 3. Extract Top Comments
-            # -------------------------------------------------------------
+            data = check_post_data(url, decode_response(url, response.status, await response.text()))
+            scraped = ScrapedPostData(**post_fields(url, data, max_comments))
             if not quiet:
-                print(f"[*] Extracting top comments (target: up to {max_comments})...")
-            comments_list: List[CommentData] = []
-
-            comment_elements = page.locator("shreddit-comment")
-            c_count = await comment_elements.count()
-
-            if c_count > 0:
-                for i in range(min(c_count, max_comments + 5)):
-                    if len(comments_list) >= max_comments:
-                        break
-
-                    c = comment_elements.nth(i)
-                    c_author = await c.get_attribute("author") or "anonymous"
-                    c_score = await c.get_attribute("score") or "0"
-
-                    # Extract direct comment text, excluding nested child comments
-                    direct_text = await c.evaluate("""el => {
-                        const slot = el.querySelector('div[slot="comment"]');
-                        if (slot) {
-                            const clone = slot.cloneNode(true);
-                            clone.querySelectorAll('shreddit-comment').forEach(nested => nested.remove());
-                            return clone.innerText.trim();
-                        }
-                        const paragraphs = Array.from(el.querySelectorAll('p'));
-                        if (paragraphs.length > 0) {
-                            return paragraphs.map(p => p.innerText.trim()).join(' ');
-                        }
-                        return el.innerText.trim();
-                    }""")
-
-                    clean_text = re.sub(r"\s+", " ", direct_text).strip()
-                    if clean_text:
-                        comments_list.append(
-                            CommentData(author=c_author, score=str(c_score), text=clean_text)
-                        )
-
-            # Fallback if shreddit-comment was not found: use role 'article' or comment testids
-            if not comments_list:
-                comment_articles = page.locator("article, [data-testid='comment']")
-                art_count = await comment_articles.count()
-                for i in range(min(art_count, max_comments)):
-                    art = comment_articles.nth(i)
-                    art_text = (await art.inner_text()).strip()
-                    if art_text:
-                        comments_list.append(
-                            CommentData(author=f"commenter_{i+1}", score="N/A", text=art_text)
-                        )
-
-            if not quiet:
-                print(f"[✓] Successfully scraped post metrics and {len(comments_list)} comments.")
-
-            return ScrapedPostData(
-                url=url,
-                title=post_title or "Reddit Post",
-                body=post_body_val,
-                subreddit=subreddit_val,
-                author=author_val,
-                upvote_count=str(score_val),
-                upvote_ratio=upvote_ratio_val,
-                view_count=view_count_val,
-                total_comments_count=str(comment_count_val),
-                top_comments=comments_list,
-            )
+                print(f"[✓] Successfully scraped post metrics and {len(scraped.top_comments)} comments.")
+            return scraped
 
         finally:
             if not quiet:
