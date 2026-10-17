@@ -29,7 +29,7 @@ import urllib.parse
 from pathlib import Path
 from typing import List, Optional
 
-from playwright.async_api import async_playwright, Page
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError, async_playwright
 from pydantic import BaseModel, Field
 
 # Ensure repo root is in python path for module imports
@@ -37,12 +37,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from reddit.scrape_subreddit import (
-    CDP_PORT,
-    PROFILE_DIR,
-    get_cdp_browser_context,
-    get_clean_page,
-)
+from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
+from reddit.navigate import goto_with_retries
 
 # ==============================================================================
 # Configuration & Constants
@@ -85,6 +81,10 @@ EXTRACT_RESULTS_JS = """
     return results;
 }
 """
+
+
+COUNT_RESULTS_JS = """document.querySelectorAll('[data-testid="search-sdui-post"]').length"""
+SCROLL_WAIT_MS = 2000
 
 
 def build_search_url(query: str, sort: str = "relevance", time_filter: str = "all") -> str:
@@ -148,66 +148,6 @@ def to_search_post_item(raw: dict) -> SearchPostItem:
     )
 
 
-async def navigate_with_retries(page: Page, url: str, quiet: bool = False) -> None:
-    """
-    Navigates to a URL, retrying on rate limits (HTTP 429) & transient HTTP/network failures.
-    """
-    max_retries = 3
-    retry_delay = 240  # seconds to sleep before each retry
-    max_nav_attempts = 1 + max_retries
-    last_err = None
-
-    for attempt in range(1, max_nav_attempts + 1):
-        try:
-            if not quiet and attempt > 1:
-                print(f"[*] Retry attempt {attempt - 1}/{max_retries} for {url}...")
-            response = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            if response and response.status in (429, 502, 503, 504):
-                retry_after = response.headers.get("retry-after")
-                attempt_desc = "initial attempt" if attempt == 1 else f"retry {attempt - 1}/{max_retries}"
-                if not quiet:
-                    print(f"[!] Warning: Received HTTP {response.status} on {attempt_desc}")
-                    print(f"[*] Reddit 'Retry-After' header: {retry_after or 'None (not present)'}")
-                else:
-                    print(
-                        f"[!] Warning: Received HTTP {response.status} on {attempt_desc}. "
-                        f"Retry-After: {retry_after or 'None'}",
-                        file=sys.stderr,
-                    )
-
-                if attempt < max_nav_attempts:
-                    print(
-                        f"[*] Sleeping {retry_delay}s before retry {attempt}/{max_retries}...",
-                        file=sys.stderr if quiet else sys.stdout,
-                    )
-                    await asyncio.sleep(retry_delay)
-                    continue
-
-                raise RuntimeError(
-                    f"Failed to navigate to {url}: Received HTTP {response.status} "
-                    f"(Retry-After: {retry_after or 'None'}) after {max_retries} retries."
-                )
-
-            return
-        except RuntimeError:
-            raise
-        except Exception as e:
-            last_err = e
-            err_str = str(e)
-            if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_str or "timeout" in err_str.lower() or "net::" in err_str:
-                if attempt < max_nav_attempts:
-                    print(
-                        f"[!] Warning: Transient navigation failure ({err_str[:60]}...). "
-                        f"Sleeping {retry_delay}s before retry {attempt}/{max_retries}...",
-                        file=sys.stderr if quiet else sys.stdout,
-                    )
-                    await asyncio.sleep(retry_delay)
-                    continue
-            raise
-
-    raise last_err or RuntimeError(f"Failed to navigate to {url}: Navigation was not successful.")
-
-
 async def scrape_search(
     query: str,
     sort: str = "relevance",
@@ -256,7 +196,7 @@ async def scrape_search(
             if not quiet:
                 print(f"[*] Navigating to: {search_url}")
 
-            await navigate_with_retries(page, search_url, quiet=quiet)
+            await goto_with_retries(page, search_url, quiet=quiet)
 
             # Wait for search results to attach
             try:
@@ -264,8 +204,6 @@ async def scrape_search(
             except Exception:
                 if not quiet:
                     print("[!] Warning: search result selector wait timed out, continuing with available DOM...")
-
-            await asyncio.sleep(2)
 
             scraped_items: List[SearchPostItem] = []
             seen_ids = set()
@@ -288,9 +226,13 @@ async def scrape_search(
 
                 if len(scraped_items) < limit:
                     stale_scrolls = stale_scrolls + 1 if len(scraped_items) == before else 0
-                    # Scroll to the bottom to trigger lazy loading of additional results
-                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    await asyncio.sleep(2)
+                    # Scroll to the bottom to trigger lazy loading of additional results, and
+                    # wait (up to SCROLL_WAIT_MS) only until more of them are in the DOM
+                    shown = await page.evaluate("window.scrollTo(0, document.body.scrollHeight); " + COUNT_RESULTS_JS)
+                    try:
+                        await page.wait_for_function(f"n => {COUNT_RESULTS_JS} > n", arg=shown, timeout=SCROLL_WAIT_MS)
+                    except PlaywrightTimeoutError:
+                        pass
 
             if not quiet:
                 print(f"[✓] Successfully scraped {len(scraped_items)} posts for search '{query}'.")

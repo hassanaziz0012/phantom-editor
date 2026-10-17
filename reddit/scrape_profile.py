@@ -57,7 +57,7 @@ from reddit.reddit_json import (
     post_type,
     relative_age,
 )
-from reddit.scrape_reddit_post import CDP_PORT, get_cdp_browser_context, get_clean_page
+from browser.cdp import CDP_PORT, get_cdp_browser_context, get_clean_page
 from reddit.serve import HOME_URL, RedditFetcher
 
 # ==============================================================================
@@ -709,14 +709,18 @@ async def scrape_profile(
             await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
             fetcher = RedditFetcher(page)
 
+            # The account lookup and "who am I" don't depend on each other, so they go out together
             about_url = json_url(f"{REDDIT}/user/{username}/about")
-            status, text = await fetcher.get(about_url)
+            (status, text), me = await asyncio.gather(
+                fetcher.get(about_url),
+                fetch_optional(fetcher, json_url(f"{REDDIT}/api/me"), "the logged-in account", quiet),
+            )
             if status == 404:
                 raise RuntimeError(f"u/{username} not found: the account is deleted, shadowbanned, or never existed")
             about = decode_response(about_url, status, text)["data"]
             username = about.get("name") or username
 
-            me = await fetch_optional(fetcher, json_url(f"{REDDIT}/api/me"), "the logged-in account", quiet) or {}
+            me = me or {}
             me_name = (me.get("data") or me).get("name") or ""
             is_self = me_name.lower() == username.lower()
             if not me_name:
@@ -728,7 +732,25 @@ async def scrape_profile(
             raw_posts: List[Dict[str, Any]] = []
             raw_comments: List[Dict[str, Any]] = []
             if not account.is_suspended:
-                trophies = await fetch_optional(fetcher, json_url(f"{REDDIT}/user/{username}/trophies"), "trophies", quiet)
+                if max_posts > 0:
+                    log(f"[*] Fetching up to {max_posts} posts ({sort})...", quiet)
+                if max_comments > 0:
+                    log(f"[*] Fetching up to {max_comments} comments ({sort})...", quiet)
+
+                async def no_items() -> List[Dict[str, Any]]:
+                    return []
+
+                # Everything else about the account is independent too: fetch it all at once
+                trophies, moderated, sidebar, raw_posts, raw_comments = await asyncio.gather(
+                    fetch_optional(fetcher, json_url(f"{REDDIT}/user/{username}/trophies"), "trophies", quiet),
+                    fetch_optional(fetcher, json_url(f"{REDDIT}/user/{username}/moderated_subreddits"), "moderated subreddits", quiet),
+                    fetch_sidebar(fetcher, username, quiet),
+                    collect_listing(fetcher, f"{REDDIT}/user/{username}/submitted", max_posts, sort, time_filter)
+                    if max_posts > 0 else no_items(),
+                    collect_listing(fetcher, f"{REDDIT}/user/{username}/comments", max_comments, sort, time_filter)
+                    if max_comments > 0 else no_items(),
+                )
+
                 for t in (trophies or {}).get("data", {}).get("trophies", []):
                     d = t["data"]
                     granted = d.get("granted_at")
@@ -738,7 +760,6 @@ async def scrape_profile(
                         granted_at=datetime.fromtimestamp(granted, timezone.utc).date().isoformat() if granted else None,
                     ))
 
-                moderated = await fetch_optional(fetcher, json_url(f"{REDDIT}/user/{username}/moderated_subreddits"), "moderated subreddits", quiet)
                 for s in (moderated or {}).get("data") or []:
                     account.moderated_subreddits.append(ModeratedSubreddit(
                         name=s.get("sr_display_name_prefixed") or f"r/{s.get('sr')}",
@@ -748,7 +769,6 @@ async def scrape_profile(
                         nsfw=bool(s.get("over_18")),
                     ))
 
-                sidebar = await fetch_sidebar(fetcher, username, quiet)
                 stats = sidebar["stats"]
                 account.followers = to_int(sidebar["followers"])
                 account.contributions = to_int(stats.get("Contributions"))
@@ -759,13 +779,6 @@ async def scrape_profile(
                 account.active_in = stats.get("Active in")
                 account.cake_day = (sidebar["cake_day"] or "")[:10] or None
 
-                if max_posts > 0:
-                    log(f"[*] Fetching up to {max_posts} posts ({sort})...", quiet)
-                    raw_posts = await collect_listing(fetcher, f"{REDDIT}/user/{username}/submitted", max_posts, sort, time_filter)
-                if max_comments > 0:
-                    log(f"[*] Fetching up to {max_comments} comments ({sort})...", quiet)
-                    raw_comments = await collect_listing(fetcher, f"{REDDIT}/user/{username}/comments", max_comments, sort, time_filter)
-
             posts = [to_profile_post(post) for post in raw_posts]
             comments = [to_profile_comment(comment, username) for comment in raw_comments]
 
@@ -775,29 +788,37 @@ async def scrape_profile(
                 async with limiter:
                     return await coro
 
-            if removal_reasons:
-                explained = [post for post in posts if post.removed_by_category in MOD_EXPLAINED_REMOVALS]
-                if explained:
-                    log(f"[*] Looking up removal reasons for {len(explained)} mod-removed posts...", quiet)
-                notes = await asyncio.gather(*(limited(fetch_removal_note(fetcher, post)) for post in explained), return_exceptions=True)
-                for post, note in zip(explained, notes):
-                    if isinstance(note, Exception):
-                        log(f"[!] Warning: couldn't get removal reason for {post.url}: {note}", quiet)
-                    else:
-                        post.removal_note = note
+            # Removal reasons and insights share the CONCURRENCY limit and go out as one batch
+            explained = [post for post in posts if post.removed_by_category in MOD_EXPLAINED_REMOVALS] if removal_reasons else []
+            if explained:
+                log(f"[*] Looking up removal reasons for {len(explained)} mod-removed posts...", quiet)
 
             recent_comments = [comment for comment in comments if insights_available(comment)]
-            if views and is_self and (posts or recent_comments):
+            with_insights = [*posts, *recent_comments] if views and is_self else []
+            if with_insights:
                 log(f"[*] Fetching views & insights for {len(posts)} posts and {len(recent_comments)} comments...", quiet)
-                urls = [f"{REDDIT}/poststats/{post.post_id[3:]}/" for post in posts]
-                urls += [f"{REDDIT}/commentstats/{comment.comment_id}" for comment in recent_comments]
-                results = await asyncio.gather(*(limited(fetch_insights(fetcher, url)) for url in urls), return_exceptions=True)
-                for item, insights in zip([*posts, *recent_comments], results):
-                    if isinstance(insights, Exception):
-                        log(f"[!] Warning: couldn't get insights for {item.url}: {insights}", quiet)
-                    elif insights:
-                        item.insights = insights
-                        item.views = insights.views
+            insight_urls = [f"{REDDIT}/poststats/{post.post_id[3:]}/" for post in posts] if with_insights else []
+            insight_urls += [f"{REDDIT}/commentstats/{comment.comment_id}" for comment in recent_comments] if with_insights else []
+
+            results = await asyncio.gather(
+                *(limited(fetch_removal_note(fetcher, post)) for post in explained),
+                *(limited(fetch_insights(fetcher, url)) for url in insight_urls),
+                return_exceptions=True,
+            )
+            notes, insights_results = results[: len(explained)], results[len(explained):]
+
+            for post, note in zip(explained, notes):
+                if isinstance(note, Exception):
+                    log(f"[!] Warning: couldn't get removal reason for {post.url}: {note}", quiet)
+                else:
+                    post.removal_note = note
+
+            for item, insights in zip(with_insights, insights_results):
+                if isinstance(insights, Exception):
+                    log(f"[!] Warning: couldn't get insights for {item.url}: {insights}", quiet)
+                elif insights:
+                    item.insights = insights
+                    item.views = insights.views
 
             summary = summarize(account, posts, comments)
             log(f"[✓] Scraped u/{account.username}: {len(posts)} posts, {len(comments)} comments.", quiet)

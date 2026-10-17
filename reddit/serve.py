@@ -44,7 +44,8 @@ from reddit.reddit_json import (
     rate_limit_used_up,
     seconds_until_reset,
 )
-from reddit.scrape_reddit_post import CDP_PORT, PROFILE_DIR, ScrapedPostData, get_cdp_browser_context
+from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context
+from reddit.scrape_reddit_post import ScrapedPostData
 from reddit.scrape_subreddit import ScrapedSubredditData, SubredditPostItem, parse_subreddit_input
 
 # A plain-text page on reddit.com, so the tab's fetch() calls are same-origin and carry the login
