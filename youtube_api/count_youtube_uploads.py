@@ -23,6 +23,7 @@ if root_dir not in sys.path:
 from youtube_api.fetch_videos import fetch_channel_videos
 from youtube_api.utils import (
     get_youtube_client,
+    is_short,
     parse_iso8601_duration,
     resolve_channel_id,
     supports_color,
@@ -97,82 +98,38 @@ def main() -> None:
     # 3. Fetch channel videos using the cached fetcher
     print(f"{c_blue}Fetching upload statistics for channel: {c_bold}{target_channel}{c_reset}...")
     try:
-        videos = fetch_channel_videos(api_key, resolved_channel_id, fresh=args.fresh)
+        videos = fetch_channel_videos(api_key, resolved_channel_id, fresh=args.fresh, youtube=youtube)
     except Exception as e:
         print(f"{c_bold}{COLOR_HEADER}Error fetching videos:{c_reset} {e}", file=sys.stderr)
         sys.exit(1)
 
     channel_title = videos[0].channel_title if videos else target_channel
 
-    # 4. Calculate date ranges in user's local timezone
+    # 4. Count uploads per period, in the user's local timezone
     local_now = datetime.now().astimezone()
     local_tz = local_now.tzinfo
     today_date = local_now.date()
 
-    videos_today = 0
-    shorts_today = 0
-    total_today = 0
-
-    videos_7 = 0
-    shorts_7 = 0
-    total_7 = 0
-
-    videos_14 = 0
-    shorts_14 = 0
-    total_14 = 0
-
-    videos_30 = 0
-    shorts_30 = 0
-    total_30 = 0
+    # (label, days covered); "Today" covers 1 day
+    periods = [("Today", 1), ("Last 7 Days", 7), ("Last 14 Days", 14), ("Last 30 Days", 30)]
+    counts = {days: {"videos": 0, "shorts": 0} for _, days in periods}
 
     for v in videos:
-        # Convert video published_at to system local timezone
-        pub_local = v.published_at.astimezone(local_tz)
-        pub_date = pub_local.date()
-
-        diff_days = (today_date - pub_date).days
+        diff_days = (today_date - v.published_at.astimezone(local_tz).date()).days
         if diff_days < 0:
             # Skip videos published in the future
             continue
+        kind = "shorts" if is_short(parse_iso8601_duration(v.duration)) else "videos"
+        for _, days in periods:
+            if diff_days < days:
+                counts[days][kind] += 1
 
-        duration_sec = parse_iso8601_duration(v.duration)
-        is_short = duration_sec is not None and duration_sec <= 60
-
-        if diff_days == 0:
-            if is_short:
-                shorts_today += 1
-            else:
-                videos_today += 1
-            total_today += 1
-        if diff_days < 7:
-            if is_short:
-                shorts_7 += 1
-            else:
-                videos_7 += 1
-            total_7 += 1
-        if diff_days < 14:
-            if is_short:
-                shorts_14 += 1
-            else:
-                videos_14 += 1
-            total_14 += 1
-        if diff_days < 30:
-            if is_short:
-                shorts_30 += 1
-            else:
-                videos_30 += 1
-            total_30 += 1
-
-    # Format localized date strings for date ranges
     today_str = today_date.strftime("%Y-%m-%d")
-    day_minus_6 = (today_date - timedelta(days=6)).strftime("%Y-%m-%d")
-    day_minus_13 = (today_date - timedelta(days=13)).strftime("%Y-%m-%d")
-    day_minus_29 = (today_date - timedelta(days=29)).strftime("%Y-%m-%d")
 
-    range_today = today_str
-    range_7 = f"{day_minus_6} to {today_str}"
-    range_14 = f"{day_minus_13} to {today_str}"
-    range_30 = f"{day_minus_29} to {today_str}"
+    def date_range(days: int) -> str:
+        if days == 1:
+            return today_str
+        return f"{(today_date - timedelta(days=days - 1)).strftime('%Y-%m-%d')} to {today_str}"
 
     # 5. Display statistics in a premium ASCII table format
     # Column sizes (excluding spaces around content):
@@ -215,11 +172,9 @@ def main() -> None:
         d_part = f"{date_range:<24}"
         return f"{c_bold}{c_header}│{c_reset} {p_part} {c_bold}{c_header}│{c_reset} {v_part} {c_bold}{c_header}│{c_reset} {s_part} {c_bold}{c_header}│{c_reset} {t_part} {c_bold}{c_header}│{c_reset} {d_part} {c_bold}{c_header}│{c_reset}"
 
-    # Print rows
-    print(format_row("Today", videos_today, shorts_today, total_today, range_today))
-    print(format_row("Last 7 Days", videos_7, shorts_7, total_7, range_7))
-    print(format_row("Last 14 Days", videos_14, shorts_14, total_14, range_14))
-    print(format_row("Last 30 Days", videos_30, shorts_30, total_30, range_30))
+    for label, days in periods:
+        n = counts[days]
+        print(format_row(label, n["videos"], n["shorts"], n["videos"] + n["shorts"], date_range(days)))
     
     print(border_bottom)
     print()

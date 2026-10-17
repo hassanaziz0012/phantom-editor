@@ -31,6 +31,7 @@ from youtube_api.models import Video
 from youtube_api.utils import (
     extract_video_id,
     get_youtube_client,
+    is_short as _is_short,
     parse_iso8601_duration,
     supports_color,
 )
@@ -42,7 +43,6 @@ BASELINE_TTL        = timedelta(hours=24)
 BASELINE_SAMPLE     = 50                  # Recent uploads fetched per channel (one API page)
 MIN_VIDEO_AGE       = timedelta(days=14)  # Younger videos haven't settled, so they're left out of the baseline
 MIN_SAMPLE_SIZE     = 5
-SHORTS_MAX_SECONDS  = 180                 # Shorts can be up to 3 minutes long
 
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -62,10 +62,6 @@ RESET  = _c("\033[0m")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _is_short(duration_seconds: Optional[int]) -> bool:
-    return duration_seconds is not None and duration_seconds <= SHORTS_MAX_SECONDS
-
 
 def _format_age(published_at: datetime) -> str:
     days = (datetime.now(UTC) - published_at).days

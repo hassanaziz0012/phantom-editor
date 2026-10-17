@@ -188,6 +188,15 @@ def parse_iso8601_duration(value: Optional[str]) -> Optional[int]:
     return hours * 3600 + minutes * 60 + seconds
 
 
+# YouTube Shorts can be up to 3 minutes long
+SHORTS_MAX_SECONDS = 180
+
+
+def is_short(duration_seconds: Optional[int]) -> bool:
+    """Whether a video of this length (in seconds) counts as a Short."""
+    return duration_seconds is not None and duration_seconds <= SHORTS_MAX_SECONDS
+
+
 def duration_similarity(left_seconds: Optional[int], right_seconds: Optional[int]) -> float:
     """Compute the ratio between the shorter and longer duration (0.0 to 1.0)."""
     if not left_seconds or not right_seconds:

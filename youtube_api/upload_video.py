@@ -6,10 +6,7 @@ Expects metadata.json and thumbnail.png (optional) in the same folder as the vid
 """
 
 import argparse
-import asyncio
 from datetime import datetime
-import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,7 +20,6 @@ import config
 from metadata.read_metadata import read_metadata, VideoMetadata
 
 
-import httplib2
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -265,14 +261,26 @@ def upload_video(
     return video_id
 
 
-def set_thumbnail(youtube, video_id: str, video_path: Path):
+def find_thumbnail(video_path: Path) -> Optional[Path]:
+    """The project's thumbnail.png, or None once the user agrees to go without one.
+
+    Asked before uploading: aborting after the upload would leave a public video
+    whose URL never made it into metadata.json.
+    """
     thumbnail_file = video_path.parent / "thumbnail.png"
-    if not thumbnail_file.exists():
-        print("⚠️  thumbnail.png not found in the video folder.")
-        answer = input("   Proceed without a custom thumbnail? YouTube will auto-select one. [y/N] ").strip().lower()
-        if answer != "y":
-            print("❌ Aborted. Re-run the script once you've added thumbnail.png.")
-            sys.exit(1)
+    if thumbnail_file.exists():
+        return thumbnail_file
+
+    print("⚠️  thumbnail.png not found in the video folder.")
+    answer = input("   Proceed without a custom thumbnail? YouTube will auto-select one. [y/N] ").strip().lower()
+    if answer != "y":
+        print("❌ Aborted. Re-run the script once you've added thumbnail.png.")
+        sys.exit(1)
+    return None
+
+
+def set_thumbnail(youtube, video_id: str, thumbnail_file: Optional[Path]):
+    if thumbnail_file is None:
         print("⏭  Skipping thumbnail — YouTube will pick one automatically.")
         return
 
@@ -329,6 +337,8 @@ def main():
         print(f"\n❌ Error: {e}\n", file=sys.stderr)
         sys.exit(1)
 
+    thumbnail_file = find_thumbnail(video_path)
+
     # Authenticate
     print("🔐 Authenticating with YouTube…")
     youtube = get_authenticated_service()
@@ -344,7 +354,7 @@ def main():
     )
 
     # Set thumbnail
-    set_thumbnail(youtube, video_id, video_path)
+    set_thumbnail(youtube, video_id, thumbnail_file)
 
     # Get share URL
     share_url = get_share_url(video_id)

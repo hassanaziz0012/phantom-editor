@@ -92,6 +92,10 @@ def get_uploads_playlist_id(youtube, channel_id: str) -> str:
     Retrieve the 'uploads' playlist ID for a channel.
     Every channel has a hidden playlist that contains all its public videos.
     """
+    # Its ID is the channel ID with the "UC" prefix swapped for "UU", which saves an API call.
+    if channel_id.startswith("UC"):
+        return "UU" + channel_id[2:]
+
     response = youtube.channels().list(
         part="contentDetails",
         id=channel_id,
@@ -157,10 +161,6 @@ def fetch_video_details(youtube, video_ids: list[str]) -> list[Video]:
     for i in range(0, len(video_ids), 50):
         batch = video_ids[i : i + 50]
 
-    # Process in batches of 50
-    for i in range(0, len(video_ids), 50):
-        batch = video_ids[i : i + 50]
-
         response = youtube.videos().list(
             part="snippet,statistics,contentDetails",
             id=",".join(batch),
@@ -195,11 +195,18 @@ def fetch_video_details(youtube, video_ids: list[str]) -> list[Video]:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def fetch_channel_videos(api_key: str, channel_id: str, fresh: bool = False, quiet: bool = False) -> list[Video]:
+def fetch_channel_videos(
+    api_key: str,
+    channel_id: str,
+    fresh: bool = False,
+    quiet: bool = False,
+    youtube=None,
+) -> list[Video]:
     """
     Full pipeline with caching: authenticate → find uploads playlist
     → check cache for channel_id → page uploads playlist (stopping early if hit cache)
     → enrich new video IDs with stats → merge and return all Video objects.
+    Pass ``youtube`` to reuse a client the caller already built.
     """
     def _log(msg: str) -> None:
         if not quiet:
@@ -232,7 +239,8 @@ def fetch_channel_videos(api_key: str, channel_id: str, fresh: bool = False, qui
             # Handle corrupt/invalid cache gracefully
             _log(f"      Warning: Failed to load cache from {cache_file.name} ({e}). Falling back to API.")
 
-    youtube = get_youtube_client(api_key)
+    if youtube is None:
+        youtube = get_youtube_client(api_key)
 
     _log(f"[1/3] Fetching uploads playlist for channel: {channel_id}")
     uploads_playlist_id = get_uploads_playlist_id(youtube, channel_id)
@@ -271,7 +279,10 @@ def fetch_channel_videos(api_key: str, channel_id: str, fresh: bool = False, qui
     # Sort newest → oldest by default
     all_videos.sort(key=lambda v: v.published_at, reverse=True)
 
-    # 6. Save updated video list to JSON cache
+    # 6. Save updated video list to JSON cache (unchanged when nothing new came back)
+    if not new_videos and cache_file.exists() and not fresh:
+        _log(f"Done! Returning {len(all_videos)} Video objects.\n")
+        return all_videos
     try:
         serialized_videos = [video_to_dict(v) for v in all_videos]
         with open(cache_file, "w", encoding="utf-8") as f:
@@ -324,7 +335,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
-        videos = fetch_channel_videos(API_KEY, resolved_id, fresh=args.fresh)
+        videos = fetch_channel_videos(API_KEY, resolved_id, fresh=args.fresh, youtube=youtube_client)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

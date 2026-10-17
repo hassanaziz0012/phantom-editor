@@ -106,7 +106,8 @@ def main() -> None:
             api_key,
             resolved_id,
             fresh=args.fresh,
-            quiet=not args.verbose
+            quiet=not args.verbose,
+            youtube=youtube_client,
         )
     except Exception as e:
         print(f"Error fetching channel videos: {e}", file=sys.stderr)
