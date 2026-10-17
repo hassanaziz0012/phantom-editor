@@ -2,7 +2,8 @@
 Reddit Subreddit Feed Scraper using Playwright & Chrome DevTools Protocol (CDP).
 
 Scrapes posts from any subreddit feed (best, hot, new, rising, top hourly/daily/weekly/monthly/yearly/alltime)
-by attaching to a persistent native Google Chrome instance via CDP.
+by attaching to a persistent native Google Chrome instance via CDP. The tab loads the feed's
+.json URL rather than the page, so Chrome doesn't have to run Reddit's web app (see reddit_json.py).
 
 Extracts:
 - author
@@ -35,6 +36,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from playwright.async_api import async_playwright, BrowserContext, Page
 from pydantic import BaseModel, Field
+
+# Ensure repo root is in python path for module imports
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from reddit.reddit_json import collect_feed_items, decode_response, listing_data, seconds_until_reset
 
 # Ensure repo root is in python path for module imports
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -325,135 +333,78 @@ class ScrapedSubredditData(BaseModel):
 # ==============================================================================
 # Scraper Implementation
 # ==============================================================================
-async def extract_single_post(post_elem, quiet: bool = False) -> Optional[SubredditPostItem]:
+async def fetch_listing(page: Page, url: str, quiet: bool = False) -> Dict[str, Any]:
     """
-    Extracts structured data from a single shreddit-post element using role and accessibility selectors.
+    Loads one page of a feed's .json listing in the tab and returns its "data" object
+    (posts under "children", the next page's cursor under "after").
     """
-    try:
-        # Attributes from shreddit-post
-        post_title = await post_elem.get_attribute("post-title") or ""
-        author = await post_elem.get_attribute("author") or ""
-        score = await post_elem.get_attribute("score") or "0"
-        comment_count = await post_elem.get_attribute("comment-count") or "0"
-        created_timestamp = await post_elem.get_attribute("created-timestamp") or ""
-        post_type = await post_elem.get_attribute("post-type") or "text"
-        content_href = await post_elem.get_attribute("content-href") or ""
-        permalink = await post_elem.get_attribute("permalink") or ""
+    # Navigate with retry logic for rate limits (HTTP 429) & transient HTTP/network failures
+    max_retries = 3
+    retry_delay = 240  # seconds to sleep before each retry
+    max_nav_attempts = 1 + max_retries
+    nav_success = False
+    last_err = None
 
-        # 1. Fallback for Title via accessibility role 'heading'
-        if not post_title:
-            heading = post_elem.get_by_role("heading")
-            if await heading.count() > 0:
-                post_title = (await heading.first.inner_text()).strip()
-
-        # 2. Fallback for Author via role 'link'
-        if not author or author == "unknown":
-            author_link = post_elem.get_by_role("link", name=re.compile(r"^u\/", re.I))
-            if await author_link.count() > 0:
-                raw_author = (await author_link.first.inner_text()).strip()
-                author = raw_author.replace("u/", "").strip()
-
-        if author and not author.startswith("u/"):
-            display_author = f"u/{author}"
-        else:
-            display_author = author or "u/anonymous"
-
-        # 3. Date Posted (relative age)
-        date_posted = ""
-        time_loc = post_elem.locator("faceplate-timeago, time, [slot='post-timestamp']")
-        if await time_loc.count() > 0:
-            date_posted = (await time_loc.first.inner_text()).strip()
-        if not date_posted and created_timestamp:
-            date_posted = created_timestamp
-
-        # 4. Flair extraction (role / aria-label / slot)
-        flair_val = None
-        flair_loc = post_elem.locator("[aria-label^='Flair:'], shreddit-post-flair, [slot='post-flair']")
-        if await flair_loc.count() > 0:
-            raw_flair = (await flair_loc.first.inner_text()).strip()
-            if not raw_flair:
-                aria = await flair_loc.first.get_attribute("aria-label") or ""
-                if "Flair:" in aria:
-                    raw_flair = aria.split("Flair:", 1)[1].strip()
-            if raw_flair:
-                flair_val = raw_flair
-
-        # 5. Body Snippet (text preview, media, or external link)
-        body_snippet = ""
-        # Check paragraphs first (accessibility role)
-        paragraphs = post_elem.get_by_role("paragraph")
-        p_count = await paragraphs.count()
-        if p_count > 0:
-            p_texts = []
-            for idx in range(p_count):
-                txt = (await paragraphs.nth(idx).inner_text()).strip()
-                if txt:
-                    p_texts.append(txt)
-            if p_texts:
-                body_snippet = "\n".join(p_texts)
-
-        # Fallback to slot="text-body" or text preview element
-        if not body_snippet:
-            text_body = post_elem.locator("[slot='text-body'], shreddit-post-text-body")
-            if await text_body.count() > 0:
-                body_snippet = (await text_body.first.inner_text()).strip()
-
-        # Fallbacks for non-text posts (image, video, link)
-        if not body_snippet:
-            if post_type in ["image", "gallery"]:
-                img_loc = post_elem.get_by_role("img", name=re.compile(r"post|preview|image", re.I))
-                if await img_loc.count() > 0:
-                    img_src = await img_loc.first.get_attribute("src") or ""
-                    body_snippet = f"[Image: {img_src}]" if img_src else "[Image Post]"
-                elif content_href:
-                    body_snippet = f"[Image: {content_href}]"
+    for attempt in range(1, max_nav_attempts + 1):
+        try:
+            if not quiet and attempt > 1:
+                print(f"[*] Retry attempt {attempt - 1}/{max_retries} for {url}...")
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            if response and response.status in (429, 502, 503, 504):
+                retry_after = response.headers.get("retry-after") if response else None
+                attempt_desc = "initial attempt" if attempt == 1 else f"retry {attempt - 1}/{max_retries}"
+                # On a rate limit, wait until Reddit says its window resets; otherwise use the fixed delay
+                reset_wait = seconds_until_reset(response.headers) if response.status == 429 else None
+                wait = reset_wait if reset_wait is not None else retry_delay
+                wait_reason = "until Reddit's rate limit resets" if reset_wait is not None else "default delay"
+                if not quiet:
+                    print(f"[!] Warning: Received HTTP {response.status} on {attempt_desc}")
+                    if retry_after:
+                        print(f"[*] Reddit 'Retry-After' header: {retry_after}")
+                    else:
+                        print("[*] Reddit 'Retry-After' header: None (not present)")
                 else:
-                    body_snippet = "[Image Post]"
-            elif post_type in ["video", "gif"]:
-                body_snippet = f"[Video: {content_href}]" if content_href else "[Video Post]"
-            elif post_type == "link" or (content_href and permalink not in content_href):
-                body_snippet = f"[Link: {content_href}]"
-            elif post_type == "crosspost":
-                body_snippet = f"[Crosspost: {content_href}]"
+                    print(
+                        f"[!] Warning: Received HTTP {response.status} on {attempt_desc}. "
+                        f"Retry-After: {retry_after or 'None'}",
+                        file=sys.stderr,
+                    )
 
-        # 6. Upvotes (score)
-        upvotes = score
-        if not upvotes or upvotes == "0":
-            upvote_btn = post_elem.get_by_role("button", name=re.compile(r"upvote", re.I))
-            if await upvote_btn.count() > 0:
-                btn_txt = await upvote_btn.first.inner_text()
-                digits = re.findall(r"\d+[\d,.]*[kKmM]?", btn_txt)
-                if digits:
-                    upvotes = digits[0]
+                if attempt < max_nav_attempts:
+                    if not quiet:
+                        print(f"[*] Sleeping {wait:.0f}s ({wait_reason}) before retry {attempt}/{max_retries}...")
+                    else:
+                        print(f"[*] Sleeping {wait:.0f}s ({wait_reason}) before retry {attempt}/{max_retries}...", file=sys.stderr)
+                    await asyncio.sleep(wait)
+                    continue
+                else:
+                    last_err = RuntimeError(
+                        f"Failed to navigate to {url}: Received HTTP {response.status} "
+                        f"(Retry-After: {retry_after or 'None'}) after {max_retries} retries."
+                    )
+                    break
 
-        # 7. Comments Count
-        comments_n = comment_count
-        if not comments_n or comments_n == "0":
-            comment_btn = post_elem.get_by_role("link", name=re.compile(r"comment", re.I))
-            if await comment_btn.count() > 0:
-                c_txt = await comment_btn.first.inner_text()
-                digits = re.findall(r"\d+[\d,.]*[kKmM]?", c_txt)
-                if digits:
-                    comments_n = digits[0]
+            nav_success = True
+            break
+        except Exception as e:
+            last_err = e
+            err_str = str(e)
+            if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_str or "timeout" in err_str.lower() or "net::" in err_str:
+                if attempt < max_nav_attempts:
+                    if not quiet:
+                        print(f"[!] Warning: Transient navigation failure ({err_str[:60]}...). Sleeping {retry_delay}s before retry {attempt}/{max_retries}...")
+                    else:
+                        print(f"[!] Warning: Transient navigation failure ({err_str[:60]}...). Sleeping {retry_delay}s before retry {attempt}/{max_retries}...", file=sys.stderr)
+                    await asyncio.sleep(retry_delay)
+                    continue
+            raise e
 
-        full_url = f"https://www.reddit.com{permalink}" if permalink.startswith("/") else permalink
+    if not nav_success:
+        if last_err:
+            raise last_err
+        raise RuntimeError(f"Failed to navigate to {url}: Navigation was not successful.")
 
-        return SubredditPostItem(
-            title=post_title or "Untitled Post",
-            author=display_author,
-            date_posted=date_posted or "Unknown date",
-            created_timestamp=created_timestamp or None,
-            flair=flair_val,
-            body_snippet=body_snippet,
-            upvotes=str(upvotes),
-            comments_n=str(comments_n),
-            post_type=post_type,
-            url=full_url,
-        )
-    except Exception as e:
-        if not quiet:
-            print(f"[!] Error extracting single post: {e}", file=sys.stderr)
-        return None
+    return listing_data(url, decode_response(url, response.status, await response.text()))
 
 
 async def scrape_subreddit(
@@ -502,111 +453,11 @@ async def scrape_subreddit(
             if not quiet:
                 print(f"[*] Navigating to: {feed_url}")
 
-            # Navigate with retry logic for rate limits (HTTP 429) & transient HTTP/network failures
-            max_retries = 3
-            retry_delay = 240  # seconds to sleep before each retry
-            max_nav_attempts = 1 + max_retries
-            nav_success = False
-            last_err = None
-
-            for attempt in range(1, max_nav_attempts + 1):
-                try:
-                    if not quiet and attempt > 1:
-                        print(f"[*] Retry attempt {attempt - 1}/{max_retries} for {feed_url}...")
-                    response = await page.goto(feed_url, wait_until="domcontentloaded", timeout=30000)
-                    if response and response.status in (429, 502, 503, 504):
-                        retry_after = response.headers.get("retry-after") if response else None
-                        attempt_desc = "initial attempt" if attempt == 1 else f"retry {attempt - 1}/{max_retries}"
-                        if not quiet:
-                            print(f"[!] Warning: Received HTTP {response.status} on {attempt_desc}")
-                            if retry_after:
-                                print(f"[*] Reddit 'Retry-After' header: {retry_after}")
-                            else:
-                                print("[*] Reddit 'Retry-After' header: None (not present)")
-                        else:
-                            print(
-                                f"[!] Warning: Received HTTP {response.status} on {attempt_desc}. "
-                                f"Retry-After: {retry_after or 'None'}",
-                                file=sys.stderr,
-                            )
-
-                        if attempt < max_nav_attempts:
-                            if not quiet:
-                                print(f"[*] Sleeping {retry_delay}s before retry {attempt}/{max_retries}...")
-                            else:
-                                print(f"[*] Sleeping {retry_delay}s before retry {attempt}/{max_retries}...", file=sys.stderr)
-                            await asyncio.sleep(retry_delay)
-                            continue
-                        else:
-                            last_err = RuntimeError(
-                                f"Failed to navigate to {feed_url}: Received HTTP {response.status} "
-                                f"(Retry-After: {retry_after or 'None'}) after {max_retries} retries."
-                            )
-                            break
-
-                    nav_success = True
-                    break
-                except Exception as e:
-                    last_err = e
-                    err_str = str(e)
-                    if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_str or "timeout" in err_str.lower() or "net::" in err_str:
-                        if attempt < max_nav_attempts:
-                            if not quiet:
-                                print(f"[!] Warning: Transient navigation failure ({err_str[:60]}...). Sleeping {retry_delay}s before retry {attempt}/{max_retries}...")
-                            else:
-                                print(f"[!] Warning: Transient navigation failure ({err_str[:60]}...). Sleeping {retry_delay}s before retry {attempt}/{max_retries}...", file=sys.stderr)
-                            await asyncio.sleep(retry_delay)
-                            continue
-                    raise e
-
-            if not nav_success:
-                if last_err:
-                    raise last_err
-                raise RuntimeError(f"Failed to navigate to {feed_url}: Navigation was not successful.")
-
-            # Wait for posts container to attach
-            try:
-                await page.locator("shreddit-post").first.wait_for(state="attached", timeout=15000)
-            except Exception:
-                if not quiet:
-                    print("[!] Warning: shreddit-post selector wait timed out, continuing with available DOM...")
-
-            await asyncio.sleep(2)
-
-            scraped_items: List[SubredditPostItem] = []
-            seen_urls = set()
-
-            scroll_attempts = 0
-            max_scroll_attempts = max(limit // 5 + 3, 5)
-
-            while len(scraped_items) < limit and scroll_attempts < max_scroll_attempts:
-                posts = page.locator("shreddit-post")
-                count = await posts.count()
-
-                for i in range(count):
-                    if len(scraped_items) >= limit:
-                        break
-
-                    post_elem = posts.nth(i)
-                    permalink = await post_elem.get_attribute("permalink") or ""
-                    post_id = await post_elem.get_attribute("id") or permalink
-
-                    if post_id in seen_urls:
-                        continue
-
-                    seen_urls.add(post_id)
-                    item = await extract_single_post(post_elem, quiet=quiet)
-                    if item:
-                        scraped_items.append(item)
-
-                if len(scraped_items) < limit:
-                    scroll_attempts += 1
-                    # Scroll down to trigger lazy loading of additional feed items
-                    await page.evaluate("window.scrollBy(0, 1500)")
-                    await asyncio.sleep(1.5)
+            items = await collect_feed_items(lambda u: fetch_listing(page, u, quiet), feed_url, limit)
+            scraped_items = [SubredditPostItem(**item) for item in items]
 
             if not quiet:
-                print(f"[✓] Successfully scraped {len(scraped_items)} posts from r/{sub_name} ({feed_type} feed).")
+                print(f"[✓] Successfully scraped {len(scraped_items)} posts from r/{sub_name}.")
 
             return ScrapedSubredditData(
                 subreddit=sub_name,
