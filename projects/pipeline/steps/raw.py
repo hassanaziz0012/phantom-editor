@@ -111,15 +111,19 @@ def encode_final(ctx: PipelineContext) -> None:
             "[main_a][music]amix=inputs=2:duration=first:dropout_transition=0[out_a]"
         )
         audio_map = "[out_a]"
+        channels = "2"
     else:
+        # The processed voice is mono; upmixing it to identical stereo channels
+        # made the AAC encode ~3.4x slower for no audible difference.
         audio_map = "1:a:0"
+        channels = "1"
 
     # blackdetect reports at info level, so this encode can't use -loglevel error.
     cmd = [
         *ffmpeg_cmd("info"), *input_args,
         "-filter_complex", filter_complex,
         "-map", "[v_enc]", "-map", audio_map,
-        "-fps_mode", "cfr", *X264_ARGS, *AAC_ARGS, "-ac", "2",
+        "-fps_mode", "cfr", *X264_ARGS, *AAC_ARGS, "-ac", channels,
     ]
     if duration > 0:
         cmd += ["-t", f"{duration:.3f}"]

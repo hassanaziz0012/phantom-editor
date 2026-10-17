@@ -167,7 +167,8 @@ def finalize(ctx: PipelineContext) -> None:
             *ffmpeg_cmd(),
             "-i", str(trimmed), "-i", str(processed_audio),
             "-map", "0:v:0", "-map", "1:a:0",
-            "-c:v", "copy", *AAC_ARGS, "-ac", "2",
+            # Mono like the processed voice: a stereo upmix is ~3.4x slower to encode.
+            "-c:v", "copy", *AAC_ARGS, "-ac", "1",
             "-movflags", "+faststart", str(final),
         ]
         label = "ffmpeg"
