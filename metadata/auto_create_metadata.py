@@ -84,17 +84,28 @@ def ensure_browserllm_ready() -> bool:
     return True
 
 
+def save_metadata(metadata_path: Path, metadata: dict[str, Any]) -> str:
+    """Write metadata.json and return the JSON written."""
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    formatted_json = json.dumps(metadata, indent=4, ensure_ascii=False)
+    metadata_path.write_text(formatted_json + "\n", encoding="utf-8")
+    return formatted_json
+
+
 def auto_create_metadata(
     target: str | Path | None = None,
     title: str | None = None,
     tags: list[str] | None = None,
-    category_id: str = "28",
-    privacy_status: str = "public",
-    made_for_kids: bool = False,
+    category_id: str | None = None,
+    privacy_status: str | None = None,
+    made_for_kids: bool | None = None,
     skip_ai: bool = False,
     skip_recommendations: bool = False,
 ) -> dict[str, Any]:
-    """Creates or updates metadata.json for the targeted video project."""
+    """Creates or updates metadata.json for the targeted video project.
+
+    Settings left as None keep the value already in metadata.json (or the default).
+    """
     project_dir, metadata_path, captions_path, default_title = utils.resolve_project_paths(target)
 
     # Load existing metadata if present
@@ -119,6 +130,9 @@ def auto_create_metadata(
     metadata.setdefault("tweetTemplate", "🎬 New video just dropped! {url}")
     metadata.setdefault("recommendations", metadata.get("recommendations", []))
     metadata.setdefault("timestamps", metadata.get("timestamps", []))
+
+    # Write the base fields first: the generators below read the title from metadata.json
+    save_metadata(metadata_path, metadata)
 
     if not skip_ai:
         if captions_path and captions_path.is_file():
@@ -145,8 +159,13 @@ def auto_create_metadata(
                 )
 
             def run_recommendations() -> list[dict[str, Any]] | None:
+                # Recommendations embed the description. Without waiting for it, a new
+                # project has none yet and recommend.py would generate a second one.
+                description = futures["description"].result() if "description" in futures else None
                 return retry_with_backoff(
-                    lambda: recommend_videos_for_project(target=project_dir, metadata_path=metadata_path),
+                    lambda: recommend_videos_for_project(
+                        target=project_dir, metadata_path=metadata_path, description=description
+                    ),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Recommendations generation",
@@ -173,9 +192,12 @@ def auto_create_metadata(
             
             # Run all tasks in parallel using ThreadPoolExecutor
             results: dict[str, Any] = {}
+            futures: dict[str, concurrent.futures.Future] = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as executor:
-                future_to_task = {executor.submit(task_fn): task_name for task_name, task_fn in tasks.items()}
-                
+                for task_name, task_fn in tasks.items():
+                    futures[task_name] = executor.submit(task_fn)
+                future_to_task = {future: task_name for task_name, future in futures.items()}
+
                 for future in concurrent.futures.as_completed(future_to_task):
                     task_name = future_to_task[future]
                     try:
@@ -209,11 +231,7 @@ def auto_create_metadata(
             print("   Skipping AI generation of description, tweet template, recommendations, and timestamps.")
             print("   Run `phantom edit transcribe <video>` to generate captions first if needed.")
 
-    # Save to disk
-    metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    formatted_json = json.dumps(metadata, indent=4, ensure_ascii=False)
-    with open(metadata_path, "w", encoding="utf-8") as f:
-        f.write(formatted_json + "\n")
+    formatted_json = save_metadata(metadata_path, metadata)
 
     print("\n" + "=" * 50)
     print("📄 Saved Metadata Summary:")
@@ -237,18 +255,23 @@ def main():
     )
     parser.add_argument("--title", "-t", default=None, help="Custom title for the video.")
     parser.add_argument("--tags", default=None, help="Comma-separated tags for the video.")
-    parser.add_argument("--category-id", default="28", help="YouTube Category ID (default: 28 for Tech).")
+    # These default to None so a re-run keeps what metadata.json already says
+    parser.add_argument(
+        "--category-id",
+        default=None,
+        help="YouTube Category ID (default: keep existing, else 28 for Tech).",
+    )
     parser.add_argument(
         "--privacy-status",
         choices=["public", "private", "unlisted"],
-        default="public",
-        help="Privacy status (default: public).",
+        default=None,
+        help="Privacy status (default: keep existing, else public).",
     )
     parser.add_argument(
         "--made-for-kids",
-        action="store_true",
-        default=False,
-        help="Flag if the video is made for kids.",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Whether the video is made for kids (default: keep existing, else no).",
     )
     parser.add_argument(
         "--skip-ai",

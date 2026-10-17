@@ -20,11 +20,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from dotenv import load_dotenv
@@ -75,9 +74,11 @@ def extract_series_tag(title: str) -> Optional[str]:
 def get_current_video_info(
     target: Optional[str | Path] = None,
     metadata_path: Optional[Path] = None,
+    description: Optional[str] = None,
 ) -> Tuple[Path, Path, Dict[str, Any], str, str, Optional[str]]:
     """
     Resolves project paths and extracts current video's title, description/summary, and video_id.
+    A ``description`` passed in wins over the one in metadata.json.
     Returns (project_dir, save_meta_path, metadata_dict, title, description, video_id).
     """
     project_dir, default_meta_path, captions_path, default_title = utils.resolve_project_paths(target)
@@ -92,7 +93,7 @@ def get_current_video_info(
             metadata = {}
 
     title = str(metadata.get("title") or default_title).strip()
-    description = str(metadata.get("description") or metadata.get("ai_summary") or "").strip()
+    description = str(description or metadata.get("description") or metadata.get("ai_summary") or "").strip()
 
     # If description is missing but captions exist, attempt to generate or warn
     if not description and captions_path and captions_path.is_file():
@@ -300,6 +301,7 @@ def recommend_videos_for_project(
     metadata_path: Optional[Path] = None,
     top_n: int = TOP_CANDIDATES_COUNT,
     dry_run: bool = False,
+    description: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Main pipeline function:
@@ -312,6 +314,7 @@ def recommend_videos_for_project(
     project_dir, save_meta_path, metadata, title, description, current_video_id = get_current_video_info(
         target=target,
         metadata_path=metadata_path,
+        description=description,
     )
 
     print("\n" + "=" * 60)
