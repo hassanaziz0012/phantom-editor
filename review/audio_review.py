@@ -60,8 +60,9 @@ DEFAULT_TARGET_CLASSES = [
 class Cnn14Classifier(torch.nn.Module):
     """Lightweight wrapper around a Cnn14 model that returns only clipwise_output.
 
-    This lets TorchScript trace/freeze a graph that skips the unused 2048-d
-    embedding tensor that eager ``AudioTagging.inference`` always computes.
+    Runs in eager mode on purpose: TorchScript trace + freeze was measured at
+    ~19.5s of one-off setup on this CPU, while it only made inference ~9%
+    faster (a 3:48 video infers in ~13s eager), so it was a net loss.
     """
 
     def __init__(self, panns_model):
@@ -70,29 +71,6 @@ class Cnn14Classifier(torch.nn.Module):
 
     def forward(self, x):
         return self.model(x)['clipwise_output']
-
-
-def build_inference_model(panns_model, batch_size: int, win_sec: float):
-    """
-    Traces and freezes Cnn14 with TorchScript for faster CPU inference.
-
-    Returns a callable mapping a float32 tensor [B, win_size] to clipwise_output
-    [B, num_classes]. Falls back to the eager PyTorch wrapper if tracing fails.
-    """
-    classifier = Cnn14Classifier(panns_model).eval()
-    dummy = torch.randn(batch_size, int(win_sec * SAMPLE_RATE))
-    try:
-        traced = torch.jit.trace(classifier, dummy, strict=False)
-        frozen_model = torch.jit.freeze(traced.eval())
-        print("TorchScript JIT model ready.", file=sys.stderr)
-        return frozen_model
-    except Exception as exc:  # noqa: BLE001 - any trace/freeze failure should fall back
-        print(
-            f"Warning: TorchScript JIT optimization failed ({exc}); "
-            "falling back to eager PyTorch.",
-            file=sys.stderr,
-        )
-        return classifier
 
 
 def extract_audio(input_path: str) -> str:
@@ -163,7 +141,7 @@ def run_batched_inference(model, windows: np.ndarray, batch_size: int):
     """
     Runs PANNs inference in batches to keep CPU memory/time reasonable.
 
-    ``model`` is a callable (frozen TorchScript or eager wrapper) mapping a
+    ``model`` is a callable (e.g. ``Cnn14Classifier``) mapping a
     float32 tensor [B, win_size] to clipwise_output [B, num_classes].
     Returns array of shape [N, num_classes] of class probabilities.
     """
@@ -341,8 +319,7 @@ def main():
         print("Loading PANNs model (CPU)...", file=sys.stderr)
         model = AudioTagging(checkpoint_path=None, device='cpu')
 
-        print("Optimizing model with TorchScript JIT...", file=sys.stderr)
-        inference_model = build_inference_model(model.model, args.batch_size, args.win_sec)
+        inference_model = Cnn14Classifier(model.model).eval()
 
         print("Running inference...", file=sys.stderr)
         probs = run_batched_inference(inference_model, windows, args.batch_size)
