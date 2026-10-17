@@ -54,6 +54,7 @@ show_usage() {
     echo "    scrape <url> [--headless] [--max-comments <int>] [--json]"
     echo "    scrapesub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
     echo "    scrapesearch <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
+    echo "    profile <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
     echo "    serve [--port <int>] [--headless]   (answers post/feed scrape requests as JSON lines on stdin)"
     echo ""
     echo "  skool:"
@@ -289,6 +290,8 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_subreddit.py" "$@"
         elif [ "$SUBCOMMAND" = "scrapesearch" ] || [ "$SUBCOMMAND" = "scrape-search" ] || [ "$SUBCOMMAND" = "search" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_search.py" "$@"
+        elif [ "$SUBCOMMAND" = "profile" ] || [ "$SUBCOMMAND" = "scrape-profile" ] || [ "$SUBCOMMAND" = "user" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_profile.py" "$@"
         elif [ "$SUBCOMMAND" = "serve" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/serve.py" "$@"
         else
@@ -297,6 +300,7 @@ case "$COMMAND" in
             echo "       phantom reddit scrape <url> [--headless] [--max-comments <int>] [--json]"
             echo "       phantom reddit scrapesub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
             echo "       phantom reddit scrapesearch <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
+            echo "       phantom reddit profile <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
             echo "       phantom reddit serve [--port <int>] [--headless]"
             exit 1
         fi
