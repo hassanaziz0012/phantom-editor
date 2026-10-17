@@ -13,7 +13,6 @@ import argparse
 import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -78,6 +77,7 @@ def get_video_metadata(video_url: str) -> Dict[str, Any]:
             "title": data.get("title", ""),
             "channel_id": data.get("channel_id") or data.get("uploader_id") or "unknown_channel",
             "channel_title": data.get("channel") or data.get("uploader") or "",
+            "description": data.get("description") or "",
             "duration": data.get("duration"),
             "view_count": data.get("view_count", 0),
         }
@@ -87,17 +87,23 @@ def get_video_metadata(video_url: str) -> Dict[str, Any]:
             "title": "",
             "channel_id": "unknown_channel",
             "channel_title": "",
+            "description": "",
             "duration": None,
             "view_count": 0,
         }
 
 
-def download_youtube_audio(video_url: str, output_dir: Path) -> Path:
+def download_youtube_audio(video_url: str, output_dir: Path) -> Tuple[Path, Dict[str, Any]]:
     """
     Downloads the audio track of a YouTube video into output_dir using yt-dlp.
 
+    The audio is saved as 16 kHz mono FLAC, the format transcribe_cloud sends to
+    Groq anyway: full-rate stereo FLAC is ~5x larger, which pushes most videos
+    over Groq's upload limit and into the slower split-and-re-encode path.
+
     Returns:
-        Path to the downloaded audio file.
+        (path to the downloaded audio file, yt-dlp's info dict for the video).
+        Reading the info from the same call saves a second yt-dlp run.
     """
     logger.info("Downloading audio via yt-dlp for %s...", video_url)
     output_template = str(output_dir / "audio.%(ext)s")
@@ -107,30 +113,36 @@ def download_youtube_audio(video_url: str, output_dir: Path) -> Path:
         "--no-playlist",
         "-x",
         "--audio-format", "flac",
-        "--audio-quality", "0",
+        "--postprocessor-args", "ExtractAudio:-ar 16000 -ac 1",
+        "--dump-json", "--no-simulate",
         "-o", output_template,
         video_url,
     ]
 
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        res = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e)
         logger.error("yt-dlp audio extraction failed: %s", err_msg)
         raise RuntimeError(f"yt-dlp failed to download audio: {err_msg}")
+
+    try:
+        info = json.loads(res.stdout.decode("utf-8", errors="replace").strip().splitlines()[-1])
+    except (IndexError, ValueError):
+        info = {}
 
     # Search for downloaded audio file
     for ext in (".flac", ".m4a", ".mp3", ".wav", ".opus", ".ogg"):
         candidate = output_dir / f"audio{ext}"
         if candidate.is_file() and candidate.stat().st_size > 0:
             logger.info("Audio downloaded successfully: %s (%d bytes)", candidate.name, candidate.stat().st_size)
-            return candidate
+            return candidate, info
 
     # Find any audio file in output_dir
     files = [f for f in output_dir.iterdir() if f.is_file() and f.stat().st_size > 0]
     if files:
         logger.info("Found audio file: %s", files[0].name)
-        return files[0]
+        return files[0], info
 
     raise FileNotFoundError("No audio file found after yt-dlp execution.")
 
@@ -229,13 +241,16 @@ def summarize_transcript(
 def summarize_video(
     video_input: str,
     model: str = DEFAULT_MODEL,
+    title: Optional[str] = None,
 ) -> Tuple[VideoSummaryResponse, str]:
     """
     Full pipeline to summarize a YouTube video:
-    1. Extracts video ID and metadata.
-    2. Downloads audio via yt-dlp to a temp dir.
+    1. Extracts video ID.
+    2. Downloads audio (and the video's title) via yt-dlp to a temp dir.
     3. Transcribes audio via phantom transcribe-cloud.
     4. Generates summary & takeaways via OpenRouter.
+
+    Pass ``title`` if the caller already knows it; otherwise yt-dlp's is used.
 
     Returns:
         (VideoSummaryResponse, video_id)
@@ -244,14 +259,12 @@ def summarize_video(
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     logger.info("Starting summarization for YouTube video: %s (%s)", video_id, video_url)
 
-    metadata = get_video_metadata(video_url)
-    title = metadata.get("title", "")
-
     with tempfile.TemporaryDirectory(prefix=f"phantom_yt_{video_id}_") as temp_dir:
         temp_path = Path(temp_dir)
 
         # 1. Download audio
-        audio_file = download_youtube_audio(video_url, temp_path)
+        audio_file, info = download_youtube_audio(video_url, temp_path)
+        title = title or info.get("title", "")
 
         # 2. Transcribe
         srt_file = temp_path / f"{video_id}.srt"

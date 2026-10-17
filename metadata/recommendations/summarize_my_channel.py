@@ -13,7 +13,6 @@ import argparse
 import json
 import logging
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -32,6 +31,7 @@ if str(VIDEO_EDITING_DIR) not in sys.path:
 from dotenv import load_dotenv
 
 from agentic.ask_browserllm import ask_chatgpt, load_prompt, parse_json_response
+from ideas.summarize_video import download_youtube_audio
 from transcribe_cloud import transcribe_video_cloud
 from utils import parse_srt_to_text
 from youtube_api.fetch_videos import fetch_channel_videos
@@ -48,38 +48,6 @@ logging.basicConfig(
 logger = logging.getLogger("phantom.metadata.summarize_channel")
 
 DEFAULT_OUTPUT_PATH = REPO_ROOT / "metadata" / "recommendations" / "my_videos.json"
-
-
-def download_youtube_audio(video_url: str, output_dir: Path) -> Path:
-    """Downloads the audio track of a YouTube video using yt-dlp."""
-    logger.info("Downloading audio via yt-dlp for %s...", video_url)
-    output_template = str(output_dir / "audio.%(ext)s")
-    cmd = [
-        "yt-dlp",
-        "--no-playlist",
-        "-x",
-        "--audio-format", "flac",
-        "--audio-quality", "0",
-        "-o", output_template,
-        video_url,
-    ]
-    try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError as e:
-        err_msg = e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e)
-        logger.error("yt-dlp audio extraction failed: %s", err_msg)
-        raise RuntimeError(f"yt-dlp failed to download audio: {err_msg}")
-
-    for ext in (".flac", ".m4a", ".mp3", ".wav", ".opus", ".ogg"):
-        candidate = output_dir / f"audio{ext}"
-        if candidate.is_file() and candidate.stat().st_size > 0:
-            return candidate
-
-    files = [f for f in output_dir.iterdir() if f.is_file() and f.stat().st_size > 0]
-    if files:
-        return files[0]
-
-    raise FileNotFoundError("No audio file found after yt-dlp execution.")
 
 
 def generate_video_ai_summary(transcript_text: str) -> str:
@@ -118,7 +86,7 @@ def summarize_single_video(video: Video) -> str:
         temp_path = Path(temp_dir)
 
         # 1. Download audio
-        audio_file = download_youtube_audio(video.url, temp_path)
+        audio_file, _ = download_youtube_audio(video.url, temp_path)
 
         # 2. Transcribe via Groq Cloud Whisper
         srt_file = temp_path / f"{video.video_id}.srt"

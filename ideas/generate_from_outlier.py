@@ -19,11 +19,8 @@ import argparse
 import json
 import logging
 import os
-import re
-import shutil
-import subprocess
 import sys
-import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -34,6 +31,7 @@ if str(repo_root) not in sys.path:
 
 from dotenv import load_dotenv
 
+from ideas.common import Colors, export_ideas, fetch_recent_channel_titles, parse_ideas_response
 from youtube_api.utils import extract_video_id
 
 load_dotenv()
@@ -47,28 +45,6 @@ logging.basicConfig(
 logger = logging.getLogger("phantom.ideas.outliers_generator")
 
 PROMPT_TEMPLATE_PATH = repo_root / "agentic" / "prompts" / "generate_ideas_from_outliers.md"
-
-
-# ── Terminal Styling / Colors ──────────────────────────────────────────────────
-
-class Colors:
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    ITALIC = "\033[3m"
-    CYAN = "\033[36m"
-    BRIGHT_CYAN = "\033[96m"
-    GREEN = "\033[32m"
-    BRIGHT_GREEN = "\033[92m"
-    YELLOW = "\033[33m"
-    BRIGHT_YELLOW = "\033[93m"
-    BLUE = "\033[34m"
-    BRIGHT_BLUE = "\033[94m"
-    MAGENTA = "\033[35m"
-    BRIGHT_MAGENTA = "\033[95m"
-    RED = "\033[31m"
-    GRAY = "\033[90m"
-    WHITE = "\033[97m"
 
 
 # ── Video Metadata Fetching ───────────────────────────────────────────────────
@@ -128,6 +104,7 @@ def fetch_video_metadata(video_id: str, api_key: Optional[str] = None) -> Dict[s
 def get_or_create_summary(
     video_id: str,
     model: Optional[str] = None,
+    title: Optional[str] = None,
 ) -> Tuple[str, List[str]]:
     """
     Executes ideas/summarize_video.py to download, transcribe, and summarize
@@ -140,39 +117,9 @@ def get_or_create_summary(
 
     summary_model = model or DEFAULT_MODEL
     logger.info("Summarizing video %s via OpenRouter (%s)...", video_id, summary_model)
-    summary_obj, _ = summarize_video(video_id, model=summary_model)
+    summary_obj, _ = summarize_video(video_id, model=summary_model, title=title)
 
     return summary_obj.summary, summary_obj.takeaways
-
-
-# ── Fetch Recent Channel Video Titles ──────────────────────────────────────────
-
-def fetch_recent_channel_titles(
-    channel: Optional[str] = None,
-    limit: int = 20,
-    api_key: Optional[str] = None,
-) -> List[str]:
-    """
-    Fetches the latest `limit` video titles from the user's YouTube channel.
-    Uses YOUTUBE_CHANNEL_ID and YOUTUBE_API_KEY from .env.
-    """
-    api_key = api_key or os.getenv("YOUTUBE_API_KEY")
-    channel_target = channel or os.getenv("YOUTUBE_CHANNEL_ID")
-    if not api_key or not channel_target:
-        logger.debug("YOUTUBE_API_KEY or YOUTUBE_CHANNEL_ID not set. Skipping channel titles.")
-        return []
-
-    try:
-        from youtube_api.fetch_videos import fetch_channel_videos
-        from youtube_api.utils import get_youtube_client, resolve_channel_id
-
-        youtube_client = get_youtube_client(api_key)
-        resolved_id = resolve_channel_id(youtube_client, channel_target)
-        videos = fetch_channel_videos(api_key, resolved_id, quiet=True)
-        return [v.title for v in videos[:limit]]
-    except Exception as e:
-        logger.warning("Failed to fetch recent channel video titles: %s", e)
-        return []
 
 
 # ── Prompt Formatting ─────────────────────────────────────────────────────────
@@ -217,86 +164,6 @@ def build_outlier_prompt(
 
 
 from agentic.ask_browserllm import query_claude
-
-
-# ── Parse Claude Response ─────────────────────────────────────────────────────
-
-def parse_claude_response(response_text: str) -> List[Dict[str, Any]]:
-    """
-    Parses Claude's response into a list of idea objects with source, idea, and confidence_score.
-    """
-    text = response_text.strip()
-    if not text:
-        return []
-
-    # 1. Try parsing raw JSON
-    try:
-        data = json.loads(text)
-        if isinstance(data, list):
-            return _validate_ideas_list(data)
-    except Exception:
-        pass
-
-    # 2. Try extracting JSON from markdown code fences
-    fence_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
-    matches = re.findall(fence_pattern, text)
-    for match in matches:
-        try:
-            data = json.loads(match.strip())
-            if isinstance(data, list):
-                return _validate_ideas_list(data)
-        except Exception:
-            continue
-
-    # 3. Try finding outermost JSON array [...]
-    first_bracket = text.find("[")
-    last_bracket = text.rfind("]")
-    if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
-        json_candidate = text[first_bracket : last_bracket + 1]
-        try:
-            data = json.loads(json_candidate)
-            if isinstance(data, list):
-                return _validate_ideas_list(data)
-        except Exception:
-            pass
-
-    logger.warning("Could not parse structured JSON array from response. Returning raw text.")
-    return [{"source": "BrowserLLM Raw Response", "idea": text, "confidence_score": ""}]
-
-
-def _validate_ideas_list(data: List[Any]) -> List[Dict[str, Any]]:
-    """Validates and cleans the list of idea objects."""
-    results: List[Dict[str, Any]] = []
-    for item in data:
-        if isinstance(item, dict):
-            source = str(item.get("source", "")).strip()
-            idea = str(item.get("idea", "")).strip()
-            confidence_score = str(item.get("confidence_score", item.get("confidenceScore", ""))).strip()
-            raw_formats = (
-                item.get("best_formats")
-                if item.get("best_formats") is not None
-                else item.get("best formats")
-                if item.get("best formats") is not None
-                else item.get("bestFormats")
-            )
-            best_formats: Union[List[str], str] = ""
-            if isinstance(raw_formats, list):
-                best_formats = [str(f).strip() for f in raw_formats if str(f).strip()]
-            elif raw_formats is not None and str(raw_formats).strip():
-                best_formats = str(raw_formats).strip()
-
-            if source or idea:
-                entry: Dict[str, Any] = {"source": source, "idea": idea}
-                if confidence_score:
-                    entry["confidence_score"] = confidence_score
-                if best_formats:
-                    entry["best_formats"] = best_formats
-                results.append(entry)
-        elif isinstance(item, str):
-            cleaned = item.strip()
-            if cleaned:
-                results.append({"source": "", "idea": cleaned, "confidence_score": "", "best_formats": ""})
-    return results
 
 
 # ── Terminal Display ──────────────────────────────────────────────────────────
@@ -468,22 +335,23 @@ def main():
     if not args.json:
         print(f"{Colors.CYAN}Summarizing video audio and generating takeaways via OpenRouter...{Colors.RESET}")
 
-    try:
-        summary, takeaways = get_or_create_summary(
-            video_id=video_id,
-            model=args.model,
-        )
-    except Exception as e:
-        if args.json:
-            print(json.dumps({"error": f"Summarization failed: {e}"}, indent=2))
-        else:
-            print(f"{Colors.RED}Error summarizing video:{Colors.RESET} {e}", file=sys.stderr)
-        sys.exit(1)
+    # 4. Fetch your channel's last 20 videos while the summary is generated
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        titles_future = pool.submit(fetch_recent_channel_titles, limit=20)
+        try:
+            summary, takeaways = get_or_create_summary(
+                video_id=video_id,
+                model=args.model,
+                title=title,
+            )
+        except Exception as e:
+            if args.json:
+                print(json.dumps({"error": f"Summarization failed: {e}"}, indent=2))
+            else:
+                print(f"{Colors.RED}Error summarizing video:{Colors.RESET} {e}", file=sys.stderr)
+            sys.exit(1)
+        recent_videos = titles_future.result()
 
-    # 4. Fetch Recent 20 Channel Videos (Step 3)
-    if not args.json:
-        print(f"{Colors.CYAN}Fetching your channel's last 20 videos for personalization...{Colors.RESET}")
-    recent_videos = fetch_recent_channel_titles(limit=20)
     if not args.json and recent_videos:
         print(f"  {Colors.GREEN}✓ Loaded {len(recent_videos)} recent channel video titles.{Colors.RESET}")
 
@@ -516,7 +384,7 @@ def main():
         sys.exit(1)
 
     # 7. Parse the Generated Ideas (Step 5)
-    ideas = parse_claude_response(claude_raw_response)
+    ideas = parse_ideas_response(claude_raw_response)
 
     # 8. Save Ideas into Google Sheet (Step 5)
     exported_count = 0
@@ -526,20 +394,7 @@ def main():
         if not args.json:
             print(f"{Colors.CYAN}Exporting {len(ideas)} ideas to Google Sheets...{Colors.RESET}")
         try:
-            from ideas.export_ideas_to_sheet import export_ideas_to_sheet
-            export_payload = []
-            for item in ideas:
-                source_elem = item.get("source", "").strip()
-                source_formatted = f"{source_elem} - {video_url}" if source_elem else video_url
-                export_payload.append({
-                    "idea": item.get("idea", "").strip(),
-                    "source": source_formatted,
-                    "source_type": "YT Outliers",
-                    "confidence_score": item.get("confidence_score", ""),
-                    "best_formats": item.get("best_formats", ""),
-                })
-            res = export_ideas_to_sheet(export_payload, spreadsheet_id=args.sheet_id)
-            exported_count = res.get("appended_count", len(export_payload))
+            exported_count = export_ideas(ideas, video_url, "YT Outliers", spreadsheet_id=args.sheet_id)
         except Exception as e:
             logger.error("Failed to export ideas to Google Sheet: %s", e)
             if not args.json:

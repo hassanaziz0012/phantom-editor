@@ -2,7 +2,7 @@
 """
 YouTube Comment Video Idea Generator
 ====================================
-Scrapes top comments for a YouTube video using `ideas/comments/scrape_comments.py`,
+Scrapes top comments for a YouTube video (via `ideas/comments/scrape_comments.py`),
 filters out short comments (< 5 characters), formats them as a numbered list,
 and queries Claude via BrowserLLM to extract actionable content ideas.
 """
@@ -12,12 +12,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
-import re
-import shutil
 import subprocess
 import sys
-import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,6 +25,7 @@ if str(repo_root) not in sys.path:
 
 from dotenv import load_dotenv
 
+from ideas.common import Colors, export_ideas, fetch_recent_channel_titles, parse_ideas_response
 from youtube_api.utils import extract_video_id
 
 load_dotenv()
@@ -40,30 +38,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("phantom.ideas.generate")
 
-SCRAPE_COMMENTS_SCRIPT = repo_root / "ideas" / "comments" / "scrape_comments.py"
 PROMPT_TEMPLATE_PATH = repo_root / "agentic" / "prompts" / "generate_ideas_from_comments.md"
-
-
-# ── Terminal Styling / Colors ──────────────────────────────────────────────────
-
-class Colors:
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    ITALIC = "\033[3m"
-    CYAN = "\033[36m"
-    BRIGHT_CYAN = "\033[96m"
-    GREEN = "\033[32m"
-    BRIGHT_GREEN = "\033[92m"
-    YELLOW = "\033[33m"
-    BRIGHT_YELLOW = "\033[93m"
-    BLUE = "\033[34m"
-    BRIGHT_BLUE = "\033[94m"
-    MAGENTA = "\033[35m"
-    BRIGHT_MAGENTA = "\033[95m"
-    RED = "\033[31m"
-    GRAY = "\033[90m"
-    WHITE = "\033[97m"
 
 
 # ── Fetch Video Details (Title & Description) ─────────────────────────────────
@@ -111,7 +86,7 @@ def fetch_video_metadata(
     return f"YouTube Video ({video_id})", "No description available."
 
 
-# ── Scrape Comments Calling scrape_comments.py ─────────────────────────────────
+# ── Scrape Comments ────────────────────────────────────────────────────────────
 
 def scrape_comments_json(
     video: str,
@@ -120,38 +95,13 @@ def scrape_comments_json(
     api_key: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Calls scrape_comments.py as a subprocess with --json to retrieve comments.
+    Scrapes comments with scrape_comments.py's functions, in this process: running
+    it as a subprocess cost a second interpreter start and Google API client build.
     """
-    cmd = [
-        sys.executable,
-        str(SCRAPE_COMMENTS_SCRIPT),
-        video,
-        "--limit",
-        str(limit),
-        "--order",
-        order,
-        "--json",
-    ]
-    if api_key:
-        cmd.extend(["--api-key", api_key])
+    from ideas.comments.scrape_comments import get_youtube_service, scrape_comments
 
-    logger.info("Executing comment scraper: %s", " ".join(cmd))
-    res = subprocess.run(cmd, capture_output=True, text=True)
-
-    if res.returncode != 0:
-        err_msg = res.stderr.strip() or res.stdout.strip() or f"Process exited with code {res.returncode}"
-        raise RuntimeError(f"scrape_comments.py failed: {err_msg}")
-
-    try:
-        data = json.loads(res.stdout)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Failed to parse scrape_comments.py JSON output: {e}\nRaw output: {res.stdout[:500]}")
-
-    if isinstance(data, dict) and "error" in data:
-        raise RuntimeError(f"scrape_comments.py reported an error: {data['error']}")
-
-    comments = data.get("comments", []) if isinstance(data, dict) else data
-    return comments
+    youtube = get_youtube_service(api_key=api_key)
+    return scrape_comments(youtube=youtube, video_id=extract_video_id(video), limit=limit, order=order)
 
 
 # ── Filter Comments ───────────────────────────────────────────────────────────
@@ -172,36 +122,6 @@ def filter_comments(comments: List[Dict[str, Any]], min_length: int = 5) -> List
             valid_comments.append(cleaned)
 
     return valid_comments
-
-
-# ── Fetch Recent Channel Video Titles ──────────────────────────────────────────
-
-def fetch_recent_channel_titles(
-    channel: Optional[str] = None,
-    limit: int = 20,
-    api_key: Optional[str] = None,
-) -> List[str]:
-    """
-    Fetches the latest `limit` video titles for the channel using YouTube Data API.
-    Falls back gracefully if API key or channel is not configured.
-    """
-    api_key = api_key or os.getenv("YOUTUBE_API_KEY")
-    channel_target = channel or os.getenv("YOUTUBE_CHANNEL_ID")
-    if not api_key or not channel_target:
-        logger.debug("YOUTUBE_API_KEY or YOUTUBE_CHANNEL_ID not set. Skipping channel titles.")
-        return []
-
-    try:
-        from youtube_api.fetch_videos import fetch_channel_videos
-        from youtube_api.utils import get_youtube_client, resolve_channel_id
-
-        youtube_client = get_youtube_client(api_key)
-        resolved_id = resolve_channel_id(youtube_client, channel_target)
-        videos = fetch_channel_videos(api_key, resolved_id, quiet=True)
-        return [v.title for v in videos[:limit]]
-    except Exception as e:
-        logger.warning("Failed to fetch channel video titles: %s", e)
-        return []
 
 
 # ── Build Prompt ──────────────────────────────────────────────────────────────
@@ -241,85 +161,6 @@ def build_prompt(
 
 
 from agentic.ask_browserllm import query_claude
-
-
-# ── Parse Claude Response ─────────────────────────────────────────────────────
-
-def parse_claude_response(response_text: str) -> List[Dict[str, str]]:
-    """
-    Parses Claude's response into a list of {source, idea} dicts.
-    Handles raw JSON, markdown code fences, or embedded JSON blocks.
-    """
-    text = response_text.strip()
-    if not text:
-        return []
-
-    # 1. Try parsing full text as JSON directly
-    try:
-        data = json.loads(text)
-        if isinstance(data, list):
-            return _validate_ideas_list(data)
-    except Exception:
-        pass
-
-    # 2. Try extracting JSON from markdown code fences ```json ... ``` or ``` ... ```
-    fence_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
-    matches = re.findall(fence_pattern, text)
-    for match in matches:
-        try:
-            data = json.loads(match.strip())
-            if isinstance(data, list):
-                return _validate_ideas_list(data)
-        except Exception:
-            continue
-
-    # 3. Try finding the outermost JSON array `[...]`
-    first_bracket = text.find("[")
-    last_bracket = text.rfind("]")
-    if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
-        json_candidate = text[first_bracket : last_bracket + 1]
-        try:
-            data = json.loads(json_candidate)
-            if isinstance(data, list):
-                return _validate_ideas_list(data)
-        except Exception:
-            pass
-
-    logger.warning("Could not parse JSON list from response. Returning raw text as single entry.")
-    return [{"source": "BrowserLLM Raw Response", "idea": text}]
-
-
-def _validate_ideas_list(data: List[Any]) -> List[Dict[str, Any]]:
-    """Validates and cleans the list of idea objects."""
-    results = []
-    for item in data:
-        if isinstance(item, dict):
-            source = str(item.get("source", "")).strip()
-            idea = str(item.get("idea", "")).strip()
-            confidence_score = str(item.get("confidence_score", item.get("confidenceScore", ""))).strip()
-            raw_formats = (
-                item.get("best_formats")
-                if item.get("best_formats") is not None
-                else item.get("best formats")
-                if item.get("best formats") is not None
-                else item.get("bestFormats")
-            )
-            best_formats: Union[List[str], str] = ""
-            if isinstance(raw_formats, list):
-                best_formats = [str(f).strip() for f in raw_formats if str(f).strip()]
-            elif raw_formats is not None and str(raw_formats).strip():
-                best_formats = str(raw_formats).strip()
-
-            if source or idea:
-                entry: Dict[str, Any] = {"source": source, "idea": idea}
-                if confidence_score:
-                    entry["confidence_score"] = confidence_score
-                if best_formats:
-                    entry["best_formats"] = best_formats
-                results.append(entry)
-        elif isinstance(item, str):
-            results.append({"source": "", "idea": item.strip()})
-    return results
 
 
 # ── Terminal Display ──────────────────────────────────────────────────────────
@@ -477,24 +318,20 @@ def main():
             print(f"{Colors.RED}Error:{Colors.RESET} {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 2. Fetch Video Metadata (Title & Description)
+    # 2-4. Fetch the video's title & description, the channel's last 20 titles and
+    # the comments. They're independent API calls, so they run side by side.
     if not args.json:
-        print(f"{Colors.CYAN}Fetching video details for {Colors.BOLD}{video_id}{Colors.RESET}...")
-    title, description = fetch_video_metadata(video_id, api_key=args.api_key)
-
-    # 3. Fetch Recent Channel Video Titles (Last 20)
-    recent_video_titles = fetch_recent_channel_titles(limit=20, api_key=args.api_key)
-
-    # 4. Scrape Comments via scrape_comments.py
-    if not args.json:
-        print(f"{Colors.CYAN}Scraping top {args.limit} comments via scrape_comments.py...{Colors.RESET}")
-    try:
-        raw_comments = scrape_comments_json(
-            video=video_id,
-            limit=args.limit,
-            order=args.order,
-            api_key=args.api_key,
+        print(f"{Colors.CYAN}Fetching video details and top {args.limit} comments for {Colors.BOLD}{video_id}{Colors.RESET}...")
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        metadata_future = pool.submit(fetch_video_metadata, video_id, api_key=args.api_key)
+        titles_future = pool.submit(fetch_recent_channel_titles, limit=20, api_key=args.api_key)
+        comments_future = pool.submit(
+            scrape_comments_json, video=video_id, limit=args.limit, order=args.order, api_key=args.api_key
         )
+        title, description = metadata_future.result()
+        recent_video_titles = titles_future.result()
+    try:
+        raw_comments = comments_future.result()
     except Exception as e:
         if args.json:
             print(json.dumps({"error": f"Scraping failed: {e}"}, indent=2))
@@ -560,7 +397,7 @@ def main():
         sys.exit(1)
 
     # 8. Parse Claude's response
-    ideas = parse_claude_response(claude_raw_response)
+    ideas = parse_ideas_response(claude_raw_response)
 
     # 9. Handle export to Google Sheets (enabled by default unless --no-export is passed)
     exported_count = 0
@@ -570,20 +407,7 @@ def main():
         try:
             if not args.json:
                 print(f"{Colors.CYAN}Exporting {len(ideas)} ideas to Google Sheets...{Colors.RESET}")
-            from ideas.export_ideas_to_sheet import export_ideas_to_sheet
-            export_payload = []
-            for item in ideas:
-                comment_text = item.get("source", "").strip()
-                source_formatted = f"{comment_text} - {video_url}" if comment_text else video_url
-                export_payload.append({
-                    "idea": item.get("idea", "").strip(),
-                    "source": source_formatted,
-                    "source_type": "YT Comments",
-                    "confidence_score": item.get("confidence_score", ""),
-                    "best_formats": item.get("best_formats", ""),
-                })
-            res = export_ideas_to_sheet(export_payload, spreadsheet_id=args.sheet_id)
-            exported_count = res.get("appended_count", len(export_payload))
+            exported_count = export_ideas(ideas, video_url, "YT Comments", spreadsheet_id=args.sheet_id)
         except Exception as e:
             logger.error("Failed to export ideas to Google Sheet: %s", e)
             if not args.json:
