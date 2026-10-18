@@ -4,15 +4,26 @@ Step 2 extracts only the speech audio, so Step 3 can clean it before any video
 is encoded. Step 4 then encodes the video straight from the source through the
 same speech-interval timeline, muxing in the processed audio (and BGM) in one
 pass. No trimmed intermediate video is ever written.
+
+Both steps cut with the same select expression over a 1/30 s grid: intervals
+are snapped to video frames and the audio is chunked into frame-sized blocks,
+so each speech interval keeps exactly the same length in both streams and the
+cuts cannot drift apart. (The concat demuxer was tried here and dropped: its
+inpoint seeks land on the previous keyframe, which on OBS's 4 s GOP leaked the
+lead-in into the output and shifted every cut.)
 """
 
 from utils import VideoQCCollector, print_info, print_warning, run_ffmpeg_with_progress
 from trim_silences import get_silence_trim_expressions, get_speech_intervals
 
-from pipeline.common import PipelineError, is_valid_file, remove_quietly, require_output
+from pipeline.common import PipelineError, is_valid_file, require_output
 from pipeline.context import PipelineContext
-from pipeline.ffmpeg import AAC_ARGS, X264_ARGS, ffmpeg_cmd, resolve_bgm_path, write_concat_list
+from pipeline.ffmpeg import AAC_ARGS, X264_ARGS, ffmpeg_cmd, resolve_bgm_path
 from pipeline.summary import VideoFlag
+
+FPS = 30
+AUDIO_RATE = 48000
+SAMPLES_PER_FRAME = AUDIO_RATE // FPS
 
 # Black-frame QC branch split off the encode's filtergraph. 320px wide is
 # plenty for blackdetect's luminance math and costs almost nothing.
@@ -22,26 +33,34 @@ from pipeline.summary import VideoFlag
 INLINE_QC_FILTER = "scale=320:-2:flags=fast_bilinear,blackdetect=d=0.1:pic_th=0.98:pix_th=0.10"
 
 
+def _detect_speech(ctx: PipelineContext) -> list[tuple[float, float]]:
+    """Silero VAD speech intervals, snapped to the 1/30 s video frame grid."""
+    snapped = []
+    for start, end in get_speech_intervals(ctx.main_video):
+        first, last = round(start * FPS), round(end * FPS)
+        if last > first:
+            snapped.append((first / FPS, last / FPS))
+    return snapped
+
+
 def _speech_duration(intervals: list[tuple[float, float]]) -> float:
     return get_silence_trim_expressions(intervals)[2]
 
 
-def _source_input(ctx: PipelineContext, intervals: list[tuple[float, float]]) -> tuple[list[str], str | None]:
-    """FFmpeg input args reading only the speech intervals of the source.
+def _select_expr(intervals: list[tuple[float, float]]) -> str:
+    """Select expression keeping the grid frames inside ``intervals``.
 
-    Returns ``(args, concat_list_path)``; the caller deletes the list file.
-    Without intervals the whole source is used.
+    Bounds sit half a frame early, so a frame starting exactly on an interval
+    edge is never ambiguous: frames ``start*FPS`` up to ``end*FPS - 1`` pass.
     """
-    if not intervals:
-        return ["-i", str(ctx.main_video)], None
-    list_path = write_concat_list(ctx.main_video, intervals)
-    return ["-f", "concat", "-safe", "0", "-i", list_path], list_path
+    half = 0.5 / FPS
+    return get_silence_trim_expressions([(s - half, e - half) for s, e in intervals])[0]
 
 
 def extract_speech(ctx: PipelineContext) -> None:
     """Step 2: detect speech with Silero VAD and extract just that audio (no video decode)."""
     print_info("Analyzing audio for speech intervals with Silero VAD...")
-    intervals = get_speech_intervals(ctx.main_video)
+    intervals = _detect_speech(ctx)
     ctx.speech_intervals = intervals
     print_info(f"Detected {len(intervals)} speech intervals.")
     if not intervals:
@@ -51,24 +70,24 @@ def extract_speech(ctx: PipelineContext) -> None:
     output = ctx.outputs.step2
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    input_args, list_path = _source_input(ctx, intervals)
-    audio_filter = "aresample=async=1:first_pts=0"
+    # async fills any timestamp gaps first, so the frame-sized chunks stay on
+    # the same 1/30 s grid that Step 4 cuts the video on.
+    audio_filter = f"aresample={AUDIO_RATE}:async=1:first_pts=0"
     if intervals:
-        audio_filter += ",asetpts=N/SR/TB"
+        audio_filter += (
+            f",asetnsamples=n={SAMPLES_PER_FRAME}:p=0"
+            f",aselect='{_select_expr(intervals)}',asetpts=N/SR/TB"
+        )
     cmd = [
-        *ffmpeg_cmd(), *input_args,
+        *ffmpeg_cmd(), "-i", str(ctx.main_video),
         "-vn", "-map", "0:a:0", "-af", audio_filter,
-        "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "1",
+        "-c:a", "pcm_s16le", "-ar", str(AUDIO_RATE), "-ac", "1",
     ]
     if duration > 0:
         cmd += ["-t", f"{duration:.3f}"]
     cmd.append(str(output))
 
-    try:
-        run_ffmpeg_with_progress(cmd, duration, "Speech Audio Extraction")
-    finally:
-        if list_path:
-            remove_quietly(list_path)
+    run_ffmpeg_with_progress(cmd, duration, "Speech Audio Extraction")
     require_output(output)
 
 
@@ -82,14 +101,18 @@ def encode_final(ctx: PipelineContext) -> None:
     if intervals is None:
         # Step 2 was skipped on this run, so the intervals were never detected.
         print_info("Re-running Silero VAD to rebuild the speech timeline...")
-        intervals = get_speech_intervals(ctx.main_video)
+        intervals = _detect_speech(ctx)
     duration = _speech_duration(intervals)
 
     info = ctx.video_info
-    video_filter = "fps=30,setpts=N/30/TB"
+    # fps first puts the frames on the grid the select expression assumes.
+    video_filter = f"fps={FPS}"
+    if intervals:
+        video_filter += f",select='{_select_expr(intervals)}'"
+    video_filter += f",setpts=N/{FPS}/TB"
     if ctx.needs_downscale:
         print_warning(f"Video resolution {info.width}x{info.height} exceeds 1080p; downscaling to 1080p.")
-        video_filter = f"scale=1920:1080:flags=bicubic,{video_filter}"
+        video_filter += ",scale=1920:1080:flags=bicubic"
 
     # [v_enc] feeds the encoder; [v_qc] runs blackdetect on the same decoded
     # frames, so black-frame QC needs no separate pass over the output.
@@ -98,8 +121,7 @@ def encode_final(ctx: PipelineContext) -> None:
         f"[v_qc]{INLINE_QC_FILTER}[v_qc_out]"
     )
 
-    input_args, list_path = _source_input(ctx, intervals)
-    input_args += ["-i", str(ctx.outputs.processed_audio)]
+    input_args = ["-i", str(ctx.main_video), "-i", str(ctx.outputs.processed_audio)]
     if bgm_file is not None:
         # Loop the BGM for the whole video; amix duration=first stops it at the
         # end of the speech. Both tracks go stereo first so the mono voice
@@ -132,12 +154,8 @@ def encode_final(ctx: PipelineContext) -> None:
 
     qc = VideoQCCollector()
     print(f"Executing: {' '.join(cmd)}")
-    try:
-        run_ffmpeg_with_progress(cmd, duration, "Final Encode & Multiplex", stderr_line_callback=qc.handle_line)
-        qc.finalize(duration)
-    finally:
-        if list_path:
-            remove_quietly(list_path)
+    run_ffmpeg_with_progress(cmd, duration, "Final Encode & Multiplex", stderr_line_callback=qc.handle_line)
+    qc.finalize(duration)
     require_output(ctx.outputs.final)
 
     ctx.summary.video_flags = [VideoFlag.from_json(g["type"], g) for g in qc.glitches]

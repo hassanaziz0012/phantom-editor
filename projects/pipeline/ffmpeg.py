@@ -1,7 +1,6 @@
 """FFmpeg argument presets and input helpers shared by the encode steps."""
 
 import os
-import tempfile
 from pathlib import Path
 
 from pipeline.common import PipelineError
@@ -15,21 +14,6 @@ DEFAULT_BGM_DIR = Path.home() / "Videos" / "Asset Library" / "BGM"
 def ffmpeg_cmd(loglevel: str = "error") -> list[str]:
     """Common leading FFmpeg arguments; inputs and outputs are appended by the caller."""
     return ["ffmpeg", "-hide_banner", "-loglevel", loglevel, "-stats", "-y", "-threads", "0"]
-
-
-def write_concat_list(video_path: Path, intervals: list[tuple[float, float]]) -> str:
-    """Write an FFmpeg concat-demuxer script that plays only ``intervals``.
-
-    The demuxer seeks straight between intervals instead of decoding the
-    silences. Returns the temp file path; the caller must delete it.
-    """
-    # A literal ' would end the single-quoted filename, so it becomes '\''.
-    quoted = str(video_path.resolve()).replace("'", "'\\''")
-    fd, list_path = tempfile.mkstemp(suffix=".txt")
-    with os.fdopen(fd, "w") as f:
-        for start, end in intervals:
-            f.write(f"file '{quoted}'\ninpoint {start:.3f}\noutpoint {end:.3f}\n")
-    return list_path
 
 
 def resolve_bgm_path(bgm: str) -> Path:
