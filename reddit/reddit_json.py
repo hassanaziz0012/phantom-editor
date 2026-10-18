@@ -230,6 +230,32 @@ def feed_item_fields(post: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# Most posts /api/info answers for in one request
+MAX_INFO_IDS = 100
+
+
+def info_url(post_ids: List[str]) -> str:
+    """The /api/info .json URL for up to MAX_INFO_IDS posts, by ID with or without the "t3_" prefix."""
+    fullnames = ",".join(i if i.startswith("t3_") else f"t3_{i}" for i in post_ids)
+    return f"https://www.reddit.com/api/info.json?id={fullnames}&raw_json=1"
+
+
+def info_item_fields(post: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    One post's fields in an /api/info listing, enough to tell whether it is still up. Reddit sets
+    removed_by_category ("deleted" by the author, "moderator", "reddit" for spam filters and suspended
+    accounts, ...) on posts that are gone, which still come back, with author or body "[deleted]"/"[removed]".
+    """
+    return {
+        "id": post["id"],
+        "url": f"https://www.reddit.com{post['permalink']}",
+        "title": post.get("title") or "",
+        "author": post.get("author") or "unknown",
+        "body": "\n\n".join(html_text_blocks(post.get("selftext_html"))) or media_body(post, post_type(post)),
+        "removed_by_category": post.get("removed_by_category"),
+    }
+
+
 def error_detail(text: str) -> str:
     """Reddit's reason for an error response, e.g. 'Not Found' or 'banned', or the start of the body."""
     match = re.search(r'"reason":\s*"([^"]+)"', text) or re.search(r'"message":\s*"([^"]+)"', text)

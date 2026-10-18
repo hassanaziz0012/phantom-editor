@@ -10,9 +10,13 @@ Protocol: one JSON object per line on stdin, one reply per line on stdout, match
 Requests can run concurrently, so replies may come back in a different order.
     {"id": 1, "cmd": "post", "url": "https://www.reddit.com/r/.../comments/...", "max_comments": 10}
     {"id": 2, "cmd": "feed", "subreddit": "forhire", "feed": "new", "limit": 25}
+    {"id": 3, "cmd": "info", "ids": ["1x6dqiz", "t3_1x5j7dl", ...]}
     -> {"id": 1, "result": {...same JSON as `phantom reddit scrape --json`...}}
     -> {"id": 2, "error": "Reddit returned HTTP 404 for ...: Not Found"}
+    -> {"id": 3, "result": {"posts": [{"id", "url", "title", "author", "body", "removed_by_category"}, ...]}}
 Post URLs must be full /comments/ permalinks; share links aren't followed.
+"info" looks up any number of posts by ID, 100 per request, to check whether they are still up;
+posts Reddit no longer knows are left out of its result.
 Logs go to stderr. The server exits once stdin closes and the requests in flight are answered.
 
 Usage:
@@ -35,9 +39,12 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from reddit.reddit_json import (
+    MAX_INFO_IDS,
     check_post_data,
     collect_feed_items,
     decode_response,
+    info_item_fields,
+    info_url,
     json_url,
     listing_data,
     post_fields,
@@ -144,7 +151,17 @@ async def scrape_feed(fetcher: RedditFetcher, request: Dict[str, Any]) -> Dict[s
     ).model_dump()
 
 
-HANDLERS = {"post": scrape_post, "feed": scrape_feed}
+async def scrape_info(fetcher: RedditFetcher, request: Dict[str, Any]) -> Dict[str, Any]:
+    ids = list(request.get("ids") or [])
+    posts = []
+    for start in range(0, len(ids), MAX_INFO_IDS):
+        url = info_url(ids[start:start + MAX_INFO_IDS])
+        listing = listing_data(url, await fetcher.get_json(url))
+        posts += [info_item_fields(child["data"]) for child in listing["children"] if child.get("kind") == "t3"]
+    return {"posts": posts}
+
+
+HANDLERS = {"post": scrape_post, "feed": scrape_feed, "info": scrape_info}
 
 
 def reply(message: Dict[str, Any]) -> None:
