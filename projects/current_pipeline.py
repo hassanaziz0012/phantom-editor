@@ -15,6 +15,13 @@ Stages:
   8. Ready to Schedule - final.mp4 + metadata.json + thumbnail(s) complete, ready for release/upload.
   9. Scheduled         - Video has scheduled publish date, needs YouTube upload.
  10. Uploaded          - Video uploaded to YouTube (metadata.json has valid YT URL). Complete!
+ 11. Needs Repackaging - 48h after publish, its first days' CTR was below the channel average.
+                         Needs a new title & thumbnail; goes back to Uploaded once the title or
+                         thumbnail on YouTube no longer matches metadata.json / the local thumbnails.
+
+48 hours after publish, each uploaded video's analytics are read from YouTube Studio and stored in
+its metadata.json under "performanceCheck" (see youtube_api/performance_check.py). That check runs
+once per video; later runs use the stored result.
 """
 
 import os
@@ -22,6 +29,7 @@ import sys
 import json
 import re
 import argparse
+from datetime import date, datetime, timedelta
 from urllib.parse import urlparse, parse_qs
 from pathlib import Path
 
@@ -43,6 +51,8 @@ try:
     from metadata.read_metadata import read_metadata
 except ImportError:
     from read_metadata import read_metadata
+
+PERFORMANCE_CHECK_KEY = "performanceCheck"
 
 try:
     from projects.google_sheet_utils import sync_projects_to_sheet
@@ -121,6 +131,7 @@ class VideoProject:
     title: Optional[str] = None
     scheduled_date: Optional[str] = None
     uploaded_date: Optional[str] = None
+    performance_check: Optional[dict] = None
     stage_num: int = 1
     stage_name: str = "New"
     next_step: str = ""
@@ -144,6 +155,7 @@ class VideoProject:
             "yt_url": self.yt_url,
             "scheduled_date": self.scheduled_date,
             "uploaded_date": self.uploaded_date,
+            "performance_check": self.performance_check,
         }
 
 
@@ -174,6 +186,172 @@ def is_thumbnail_file(file_path: Path) -> bool:
         return False
     name_lower = file_path.stem.lower()
     return name_lower.startswith("thumbnail") or name_lower.startswith("thumb")
+
+
+def describe_performance_check(check: dict) -> str:
+    """One-line comparison of a stored performance check against the channel average."""
+    video, average = check.get("video", {}), check.get("channel_average", {})
+    below = check.get("below_average", {})
+
+    def part(metric: str, label: str, fmt) -> str:
+        sign = "<" if below.get(metric) else "≥"
+        return f"{label} {fmt(video.get(metric))} {sign} {fmt(average.get(metric))}"
+
+    def num(value) -> str:
+        return f"{value:,.0f}" if isinstance(value, (int, float)) else "?"
+
+    def pct(value) -> str:
+        return f"{value:.2f}%" if isinstance(value, (int, float)) else "?"
+
+    return (
+        f"first {check.get('window_days', '?')} days vs channel avg: "
+        f"{part('ctr', 'CTR', pct)}, {part('views', 'views', num)}, {part('impressions', 'impressions', num)}"
+    )
+
+
+def is_performance_check_due(project: VideoProject) -> bool:
+    """
+    Whether an uploaded video still needs its performance check. Uses uploadedDate to skip
+    videos that can't be 48h old yet; the exact publish time is confirmed from YouTube.
+    """
+    if not project.yt_url or project.performance_check or not project.metadata_file:
+        return False
+    if not project.uploaded_date:
+        return True
+    try:
+        uploaded = date.fromisoformat(project.uploaded_date.strip()[:10])
+    except ValueError:
+        return True
+    return uploaded + timedelta(days=2) <= date.today()
+
+
+def run_performance_checks(projects: List[VideoProject], quiet: bool = False) -> List[VideoProject]:
+    """
+    Run the 48h performance check for every uploaded project that's due, store each result
+    in its metadata.json, and return the projects re-analyzed with their new stage.
+    """
+    due = [p for p in projects if is_performance_check_due(p)]
+    if not due:
+        return projects
+
+    # Imported here so status stays fast (no Playwright or API client) when nothing is due.
+    from youtube_api.performance_check import check_videos
+    from youtube_api.utils import extract_video_id
+
+    by_video_id = {}
+    for project in due:
+        try:
+            by_video_id[extract_video_id(project.yt_url)] = project
+        except ValueError:
+            pass
+    if not by_video_id:
+        return projects
+
+    if not quiet:
+        print(f"{COLOR_CYAN}📈 Running the 48h performance check for {len(by_video_id)} uploaded video(s)...{COLOR_RESET}")
+    try:
+        results = check_videos(list(by_video_id))
+    except Exception as e:
+        if not quiet:
+            print(f"{COLOR_YELLOW}⚠️ Note: Could not run the performance check: {e}{COLOR_RESET}\n")
+        return projects
+
+    checked = set()
+    for video_id, outcome in results.items():
+        project = by_video_id[video_id]
+        if outcome["status"] == "ok":
+            try:
+                meta = read_metadata(project.metadata_file)
+                meta.raw_data[PERFORMANCE_CHECK_KEY] = outcome["result"]
+                meta.save()
+                checked.add(project.path)
+                if not quiet:
+                    verdict = "needs repackaging" if outcome["result"]["needs_repackaging"] else "passed"
+                    print(f"{COLOR_GREEN}✓ {project.name}: {verdict}{COLOR_RESET}")
+            except Exception as e:
+                if not quiet:
+                    print(f"{COLOR_YELLOW}⚠️ {project.name}: could not save the performance check: {e}{COLOR_RESET}")
+        elif quiet:
+            continue
+        elif outcome["status"] == "waiting":
+            ready_at = datetime.fromisoformat(outcome["ready_at"]).astimezone()
+            print(f"{COLOR_GRAY}⏳ {project.name}: not 48h old yet, check runs after {ready_at:%b %d %H:%M}{COLOR_RESET}")
+        else:
+            print(f"{COLOR_YELLOW}⚠️ {project.name}: {outcome['reason']}{COLOR_RESET}")
+    if not quiet:
+        print()
+
+    return [analyze_project(p.path) if p.path in checked else p for p in projects]
+
+
+def run_repackaging_checks(projects: List[VideoProject], quiet: bool = False) -> List[VideoProject]:
+    """
+    For every project that needs repackaging, check whether its YouTube title or thumbnail
+    has changed from the metadata.json title and local thumbnails. Once one has, it's
+    recorded under performanceCheck.repackaged and the project goes back to Uploaded.
+    """
+    flagged = [p for p in projects if p.stage_num == 11]
+    if not flagged:
+        return projects
+
+    # Imported here so status stays fast when nothing needs repackaging.
+    from youtube_api.performance_check import check_repackaged
+    from youtube_api.utils import extract_video_id
+
+    by_video_id = {}
+    for project in flagged:
+        try:
+            by_video_id[extract_video_id(project.yt_url)] = project
+        except ValueError:
+            pass
+    try:
+        results = check_repackaged({
+            video_id: {"title": project.title, "thumbnails": project.thumbnail_files}
+            for video_id, project in by_video_id.items()
+        })
+    except Exception as e:
+        if not quiet:
+            print(f"{COLOR_YELLOW}⚠️ Note: Could not check for repackaged videos: {e}{COLOR_RESET}\n")
+        return projects
+
+    repackaged = set()
+    for video_id, outcome in results.items():
+        project = by_video_id[video_id]
+        if outcome["status"] != "ok":
+            if not quiet:
+                print(f"{COLOR_YELLOW}⚠️ {project.name}: {outcome['reason']}{COLOR_RESET}")
+            continue
+        if not outcome["repackaged"]:
+            continue
+        try:
+            meta = read_metadata(project.metadata_file)
+            meta.raw_data[PERFORMANCE_CHECK_KEY]["repackaged"] = {
+                "detected_at": datetime.now().astimezone().isoformat(),
+                "title_changed": outcome["title_changed"],
+                "thumbnail_changed": outcome["thumbnail_changed"],
+                "youtube_title": outcome["youtube_title"],
+            }
+            meta.save()
+            repackaged.add(project.path)
+            if not quiet:
+                print(f"{COLOR_GREEN}✓ {project.name}: repackaged ({describe_repackaging(meta.raw_data[PERFORMANCE_CHECK_KEY]['repackaged'])}){COLOR_RESET}")
+        except Exception as e:
+            if not quiet:
+                print(f"{COLOR_YELLOW}⚠️ {project.name}: could not save the repackaging: {e}{COLOR_RESET}")
+    if repackaged and not quiet:
+        print()
+
+    return [analyze_project(p.path) if p.path in repackaged else p for p in projects]
+
+
+def describe_repackaging(repackaged: dict) -> str:
+    changed = [name for name, key in (("title", "title_changed"), ("thumbnail", "thumbnail_changed")) if repackaged.get(key)]
+    return f"new {' & '.join(changed)}" if changed else "changed"
+
+
+def stage_label(stage_num: int) -> str:
+    # Stage 11 is a post-upload flag, so it isn't shown as part of the 10-step pipeline.
+    return f"Stage {stage_num}/10" if stage_num <= 10 else f"Stage {stage_num}"
 
 
 def analyze_project(project_dir: Path) -> VideoProject:
@@ -207,6 +385,8 @@ def analyze_project(project_dir: Path) -> VideoProject:
                     project.scheduled_date = meta.publish_date
                 if meta.uploaded_date:
                     project.uploaded_date = meta.uploaded_date
+                if isinstance(meta.raw_data.get(PERFORMANCE_CHECK_KEY), dict):
+                    project.performance_check = meta.raw_data[PERFORMANCE_CHECK_KEY]
             except Exception:
                 pass
         elif is_script_file(item):
@@ -219,13 +399,32 @@ def analyze_project(project_dir: Path) -> VideoProject:
     has_scheduled_date = bool(project.scheduled_date and project.scheduled_date.strip())
 
     # Determine stage
+    check = project.performance_check or {}
+
+    # Stage 11: Needs Repackaging (uploaded, the 48h performance check found its CTR below channel
+    # average, and its YouTube title & thumbnail still match the originals)
+    if project.yt_url and check.get("needs_repackaging") and not check.get("repackaged"):
+        project.stage_num = 11
+        project.stage_name = "Needs Repackaging"
+        project.next_step = f"Rework the title & thumbnail: {describe_performance_check(project.performance_check)}"
+        project.status_color = COLOR_RED
+
     # Stage 10: Uploaded (metadata.json contains a valid YouTube URL)
-    if project.yt_url:
+    elif project.yt_url:
         project.stage_num = 10
         project.stage_name = "Uploaded"
         date_str = project.uploaded_date or project.scheduled_date
         date_info = f" (Published: {date_str})" if date_str else ""
-        project.next_step = f"Video uploaded to YouTube{date_info}! All pipeline stages complete! 🚀"
+        if check.get("repackaged"):
+            check_info = (
+                f" Repackaged ({describe_repackaging(check['repackaged'])}) after a below-average "
+                f"performance check: {describe_performance_check(check)}"
+            )
+        elif check:
+            check_info = f" Performance check passed: {describe_performance_check(check)}"
+        else:
+            check_info = " Performance check runs 48h after publish."
+        project.next_step = f"Video uploaded to YouTube{date_info}! All pipeline stages complete! 🚀{check_info}"
         project.status_color = COLOR_GREEN
 
     # Stage 9: Scheduled (has scheduled publish date in local metadata.json, awaiting YouTube upload)
@@ -369,6 +568,8 @@ def render_stage_bar(proj: VideoProject) -> str:
                 parts.append(f"{COLOR_GREEN}✓{num_str}{COLOR_RESET}")
             else:
                 parts.append(f"{COLOR_GRAY}{num_str}:{name}{COLOR_RESET}")
+    if proj.stage_num == 11:
+        parts.append(f"{COLOR_BOLD}{COLOR_RED}[11:Repack]{COLOR_RESET}")
     return " ➔ ".join(parts)
 
 
@@ -384,14 +585,14 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         print(f"{COLOR_YELLOW}No project folders found in {projects_dir}{COLOR_RESET}\n")
         return
 
-    stage_counts = {i: 0 for i in range(1, 11)}
+    stage_counts = {i: 0 for i in range(1, 12)}
 
     for idx, proj in enumerate(projects, 1):
         stage_counts[proj.stage_num] += 1
         color = proj.status_color
         
         print(f"{COLOR_BOLD}{idx}. {proj.name}{COLOR_RESET}")
-        print(f"   Stage {proj.stage_num}/10: {color}{COLOR_BOLD}[{proj.stage_name}]{COLOR_RESET}")
+        print(f"   {stage_label(proj.stage_num)}: {color}{COLOR_BOLD}[{proj.stage_name}]{COLOR_RESET}")
         print(f"   Pipeline: {render_stage_bar(proj)}")
         print(f"   {COLOR_BOLD}➜ Next Step:{COLOR_RESET} {proj.next_step}")
 
@@ -452,18 +653,20 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         f"{COLOR_CYAN}Thumbnail: {stage_counts[7]}{COLOR_RESET} | "
         f"{COLOR_CYAN}Ready: {stage_counts[8]}{COLOR_RESET} | "
         f"{COLOR_YELLOW}Scheduled: {stage_counts[9]}{COLOR_RESET} | "
-        f"{COLOR_GREEN}Uploaded: {stage_counts[10]}{COLOR_RESET}"
+        f"{COLOR_GREEN}Uploaded: {stage_counts[10]}{COLOR_RESET} | "
+        f"{COLOR_RED}Repackage: {stage_counts[11]}{COLOR_RESET}"
     )
     print(stat_line)
 
     action_needed = (
         stage_counts[2] + stage_counts[3] + stage_counts[4] +
         stage_counts[5] + stage_counts[6] + stage_counts[7] +
-        stage_counts[8] + stage_counts[9]
+        stage_counts[8] + stage_counts[9] + stage_counts[11]
     )
     ready_to_sched = stage_counts[8]
     scheduled_cnt = stage_counts[9]
     uploaded_cnt = stage_counts[10]
+    repackage_cnt = stage_counts[11]
     
     if action_needed > 0:
         print(f"\n {COLOR_YELLOW}⚡ Action Required: {action_needed} video(s) in progress / awaiting next steps{COLOR_RESET}")
@@ -473,6 +676,8 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         print(f" {COLOR_YELLOW}📅 Scheduled (Needs Upload): {scheduled_cnt} video(s) scheduled awaiting YouTube upload{COLOR_RESET}")
     if uploaded_cnt > 0:
         print(f" {COLOR_GREEN}🎉 Uploaded: {uploaded_cnt} video(s) published on YouTube!{COLOR_RESET}")
+    if repackage_cnt > 0:
+        print(f" {COLOR_RED}🔁 Needs Repackaging: {repackage_cnt} video(s) with below-average CTR in their first days{COLOR_RESET}")
 
     print(f"\n{COLOR_BOLD}{COLOR_CYAN}{'=' * width}{COLOR_RESET}\n")
 
@@ -484,7 +689,7 @@ def print_concise_summary(projects: List[VideoProject]) -> None:
         return
     for idx, proj in enumerate(projects, 1):
         color = proj.status_color
-        print(f"{idx}. {proj.name} ({color}Stage {proj.stage_num}/10: {proj.stage_name}{COLOR_RESET})")
+        print(f"{idx}. {proj.name} ({color}{stage_label(proj.stage_num)}: {proj.stage_name}{COLOR_RESET})")
 
 
 def main():
@@ -514,7 +719,12 @@ def main():
     parser.add_argument(
         "--finished",
         action="store_true",
-        help="Display ready to schedule, scheduled, or uploaded projects (Stages 8-10).",
+        help="Display ready to schedule, scheduled, uploaded, or needs-repackaging projects (Stages 8-11).",
+    )
+    parser.add_argument(
+        "--repackage",
+        action="store_true",
+        help="Display only projects that need repackaging (Stage 11).",
     )
     parser.add_argument(
         "--json",
@@ -536,10 +746,19 @@ def main():
         action="store_true",
         help="Skip syncing pipeline status with Google Sheets.",
     )
+    parser.add_argument(
+        "--no-analytics",
+        action="store_true",
+        help="Skip the 48h performance check and repackaging check of uploaded videos "
+             "(the performance check opens YouTube Studio in Chrome).",
+    )
     args = parser.parse_args()
 
     projects_dir = Path(args.dir).expanduser().resolve()
     all_projects = get_all_projects(projects_dir)
+    if not args.no_analytics:
+        all_projects = run_performance_checks(all_projects, quiet=args.json)
+        all_projects = run_repackaging_checks(all_projects, quiet=args.json)
 
     filter_stages = set()
     if args.new:
@@ -549,7 +768,9 @@ def main():
     if args.pending:
         filter_stages.update([3, 4, 5, 6, 7])
     if args.finished:
-        filter_stages.update([8, 9, 10])
+        filter_stages.update([8, 9, 10, 11])
+    if args.repackage:
+        filter_stages.add(11)
 
     if filter_stages:
         projects = [p for p in all_projects if p.stage_num in filter_stages]

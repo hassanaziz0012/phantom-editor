@@ -68,6 +68,10 @@ phantom pipeline status --new
 phantom pipeline status --scripted
 phantom pipeline status --pending
 phantom pipeline status --finished
+phantom pipeline status --repackage
+
+# Skip the 48h performance check (it opens YouTube Studio in Chrome)
+phantom pipeline status --no-analytics
 
 # Show concise one-line summary
 phantom pipeline status --less
@@ -82,7 +86,7 @@ phantom pipeline status --dir /custom/path/to/projects
 phantom pipeline status --json
 ```
 
-### The 10 Pipeline Stages
+### The Pipeline Stages
 
 | Stage | Name | Trigger / File Requirements | Next Action Required |
 | :---: | :--- | :--- | :--- |
@@ -96,6 +100,15 @@ phantom pipeline status --json
 | **8** | **Ready to Schedule** | `final.mp4` + `metadata.json` + thumbnail image present. | Ready for YouTube upload (`phantom yt upload`) or set publishDate in `metadata.json`. |
 | **9** | **Scheduled** | Has scheduled publish date in `metadata.json`. | Upload video to YouTube (`phantom yt upload`). |
 | **10** | **Uploaded** | `metadata.json` contains a valid YouTube URL. | 🎉 Pipeline complete! |
+| **11** | **Needs Repackaging** | 48h after publish, the first 2 days' CTR was below the channel average. | Rework the title & thumbnail on YouTube. |
+
+### 48h Performance Check
+
+Once an uploaded video has been public for 48 hours, `status` reads its analytics live from YouTube Studio (through the logged-in Chrome on port 9222, like `phantom yt info`) and stores them in `metadata.json` under `performanceCheck`, along with the full `yt info` payload. The check runs once per video; later runs use the stored result, so `status` stays instant.
+
+The comparison uses the same window on both sides: the first 2 Pacific-time days since publish (the publish day and the day after). The channel average is the mean of that window across your 15 most recent uploads of the same format (Shorts vs long-form). If CTR is below average, the video moves to **Needs Repackaging** (impressions and views are stored alongside for reference, along with each baseline video's numbers).
+
+While a video needs repackaging, every `status` run compares its live YouTube title with the `metadata.json` title and its live thumbnail with every local `thumbnail*` image (by perceptual hash, since YouTube re-encodes thumbnails). Once either differs, the change is recorded under `performanceCheck.repackaged` and the video goes back to **Uploaded**. So when you repackage, change the title and thumbnail on YouTube but leave `metadata.json` and the local thumbnails as the originals. To run the check again, delete the `performanceCheck` key. See `youtube_api/performance_check.py`.
 
 ### Sample Terminal Output
 

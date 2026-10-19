@@ -357,7 +357,11 @@ def get_owner_analytics(video: Video) -> dict:
         return {"status": "error", "reason": f"Failed to read YouTube Studio: {e}"}
     if data is None:
         return {"status": "not_owner"}
+    return owner_analytics_result(video, data)
 
+
+def owner_analytics_result(video: Video, data: dict) -> dict:
+    """Wrap Studio analytics for the video as an "ok" owner result, adding the average view percentage."""
     totals = data["totals"]
     duration_seconds = parse_iso8601_duration(video.duration)
     if totals.get("avg_view_duration_ms") is not None and duration_seconds:
