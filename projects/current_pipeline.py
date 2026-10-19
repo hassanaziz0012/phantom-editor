@@ -15,7 +15,7 @@ Stages:
   8. Ready to Schedule - final.mp4 + metadata.json + thumbnail(s) complete, ready for release/upload.
   9. Scheduled         - Video has scheduled publish date, needs YouTube upload.
  10. Uploaded          - Video uploaded to YouTube (metadata.json has valid YT URL). Complete!
- 11. Needs Repackaging - 48h after publish, its first days' CTR was below the channel average.
+ 11. Needs Repackaging - 48h after publish, its first days' CTR was below the channel's 28-day CTR.
                          Needs a new title & thumbnail; goes back to Uploaded once the title or
                          thumbnail on YouTube no longer matches metadata.json / the local thumbnails.
 
@@ -189,23 +189,24 @@ def is_thumbnail_file(file_path: Path) -> bool:
 
 
 def describe_performance_check(check: dict) -> str:
-    """One-line comparison of a stored performance check against the channel average."""
-    video, average = check.get("video", {}), check.get("channel_average", {})
-    below = check.get("below_average", {})
-
-    def part(metric: str, label: str, fmt) -> str:
-        sign = "<" if below.get(metric) else "≥"
-        return f"{label} {fmt(video.get(metric))} {sign} {fmt(average.get(metric))}"
-
-    def num(value) -> str:
-        return f"{value:,.0f}" if isinstance(value, (int, float)) else "?"
+    """One-line comparison of a stored performance check's CTR with the channel's 28-day CTR."""
+    video, channel = check.get("video", {}), check.get("channel_28d", {})
 
     def pct(value) -> str:
         return f"{value:.2f}%" if isinstance(value, (int, float)) else "?"
 
+    def duration(ms) -> str:
+        if not isinstance(ms, (int, float)):
+            return "?"
+        minutes, seconds = divmod(round(ms / 1000), 60)
+        return f"{minutes}:{seconds:02}"
+
+    sign = "<" if check.get("needs_repackaging") else "≥"
     return (
-        f"first {check.get('window_days', '?')} days vs channel avg: "
-        f"{part('ctr', 'CTR', pct)}, {part('views', 'views', num)}, {part('impressions', 'impressions', num)}"
+        f"CTR {pct(video.get('ctr'))} in its first {check.get('window_days', '?')} days {sign} "
+        f"channel's 28-day {pct(channel.get('ctr'))} "
+        f"(avg view {duration(video.get('avg_view_duration_since_publish_ms'))} since publish "
+        f"vs channel's {duration(channel.get('avg_view_duration_ms'))})"
     )
 
 
@@ -401,8 +402,8 @@ def analyze_project(project_dir: Path) -> VideoProject:
     # Determine stage
     check = project.performance_check or {}
 
-    # Stage 11: Needs Repackaging (uploaded, the 48h performance check found its CTR below channel
-    # average, and its YouTube title & thumbnail still match the originals)
+    # Stage 11: Needs Repackaging (uploaded, the 48h performance check found its CTR below the
+    # channel's 28-day CTR, and its YouTube title & thumbnail still match the originals)
     if project.yt_url and check.get("needs_repackaging") and not check.get("repackaged"):
         project.stage_num = 11
         project.stage_name = "Needs Repackaging"
@@ -677,7 +678,7 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
     if uploaded_cnt > 0:
         print(f" {COLOR_GREEN}🎉 Uploaded: {uploaded_cnt} video(s) published on YouTube!{COLOR_RESET}")
     if repackage_cnt > 0:
-        print(f" {COLOR_RED}🔁 Needs Repackaging: {repackage_cnt} video(s) with below-average CTR in their first days{COLOR_RESET}")
+        print(f" {COLOR_RED}🔁 Needs Repackaging: {repackage_cnt} video(s) with CTR below the channel's 28-day CTR{COLOR_RESET}")
 
     print(f"\n{COLOR_BOLD}{COLOR_CYAN}{'=' * width}{COLOR_RESET}\n")
 

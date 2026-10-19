@@ -31,6 +31,13 @@ Shows quick details about any YouTube video: a direct thumbnail URL, views/likes
 * **Usage**: `python youtube_api/video_info.py <video_url_or_id> [--fresh] [--json]` or via `phantom yt info <video> [--fresh] [--json]`
 * **Caching**: The channel's last 50 uploads are cached in `youtube_api/cache/baselines.json` for 24 hours. A cold lookup costs 3 quota units; a cached one costs 1. `--fresh` forces a refetch.
 
+### [channel_stats.py](../youtube_api/channel_stats.py)
+Your channel's long-form performance over the last 28 days, read live from YouTube Studio: impressions, CTR, views, average view duration, watch time, and subscribers. These match the Videos card on Studio's Content tab.
+
+* **Usage**: `phantom yt channel-stats [--fresh] [--json] [--history]`
+* **Reuse**: `from youtube_api.channel_stats import get_channel_stats, get_channel_history`. `get_channel_stats()` returns the latest snapshot, refetching from Studio when it's over 12 hours old.
+* **Storage**: Every fetch is saved to `youtube_api/cache/channel_stats.json` as the latest snapshot plus one snapshot per day (`--history`), so the averages can be tracked over time. The 48h performance check in `phantom projects status` also refreshes it.
+
 ### [utils.py](../youtube_api/utils.py)
 Utility functions containing API authentication, channel ID resolution, Jaccard text similarity helpers, and logarithmic scoring algorithms.
 
