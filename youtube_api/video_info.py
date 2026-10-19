@@ -5,15 +5,15 @@ YouTube Video Info
 Shows quick details about any YouTube video: a direct thumbnail URL, basic stats,
 and an outlier score (how its views compare to the channel's recent median).
 
-For videos on your own channel it also shows owner-only analytics (impressions, CTR,
-views, watch time) as lifetime totals and day by day. That needs a one-time OAuth
-consent: run with --login once.
+For videos on your own channel it also shows live owner-only analytics (impressions,
+CTR, views, watch time) as lifetime totals and day by day, read from YouTube Studio in
+the logged-in Chrome on port 9222. Videos on other channels never open Chrome.
 
 The channel baseline (its last 50 uploads) is cached in youtube_api/cache/baselines.json
 for 24 hours, so repeat lookups on the same channel cost a single API call.
 
 Usage:
-    phantom yt info <video_url_or_id> [--fresh] [--json] [--days N] [--login]
+    phantom yt info <video_url_or_id> [--fresh] [--json] [--days N]
 """
 
 import argparse
@@ -21,6 +21,7 @@ import json
 import os
 import statistics
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -30,7 +31,7 @@ root_dir = str(Path(__file__).resolve().parent.parent)
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from youtube_api import analytics as yt_analytics
+from youtube_api import studio_analytics
 from youtube_api.fetch_videos import fetch_video_details
 from youtube_api.models import Video
 from youtube_api.utils import (
@@ -97,12 +98,16 @@ def _format_metric(value: Optional[int]) -> str:
 
 
 def _format_ctr(value: Optional[float]) -> str:
-    # The Analytics API reports CTR as a percentage already (4.2 means 4.2%).
+    # Studio reports CTR as a percentage already (4.2 means 4.2%).
     return f"{value:.1f}%" if value is not None else "-"
 
 
-def _format_hours(minutes: Optional[float]) -> str:
-    return f"{minutes / 60:,.1f}h" if minutes is not None else "-"
+def _format_hours(milliseconds: Optional[int]) -> str:
+    return f"{milliseconds / 3_600_000:,.1f}h" if milliseconds is not None else "-"
+
+
+def _format_seconds(milliseconds: Optional[int]) -> str:
+    return _format_duration(round(milliseconds / 1000)) if milliseconds is not None else "?"
 
 
 # ── Baseline cache ────────────────────────────────────────────────────────────
@@ -299,27 +304,17 @@ def print_owner_analytics(owner: dict, daily_rows: int) -> None:
     def row(label: str, value: str) -> None:
         print(f"  {DIM}{label:<13}{RESET}{value}")
 
-    print(f"  {BOLD}Your analytics{RESET} {DIM}({data['start_date']} to {data['end_date']}, "
-          f"lags ~2 days behind){RESET}")
-    if data["reach_job_created"]:
-        row("", f"{YELLOW}Started YouTube's reach reports; impressions and CTR show up in about 2 days.{RESET}")
-    elif data["reach_start_date"] and data["reach_start_date"] > data["start_date"]:
-        row("", f"{YELLOW}Impressions and CTR only cover {data['reach_start_date']} onward "
-                f"(older reports had expired).{RESET}")
-    if not totals:
-        row("", f"{DIM}No analytics data yet.{RESET}")
-        print()
-        return
-
+    print(f"  {BOLD}Your analytics{RESET} {DIM}(live from YouTube Studio){RESET}")
     row("Impressions", f"{BOLD}{_format_metric(totals.get('impressions'))}{RESET}")
     row("CTR", f"{BOLD}{_format_ctr(totals.get('ctr'))}{RESET}")
     row("Views", _format_metric(totals.get("views")))
-    row("Watch time", _format_hours(totals.get("minutes_watched")))
-    row("Avg view", (
-        f"{_format_duration(totals.get('avg_view_duration_seconds'))} "
-        f"{DIM}({totals.get('avg_view_percentage', 0):.1f}% of the video){RESET}"
+    row("Unique", _format_metric(totals.get("unique_viewers")))
+    row("Watch time", _format_hours(totals.get("watch_time_ms")))
+    avg_percentage = totals.get("avg_view_percentage")
+    row("Avg view", _format_seconds(totals.get("avg_view_duration_ms")) + (
+        f" {DIM}({avg_percentage:.1f}% of the video){RESET}" if avg_percentage is not None else ""
     ))
-    row("Subscribers", f"+{totals.get('subscribers_gained', 0):,} / -{totals.get('subscribers_lost', 0):,}")
+    row("Subscribers", f"+{totals.get('subscribers_gained') or 0:,} / -{totals.get('subscribers_lost') or 0:,}")
     print()
 
     daily = data["daily"]
@@ -328,17 +323,17 @@ def print_owner_analytics(owner: dict, daily_rows: int) -> None:
     shown = daily if daily_rows <= 0 else daily[-daily_rows:]
     print(f"  {DIM}{'Day':<12}{'Impressions':>12}{'CTR':>8}{'Views':>9}{'Watch':>9}{'Subs':>7}{RESET}")
     for d in shown:
-        net_subs = (
-            f"{d['subscribers_gained'] - d['subscribers_lost']:+}" if "subscribers_gained" in d else "-"
-        )
+        gained, lost = d.get("subscribers_gained"), d.get("subscribers_lost")
+        net_subs = f"{(gained or 0) - (lost or 0):+}" if gained is not None or lost is not None else "-"
         print(
             f"  {d['day']:<12}"
             f"{_format_metric(d.get('impressions')):>12}"
             f"{_format_ctr(d.get('ctr')):>8}"
             f"{_format_metric(d.get('views')):>9}"
-            f"{_format_hours(d.get('minutes_watched')):>9}"
+            f"{_format_hours(d.get('watch_time_ms')):>9}"
             f"{net_subs:>7}"
         )
+    print(f"  {DIM}Days are finished Pacific-time days; the totals above also include today.{RESET}")
     if len(shown) < len(daily):
         print(f"  {DIM}Showing the last {len(shown)} of {len(daily)} days; --days 0 shows all.{RESET}")
     print()
@@ -346,26 +341,27 @@ def print_owner_analytics(owner: dict, daily_rows: int) -> None:
 
 # ── Owner analytics ───────────────────────────────────────────────────────────
 
-def get_owner_analytics(video: Video, login: bool) -> dict:
+def get_owner_analytics(video: Video) -> dict:
     """
-    Owner-only analytics for the video, or a status explaining why there are none:
-    "ok", "not_owner", "not_authorized", or "error".
+    Live Studio analytics for the video, or a status explaining why there are none:
+    "ok", "not_owner", or "error".
     """
-    try:
-        creds = yt_analytics.get_credentials(login=login)
-    except yt_analytics.AnalyticsNotAuthorized:
-        return {"status": "not_authorized",
-                "reason": "run with --login once to see impressions and CTR for your own videos."}
-    except Exception as e:
-        return {"status": "error", "reason": f"Failed to authorize: {e}"}
+    # Only a video on the cached channel (or the first run, before it's known) opens Chrome.
+    my_channel_id = studio_analytics.get_cached_channel_id()
+    if my_channel_id and my_channel_id != video.channel_id:
+        return {"status": "not_owner"}
 
     try:
-        my_channel_id = yt_analytics.get_my_channel_id(creds)
-        if my_channel_id != video.channel_id:
-            return {"status": "not_owner"}
-        data = yt_analytics.fetch_video_analytics(creds, my_channel_id, video.video_id, video.published_at)
+        data = studio_analytics.fetch_studio_analytics(video.video_id, video.channel_id)
     except Exception as e:
-        return {"status": "error", "reason": f"Failed to fetch analytics: {e}"}
+        return {"status": "error", "reason": f"Failed to read YouTube Studio: {e}"}
+    if data is None:
+        return {"status": "not_owner"}
+
+    totals = data["totals"]
+    duration_seconds = parse_iso8601_duration(video.duration)
+    if totals.get("avg_view_duration_ms") is not None and duration_seconds:
+        totals["avg_view_percentage"] = round(totals["avg_view_duration_ms"] / 10 / duration_seconds, 1)
     return {"status": "ok", "data": data}
 
 
@@ -396,11 +392,6 @@ def main() -> None:
         help=f"Days of your daily analytics to show (default {DEFAULT_DAILY_ROWS}, 0 for all since publish). "
              "JSON output always includes every day.",
     )
-    parser.add_argument(
-        "--login",
-        action="store_true",
-        help="Authorize YouTube Analytics in the browser (once) to see impressions and CTR on your own videos.",
-    )
     args = parser.parse_args()
 
     def fail(message: str) -> None:
@@ -421,16 +412,20 @@ def main() -> None:
         fail(f"Video not found (or private): {video_id}")
     video = videos[0]
 
-    # The score is a nice-to-have; an API error here shouldn't hide the video's details.
-    baseline_cached = None
-    try:
-        samples, baseline_cached = get_channel_samples(youtube, video.channel_id, fresh=args.fresh)
-        outlier = compute_outlier(video, samples)
-    except Exception as e:
-        outlier = compute_outlier(video, [])
-        outlier["reason"] = f"Failed to fetch channel baseline: {e}"
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        # Studio takes a few seconds in Chrome, so it runs while the baseline is fetched.
+        owner_job = pool.submit(get_owner_analytics, video)
 
-    owner = get_owner_analytics(video, login=args.login)
+        # The score is a nice-to-have; an API error here shouldn't hide the video's details.
+        baseline_cached = None
+        try:
+            samples, baseline_cached = get_channel_samples(youtube, video.channel_id, fresh=args.fresh)
+            outlier = compute_outlier(video, samples)
+        except Exception as e:
+            outlier = compute_outlier(video, [])
+            outlier["reason"] = f"Failed to fetch channel baseline: {e}"
+
+        owner = owner_job.result()
 
     if args.json:
         print(json.dumps(build_payload(video, outlier, baseline_cached, owner), indent=2, ensure_ascii=False))

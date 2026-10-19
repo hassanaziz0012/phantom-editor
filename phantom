@@ -75,7 +75,7 @@ show_usage() {
     echo "    print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
     echo "    summarize <video> [--model <model>] [--json]"
     echo "    comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
-    echo "    info <video> [--fresh] [--json] [--days <int>] [--login]"
+    echo "    info <video> [--fresh] [--json] [--days <int>]"
     echo ""
     echo "  shorts:"
     echo "    metadata create <folder_path> [arguments]"
@@ -373,7 +373,7 @@ case "$COMMAND" in
             echo "       phantom yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
             echo "       phantom yt summarize <video> [--model <model>] [--json]"
             echo "       phantom yt comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
-            echo "       phantom yt info <video> [--fresh] [--json] [--days <int>] [--login]"
+            echo "       phantom yt info <video> [--fresh] [--json] [--days <int>]"
             exit 1
         fi
         ;;
