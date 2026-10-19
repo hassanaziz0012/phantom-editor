@@ -5,11 +5,15 @@ YouTube Video Info
 Shows quick details about any YouTube video: a direct thumbnail URL, basic stats,
 and an outlier score (how its views compare to the channel's recent median).
 
+For videos on your own channel it also shows owner-only analytics (impressions, CTR,
+views, watch time) as lifetime totals and day by day. That needs a one-time OAuth
+consent: run with --login once.
+
 The channel baseline (its last 50 uploads) is cached in youtube_api/cache/baselines.json
 for 24 hours, so repeat lookups on the same channel cost a single API call.
 
 Usage:
-    phantom yt info <video_url_or_id> [--fresh] [--json]
+    phantom yt info <video_url_or_id> [--fresh] [--json] [--days N] [--login]
 """
 
 import argparse
@@ -26,6 +30,7 @@ root_dir = str(Path(__file__).resolve().parent.parent)
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+from youtube_api import analytics as yt_analytics
 from youtube_api.fetch_videos import fetch_video_details
 from youtube_api.models import Video
 from youtube_api.utils import (
@@ -43,6 +48,7 @@ BASELINE_TTL        = timedelta(hours=24)
 BASELINE_SAMPLE     = 50                  # Recent uploads fetched per channel (one API page)
 MIN_VIDEO_AGE       = timedelta(days=14)  # Younger videos haven't settled, so they're left out of the baseline
 MIN_SAMPLE_SIZE     = 5
+DEFAULT_DAILY_ROWS  = 28                  # Days of the daily analytics table shown in text output
 
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -84,6 +90,19 @@ def _format_duration(seconds: Optional[int]) -> str:
 
 def _format_count(value: Optional[int]) -> str:
     return f"{value:,}" if value is not None else "hidden"
+
+
+def _format_metric(value: Optional[int]) -> str:
+    return f"{value:,}" if value is not None else "-"
+
+
+def _format_ctr(value: Optional[float]) -> str:
+    # The Analytics API reports CTR as a percentage already (4.2 means 4.2%).
+    return f"{value:.1f}%" if value is not None else "-"
+
+
+def _format_hours(minutes: Optional[float]) -> str:
+    return f"{minutes / 60:,.1f}h" if minutes is not None else "-"
 
 
 # ── Baseline cache ────────────────────────────────────────────────────────────
@@ -210,7 +229,7 @@ def compute_outlier(video: Video, samples: list[dict]) -> dict:
 
 # ── Output ────────────────────────────────────────────────────────────────────
 
-def build_payload(video: Video, outlier: dict, baseline_cached: Optional[bool]) -> dict:
+def build_payload(video: Video, outlier: dict, baseline_cached: Optional[bool], owner: dict) -> dict:
     duration_seconds = parse_iso8601_duration(video.duration)
     return {
         "video_id": video.video_id,
@@ -226,10 +245,11 @@ def build_payload(video: Video, outlier: dict, baseline_cached: Optional[bool]) 
         "like_count": video.like_count,
         "comment_count": video.comment_count,
         "outlier": {**outlier, "baseline_cached": baseline_cached},
+        "owner_analytics": owner,
     }
 
 
-def print_human(video: Video, outlier: dict) -> None:
+def print_human(video: Video, outlier: dict, owner: dict, daily_rows: int) -> None:
     duration_seconds = parse_iso8601_duration(video.duration)
     kind = "Short" if _is_short(duration_seconds) else _format_duration(duration_seconds)
 
@@ -261,6 +281,92 @@ def print_human(video: Video, outlier: dict) -> None:
     row("Thumbnail", f"{CYAN}{video.thumbnail_url}{RESET}")
     row("URL", f"{CYAN}{video.url}{RESET}")
     print()
+    print_owner_analytics(owner, daily_rows)
+
+
+def print_owner_analytics(owner: dict, daily_rows: int) -> None:
+    status = owner["status"]
+    if status == "not_owner":
+        return
+    if status != "ok":
+        print(f"  {DIM}Owner analytics: {owner['reason']}{RESET}")
+        print()
+        return
+
+    data = owner["data"]
+    totals = data["totals"]
+
+    def row(label: str, value: str) -> None:
+        print(f"  {DIM}{label:<13}{RESET}{value}")
+
+    print(f"  {BOLD}Your analytics{RESET} {DIM}({data['start_date']} to {data['end_date']}, "
+          f"lags ~2 days behind){RESET}")
+    if data["reach_job_created"]:
+        row("", f"{YELLOW}Started YouTube's reach reports; impressions and CTR show up in about 2 days.{RESET}")
+    elif data["reach_start_date"] and data["reach_start_date"] > data["start_date"]:
+        row("", f"{YELLOW}Impressions and CTR only cover {data['reach_start_date']} onward "
+                f"(older reports had expired).{RESET}")
+    if not totals:
+        row("", f"{DIM}No analytics data yet.{RESET}")
+        print()
+        return
+
+    row("Impressions", f"{BOLD}{_format_metric(totals.get('impressions'))}{RESET}")
+    row("CTR", f"{BOLD}{_format_ctr(totals.get('ctr'))}{RESET}")
+    row("Views", _format_metric(totals.get("views")))
+    row("Watch time", _format_hours(totals.get("minutes_watched")))
+    row("Avg view", (
+        f"{_format_duration(totals.get('avg_view_duration_seconds'))} "
+        f"{DIM}({totals.get('avg_view_percentage', 0):.1f}% of the video){RESET}"
+    ))
+    row("Subscribers", f"+{totals.get('subscribers_gained', 0):,} / -{totals.get('subscribers_lost', 0):,}")
+    print()
+
+    daily = data["daily"]
+    if not daily:
+        return
+    shown = daily if daily_rows <= 0 else daily[-daily_rows:]
+    print(f"  {DIM}{'Day':<12}{'Impressions':>12}{'CTR':>8}{'Views':>9}{'Watch':>9}{'Subs':>7}{RESET}")
+    for d in shown:
+        net_subs = (
+            f"{d['subscribers_gained'] - d['subscribers_lost']:+}" if "subscribers_gained" in d else "-"
+        )
+        print(
+            f"  {d['day']:<12}"
+            f"{_format_metric(d.get('impressions')):>12}"
+            f"{_format_ctr(d.get('ctr')):>8}"
+            f"{_format_metric(d.get('views')):>9}"
+            f"{_format_hours(d.get('minutes_watched')):>9}"
+            f"{net_subs:>7}"
+        )
+    if len(shown) < len(daily):
+        print(f"  {DIM}Showing the last {len(shown)} of {len(daily)} days; --days 0 shows all.{RESET}")
+    print()
+
+
+# ── Owner analytics ───────────────────────────────────────────────────────────
+
+def get_owner_analytics(video: Video, login: bool) -> dict:
+    """
+    Owner-only analytics for the video, or a status explaining why there are none:
+    "ok", "not_owner", "not_authorized", or "error".
+    """
+    try:
+        creds = yt_analytics.get_credentials(login=login)
+    except yt_analytics.AnalyticsNotAuthorized:
+        return {"status": "not_authorized",
+                "reason": "run with --login once to see impressions and CTR for your own videos."}
+    except Exception as e:
+        return {"status": "error", "reason": f"Failed to authorize: {e}"}
+
+    try:
+        my_channel_id = yt_analytics.get_my_channel_id(creds)
+        if my_channel_id != video.channel_id:
+            return {"status": "not_owner"}
+        data = yt_analytics.fetch_video_analytics(creds, my_channel_id, video.video_id, video.published_at)
+    except Exception as e:
+        return {"status": "error", "reason": f"Failed to fetch analytics: {e}"}
+    return {"status": "ok", "data": data}
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -282,6 +388,18 @@ def main() -> None:
         "--json",
         action="store_true",
         help="Output as JSON instead of human-readable text.",
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=DEFAULT_DAILY_ROWS,
+        help=f"Days of your daily analytics to show (default {DEFAULT_DAILY_ROWS}, 0 for all since publish). "
+             "JSON output always includes every day.",
+    )
+    parser.add_argument(
+        "--login",
+        action="store_true",
+        help="Authorize YouTube Analytics in the browser (once) to see impressions and CTR on your own videos.",
     )
     args = parser.parse_args()
 
@@ -312,10 +430,12 @@ def main() -> None:
         outlier = compute_outlier(video, [])
         outlier["reason"] = f"Failed to fetch channel baseline: {e}"
 
+    owner = get_owner_analytics(video, login=args.login)
+
     if args.json:
-        print(json.dumps(build_payload(video, outlier, baseline_cached), indent=2, ensure_ascii=False))
+        print(json.dumps(build_payload(video, outlier, baseline_cached, owner), indent=2, ensure_ascii=False))
     else:
-        print_human(video, outlier)
+        print_human(video, outlier, owner, args.days)
 
 
 if __name__ == "__main__":
