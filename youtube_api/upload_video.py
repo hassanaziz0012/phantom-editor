@@ -304,6 +304,7 @@ def main():
     parser = argparse.ArgumentParser(description="Upload a video to YouTube.")
     parser.add_argument("video_path", help="Path to the .mp4 file to upload.")
     parser.add_argument("--skip-socials", action="store_true", help="Skip sharing the video on social platforms.")
+    parser.add_argument("--skip-email", action="store_true", help="Skip sending the email broadcast.")
     args = parser.parse_args()
 
     video_path = Path(args.video_path).resolve()
@@ -396,26 +397,27 @@ def main():
             print(f"⚠️  Substack note step failed or browser closed: {e}")
             print("⏭  Moving on gracefully...")
 
-    # Send email broadcast
-    title = metadata.get("title", video_path.stem)
-    description = metadata.get("description", "")
-    resend_script = repo_root / "emails" / "resend_broadcast.py"
+    if not args.skip_email:
+        # Send email broadcast
+        title = metadata.get("title", video_path.stem)
+        description = metadata.get("description", "")
+        resend_script = repo_root / "emails" / "resend_broadcast.py"
 
-    print(f"\n📧 Sending email broadcast for '{title}'...")
-    subprocess.run(
-        [
-            sys.executable,
-            str(resend_script),
-            "--title",
-            title,
-            "--description",
-            description,
-            "--url",
-            share_url,
-        ],
-        check=True,
-    )
-    print("✅ Email broadcast sent!")
+        print(f"\n📧 Sending email broadcast for '{title}'...")
+        subprocess.run(
+            [
+                sys.executable,
+                str(resend_script),
+                "--title",
+                title,
+                "--description",
+                description,
+                "--url",
+                share_url,
+            ],
+            check=True,
+        )
+        print("✅ Email broadcast sent!")
 
     print("\n🎉 All done!")
 
