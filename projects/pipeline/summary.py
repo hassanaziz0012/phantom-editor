@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pipeline.common import to_float
+from pipeline.cuts import format_cut
 
 # Audio-review confidence below which a flag is called out as borderline.
 BORDERLINE_CONFIDENCE = 0.25
@@ -61,6 +62,8 @@ class RunSummary:
     resolution: str  # e.g. "1920x1080"
     fps: float
     final_duration: float = 0.0
+    # Raw mode: ranges removed via cuts.txt.
+    cuts: list[tuple[float, float]] = field(default_factory=list)
     # Keyed by step number so the report keeps pipeline order even though the
     # background steps finish out of order.
     steps: dict[int, StepRecord] = field(default_factory=dict)
@@ -149,10 +152,14 @@ def write_summary(summary: RunSummary, review_step_index: int, output_dir: Path)
     else:
         review_body = "\n".join(_review_lines(summary)) or "none"
 
+    cuts_line = ""
+    if summary.cuts:
+        cuts_line = f"Cuts (cuts.txt): {', '.join(format_cut(c) for c in summary.cuts)}\n"
+
     md = f"""# phantom pipeline: {summary.project_title}
 Mode: {summary.mode}, {summary.bgm_track or "no BGM"}
 Input: {summary.raw_input_filename} ({summary.resolution}, {fps_str}fps) -> final.mp4 ({format_timestamp(summary.final_duration)})
-{steps_line}
+{cuts_line}{steps_line}
 
 ## Review flags
 {review_body}

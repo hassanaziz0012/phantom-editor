@@ -9,6 +9,7 @@ from utils import get_video_info, print_error, print_info, print_success, print_
 
 from pipeline.common import PipelineError
 from pipeline.context import Outputs, PipelineContext, Scripts
+from pipeline.cuts import CUTS_FILENAME, load_cuts
 from pipeline.runner import PipelineRunner, plan_steps
 from pipeline.status import confirm_execution, print_overview
 from pipeline.steps import REVIEW_STEP, build_steps
@@ -113,6 +114,14 @@ def build_context(args: argparse.Namespace) -> PipelineContext:
         resolution=f"{video_info.width}x{video_info.height}",
         fps=video_info.fps,
     )
+    cuts_file = video_dir / CUTS_FILENAME
+    if not cuts_file.is_file():
+        cuts_file = None
+    elif not raw_mode:
+        print_warning(f"{CUTS_FILENAME} found, but manual cuts only apply in raw mode (--raw). Ignoring it.")
+        cuts_file = None
+    if cuts_file is not None:
+        summary.cuts = load_cuts(cuts_file, video_info.duration)
     return PipelineContext(
         args=args,
         raw_mode=raw_mode,
@@ -124,6 +133,8 @@ def build_context(args: argparse.Namespace) -> PipelineContext:
         scripts=Scripts.locate(),
         summary=summary,
         force=args.force,
+        cuts_file=cuts_file,
+        cuts=summary.cuts,
     )
 
 

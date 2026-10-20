@@ -1,7 +1,7 @@
 """State shared by every step of one pipeline run."""
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from utils import VideoInfo
@@ -80,6 +80,9 @@ class PipelineContext:
     force: bool = False
     # Raw mode: speech intervals detected in Step 2, reused by the Step 4 encode.
     speech_intervals: list[tuple[float, float]] | None = None
+    # Raw mode: the project's cuts.txt (if any) and the ranges it removes.
+    cuts_file: Path | None = None
+    cuts: list[tuple[float, float]] = field(default_factory=list)
 
     @property
     def needs_downscale(self) -> bool:

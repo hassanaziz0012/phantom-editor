@@ -11,6 +11,9 @@ so each speech interval keeps exactly the same length in both streams and the
 cuts cannot drift apart. (The concat demuxer was tried here and dropped: its
 inpoint seeks land on the previous keyframe, which on OBS's 4 s GOP leaked the
 lead-in into the output and shifted every cut.)
+
+Ranges listed in the project's cuts.txt (bad takes) are removed from the speech
+intervals before snapping, so they are cut by this same encode.
 """
 
 from utils import VideoQCCollector, print_info, print_warning, run_ffmpeg_with_progress
@@ -18,6 +21,7 @@ from trim_silences import get_silence_trim_expressions, get_speech_intervals
 
 from pipeline.common import PipelineError, is_valid_file, require_output
 from pipeline.context import PipelineContext
+from pipeline.cuts import subtract_cuts
 from pipeline.ffmpeg import AAC_ARGS, X264_ARGS, ffmpeg_cmd, resolve_bgm_path
 from pipeline.summary import VideoFlag
 
@@ -34,12 +38,14 @@ INLINE_QC_FILTER = "scale=320:-2:flags=fast_bilinear,blackdetect=d=0.1:pic_th=0.
 
 
 def _detect_speech(ctx: PipelineContext) -> list[tuple[float, float]]:
-    """Silero VAD speech intervals, snapped to the 1/30 s video frame grid."""
+    """Silero VAD speech intervals minus the manual cuts, snapped to the 1/30 s video frame grid."""
     snapped = []
-    for start, end in get_speech_intervals(ctx.main_video):
+    for start, end in subtract_cuts(get_speech_intervals(ctx.main_video), ctx.cuts):
         first, last = round(start * FPS), round(end * FPS)
         if last > first:
             snapped.append((first / FPS, last / FPS))
+    if ctx.cuts and not snapped:
+        raise PipelineError(f"{ctx.cuts_file.name} removes all of the speech")
     return snapped
 
 
@@ -57,12 +63,24 @@ def _select_expr(intervals: list[tuple[float, float]]) -> str:
     return get_silence_trim_expressions([(s - half, e - half) for s, e in intervals])[0]
 
 
+def extract_speech_skip_reason(ctx: PipelineContext, force: bool) -> str | None:
+    """Skip Step 2 when raw-audio.wav exists and cuts.txt has not changed since."""
+    output = ctx.outputs.step2
+    if force or not is_valid_file(output):
+        return None
+    if ctx.cuts_file is not None and ctx.cuts_file.stat().st_mtime > output.stat().st_mtime:
+        return None
+    return f"already complete -> {output.name}"
+
+
 def extract_speech(ctx: PipelineContext) -> None:
     """Step 2: detect speech with Silero VAD and extract just that audio (no video decode)."""
     print_info("Analyzing audio for speech intervals with Silero VAD...")
     intervals = _detect_speech(ctx)
     ctx.speech_intervals = intervals
     print_info(f"Detected {len(intervals)} speech intervals.")
+    if ctx.cuts:
+        print_info(f"Removed {len(ctx.cuts)} manual cut(s) from {ctx.cuts_file.name}.")
     if not intervals:
         print_warning("No speech detected. Extracting the full audio track.")
 

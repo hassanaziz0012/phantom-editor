@@ -196,9 +196,20 @@ It operates in two modes:
 | 6 | Review (`audio_review.py`, `video_inspector.py`) | Audio review only (black frames were checked in Step 4) | Audio review + video inspector |
 | 7 | Metadata (`auto_create_metadata.py`) | Background thread, overlapping Step 6 | same |
 
+### Manual Cuts (Raw Mode)
+
+To cut bad takes, put a `cuts.txt` next to the raw video with one `START-END` range per line, on the raw recording's timeline (`MM:SS` or `HH:MM:SS`, fractional seconds allowed, `#` comments ignored):
+
+```text
+02:05-02:17
+06:30-06:37.5
+```
+
+The ranges are removed from the speech intervals before Steps 2 and 4 cut, so they cost no extra encode. They are listed in the pre-run overview and in `summary.md`. A malformed line stops the run before anything is processed. Chapter timestamps come from `trimmed.srt` (transcribed from `final.mp4`), so they follow the cuts; the Step 1 captions used for the description still include the cut takes.
+
 ### Smart Resumption
 
-A step is skipped when its output file already exists and is valid. Once any step really runs, every later step re-runs too, since its inputs changed. The review (Step 6) runs only when something upstream ran. Pass `--force` to re-run everything.
+A step is skipped when its output file already exists and is valid. In raw mode, Step 2 also re-runs when `cuts.txt` is newer than `raw-audio.wav`. Once any step really runs, every later step re-runs too, since its inputs changed. The review (Step 6) runs only when something upstream ran. Pass `--force` to re-run everything.
 
 ### Code Layout (`projects/pipeline/`)
 
@@ -208,6 +219,7 @@ A step is skipped when its output file already exists and is valid. Once any ste
 | `runner.py` | `Step` definition and the runner: skipping, timing, background steps, failure attribution |
 | `steps/__init__.py` | The step list for each mode (names, outputs, background/ordering) |
 | `steps/*.py` | One module per step (`raw.py` and `webcam.py` hold the mode-specific Steps 2 and 4) |
+| `cuts.py` | Parsing `cuts.txt` and removing its ranges from the speech intervals |
 | `context.py` | `PipelineContext`, output paths and external script paths |
 | `status.py` | Pre-run overview and confirmation prompt |
 | `summary.py` | `RunSummary`, review flags and the `summary.md` report |

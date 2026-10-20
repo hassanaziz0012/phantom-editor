@@ -27,7 +27,7 @@ def build_steps(ctx: PipelineContext) -> list[Step]:
         step2 = Step(
             2, "Speech Extraction", "Speech Extraction (Silero VAD + Audio-Only Trim)",
             "Extract speech (Silero VAD) -> raw-audio.wav",
-            raw.extract_speech, outputs=lambda o: (o.step2,),
+            raw.extract_speech, skip_check=raw.extract_speech_skip_reason,
         )
         step4 = Step(
             4, "Final Encode & Multiplex", "Final Encode & Multiplex (Single Pass)",
