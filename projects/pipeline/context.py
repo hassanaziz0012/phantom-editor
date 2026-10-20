@@ -17,6 +17,8 @@ class Outputs:
 
     srt: Path
     srt_1word: Path
+    # Captions of final.mp4 (silences and cuts removed), for the metadata step.
+    trimmed_srt: Path
     # Raw mode: raw-audio.wav (trimmed speech audio).
     # Webcam mode: after-trim-silences.mp4 (masked + trimmed video).
     step2: Path
@@ -30,6 +32,7 @@ class Outputs:
         return cls(
             srt=video_dir / f"{stem}.srt",
             srt_1word=video_dir / f"{stem}-1word.srt",
+            trimmed_srt=video_dir / "trimmed.srt",
             step2=video_dir / ("raw-audio.wav" if raw_mode else "after-trim-silences.mp4"),
             processed_audio=video_dir / "processed-audio.wav",
             final=video_dir / f"final{main_video.suffix or '.mp4'}",

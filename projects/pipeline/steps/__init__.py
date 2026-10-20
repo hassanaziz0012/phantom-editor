@@ -15,10 +15,11 @@ REVIEW_STEP = 6
 def build_steps(ctx: PipelineContext) -> list[Step]:
     """Steps in execution order.
 
-    Step 7 (metadata) is listed before Step 6 (review): it only needs the
-    captions, so it starts in the background and its LLM call overlaps the
-    review. Step 1 also runs in the background unless Step 2 needs the
-    captions to find the "webcam start/stop" voice commands.
+    Step 7 (metadata) is listed before Step 6 (review): it only needs
+    final.mp4 (which it transcribes into trimmed.srt), so it starts in the
+    background and its transcription and LLM calls overlap the review. Step 1
+    also runs in the background unless Step 2 needs the captions to find the
+    "webcam start/stop" voice commands.
     """
     args = ctx.args
     captions_needed_by_step2 = not ctx.raw_mode and not args.all
@@ -67,9 +68,9 @@ def build_steps(ctx: PipelineContext) -> list[Step]:
         ),
         Step(
             7, "Auto Create Metadata", "Generate Project Metadata",
-            "Generate project metadata -> metadata.json",
+            "Transcribe final video + generate project metadata -> metadata.json",
             create_metadata, outputs=lambda o: (o.metadata,), invalidates_downstream=False,
-            background=True, waits_for=(1,),
+            background=True,
         ),
         Step(
             REVIEW_STEP, "Audio & Video Review", "Review Final Video (Audio & Video Inspection)",

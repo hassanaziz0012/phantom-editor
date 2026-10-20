@@ -194,7 +194,7 @@ It operates in two modes:
 | 4 | Final output | Single-pass encode + mux (+ BGM mixed inline, black-frame QC inline) -> `final.mp4` | Remux processed audio (+ BGM via `add_bgm_to_video.sh`) -> `final.mp4` |
 | 5 | Verify | Structural check that `final.mp4` is not truncated or stuck on one frame | same |
 | 6 | Review (`audio_review.py`, `video_inspector.py`) | Audio review only (black frames were checked in Step 4) | Audio review + video inspector |
-| 7 | Metadata (`auto_create_metadata.py`) | Background thread, overlapping Step 6 | same |
+| 7 | Metadata (`auto_create_metadata.py`) | Transcribes `final.mp4` -> `trimmed.srt`, then generates everything from it; background thread, overlapping Step 6 | same |
 
 ### Manual Cuts (Raw Mode)
 
@@ -205,7 +205,7 @@ To cut bad takes, put a `cuts.txt` next to the raw video with one `START-END` ra
 06:30-06:37.5
 ```
 
-The ranges are removed from the speech intervals before Steps 2 and 4 cut, so they cost no extra encode. They are listed in the pre-run overview and in `summary.md`. A malformed line stops the run before anything is processed. Chapter timestamps come from `trimmed.srt` (transcribed from `final.mp4`), so they follow the cuts; the Step 1 captions used for the description still include the cut takes.
+The ranges are removed from the speech intervals before Steps 2 and 4 cut, so they cost no extra encode. They are listed in the pre-run overview and in `summary.md`. A malformed line stops the run before anything is processed. All metadata (description, tweet, chapters) is generated from `trimmed.srt`, so cut takes never reach it.
 
 ### Smart Resumption
 

@@ -142,7 +142,7 @@ def existing_output_names(ctx: PipelineContext) -> list[str]:
     o = ctx.outputs
     candidates = [
         o.srt, o.srt_1word, o.step2, o.processed_audio, o.final, o.metadata,
-        ctx.video_dir / "trimmed.srt", ctx.video_dir / "trimmed-1word.srt",
+        o.trimmed_srt, ctx.video_dir / "trimmed-1word.srt",
     ]
     return list(dict.fromkeys(p.name for p in candidates if p.exists()))
 
