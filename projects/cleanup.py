@@ -16,6 +16,7 @@ YT_ARCHIVE_DIR = Path.home() / "Videos" / "YT Archive"
 
 FILES_TO_ARCHIVE = [
     "script.excalidraw",
+    "outline.md",
     "metadata.json",
 ]
 
