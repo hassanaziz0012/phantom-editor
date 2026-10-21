@@ -72,7 +72,7 @@ def create_video_project(project_name: str, base_dir: Path = DEFAULT_YT_PROJECTS
         print_success(f"✓ Created new YouTube project folder:")
         print(f"  {COLOR_BOLD}{project_dir}{COLOR_RESET}\n")
         print(f"{COLOR_YELLOW}Next steps:{COLOR_RESET}")
-        print(f"  1. Script the video (.excalidraw presentation) in: {project_dir}")
+        print(f"  1. Script the video (.excalidraw presentation + outline.md with # Hook & # Outline sections) in: {project_dir}")
         print(f"  2. Record raw footage into: {project_dir}")
         print(f"  3. Run pipeline processing: `phantom projects process`")
         return project_dir
