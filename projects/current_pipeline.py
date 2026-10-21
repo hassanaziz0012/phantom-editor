@@ -5,8 +5,9 @@ Scans ~/Videos/YT Projects (or a custom directory) and displays a summary of
 video projects, their current stage in the content pipeline, and the next step required.
 
 Stages:
-  1. New               - New project folder created, needs video script (.excalidraw).
-  2. Scripted          - Script created (.excalidraw), needs raw video recordings.
+  1. New               - New project folder created, needs video script (.excalidraw) and outline.md.
+  2. Scripted          - Script (.excalidraw) and outline.md (filled-in "# Hook" & "# Outline"
+                         sections) created, needs raw video recordings.
   3. Recorded          - Raw footage present, needs Phantom processing (to-review.mp4).
   4. Processed         - Phantom processing complete (to-review.mp4), needs manual review (final.mp4).
   5. Reviewed          - Manual review complete (final.mp4), needs metadata & thumbnail.
@@ -83,6 +84,8 @@ COLOR_WHITE = "\033[97m"
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 GENERATED_PREFIXES = ("to-review", "final", "after-", "temp", "preview", "processed-audio")
+OUTLINE_FILENAME = "outline.md"
+OUTLINE_SECTIONS = ("Hook", "Outline")
 
 
 def is_valid_yt_url(url: str) -> bool:
@@ -122,6 +125,8 @@ class VideoProject:
     name: str
     path: Path
     script_files: List[Path] = field(default_factory=list)
+    outline_file: Optional[Path] = None
+    outline_missing_sections: List[str] = field(default_factory=list)
     raw_files: List[Path] = field(default_factory=list)
     to_review_file: Optional[Path] = None
     final_file: Optional[Path] = None
@@ -137,6 +142,14 @@ class VideoProject:
     next_step: str = ""
     status_color: str = COLOR_RESET
 
+    @property
+    def has_outline(self) -> bool:
+        return self.outline_file is not None and not self.outline_missing_sections
+
+    @property
+    def is_scripted(self) -> bool:
+        return len(self.script_files) > 0 and self.has_outline
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -146,6 +159,8 @@ class VideoProject:
             "next_step": self.next_step,
             "has_script": len(self.script_files) > 0,
             "script_files": [f.name for f in self.script_files],
+            "has_outline": self.has_outline,
+            "outline_missing_sections": self.outline_missing_sections,
             "raw_files": [f.name for f in self.raw_files],
             "to_review_file": self.to_review_file.name if self.to_review_file else None,
             "final_file": self.final_file.name if self.final_file else None,
@@ -167,6 +182,20 @@ def is_script_file(file_path: Path) -> bool:
     if name_lower.endswith(".excalidraw") or name_lower.endswith(".excalidraw.json") or name_lower.endswith(".excalidraw.svg"):
         return True
     return False
+
+
+def missing_outline_sections(outline_file: Path) -> List[str]:
+    """Return the OUTLINE_SECTIONS that outline.md lacks a "# <Section>" heading for, or that have no text."""
+    sections = {}
+    current = None
+    for line in outline_file.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("# "):
+            current = line[2:].strip().lower()
+            sections.setdefault(current, False)
+        # Blank lines, "---" separators and empty bullets don't count as text.
+        elif current is not None and not re.fullmatch(r"[-*_\s]*", line):
+            sections[current] = True
+    return [name for name in OUTLINE_SECTIONS if not sections.get(name.lower())]
 
 
 def is_raw_video_file(file_path: Path) -> bool:
@@ -390,6 +419,12 @@ def analyze_project(project_dir: Path) -> VideoProject:
                     project.performance_check = meta.raw_data[PERFORMANCE_CHECK_KEY]
             except Exception:
                 pass
+        elif item.name.lower() == OUTLINE_FILENAME:
+            project.outline_file = item
+            try:
+                project.outline_missing_sections = missing_outline_sections(item)
+            except OSError:
+                project.outline_missing_sections = list(OUTLINE_SECTIONS)
         elif is_script_file(item):
             project.script_files.append(item)
         elif is_thumbnail_file(item):
@@ -478,18 +513,26 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.next_step = "Process video using Phantom (`phantom process` or `process_video.py`)"
         project.status_color = COLOR_MAGENTA
 
-    # Stage 2: Scripted (.excalidraw file present, no raw video files)
-    elif len(project.script_files) > 0:
+    # Stage 2: Scripted (.excalidraw file and filled-in outline.md present, no raw video files)
+    elif project.is_scripted:
         project.stage_num = 2
         project.stage_name = "Scripted"
         project.next_step = "Record raw footage (webcam & screencast files)"
         project.status_color = COLOR_BLUE
 
-    # Stage 1: New (No .excalidraw script or raw video files present)
+    # Stage 1: New (No raw video files, and the .excalidraw script or a filled-in outline.md is missing)
     else:
         project.stage_num = 1
         project.stage_name = "New"
-        project.next_step = "Script the video (create .excalidraw presentation with notes & diagrams)"
+        todo = []
+        if not project.script_files:
+            todo.append("create .excalidraw presentation with notes & diagrams")
+        if not project.outline_file:
+            todo.append(f"write {OUTLINE_FILENAME} with {' & '.join(f'# {s}' for s in OUTLINE_SECTIONS)} sections")
+        elif project.outline_missing_sections:
+            sections = " & ".join(f"# {s}" for s in project.outline_missing_sections)
+            todo.append(f"fill in the {sections} section(s) of {OUTLINE_FILENAME}")
+        project.next_step = f"Script the video ({'; '.join(todo)})"
         project.status_color = COLOR_GRAY
 
     return project
@@ -533,12 +576,13 @@ def render_stage_bar(proj: VideoProject) -> str:
                 is_complete = (
                     proj.stage_num > 1
                     or len(proj.script_files) > 0
+                    or proj.outline_file is not None
                     or len(proj.raw_files) > 0
                     or proj.to_review_file is not None
                     or proj.final_file is not None
                 )
             elif idx == 2:
-                is_complete = len(proj.script_files) > 0 or proj.stage_num > 2
+                is_complete = proj.is_scripted or proj.stage_num > 2
             elif idx == 3:
                 is_complete = (
                     proj.stage_num > 3
@@ -604,6 +648,14 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         else:
             script_status = f"{COLOR_GRAY}✗ script (.excalidraw){COLOR_RESET}"
 
+        if proj.has_outline:
+            outline_status = f"{COLOR_GREEN}✓ {proj.outline_file.name}{COLOR_RESET}"
+        elif proj.outline_file:
+            missing = ", ".join(f"# {s}" for s in proj.outline_missing_sections)
+            outline_status = f"{COLOR_YELLOW}✗ {proj.outline_file.name} (missing/empty: {missing}){COLOR_RESET}"
+        else:
+            outline_status = f"{COLOR_GRAY}✗ {OUTLINE_FILENAME}{COLOR_RESET}"
+
         raw_info = f"{len(proj.raw_files)} raw file(s)" if proj.raw_files else "No raw files"
         to_rev_status = f"{COLOR_GREEN}✓ {proj.to_review_file.name}{COLOR_RESET}" if proj.to_review_file else f"{COLOR_GRAY}✗ to-review.mp4{COLOR_RESET}"
         final_status = f"{COLOR_GREEN}✓ {proj.final_file.name}{COLOR_RESET}" if proj.final_file else f"{COLOR_GRAY}✗ final.mp4{COLOR_RESET}"
@@ -626,7 +678,7 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         else:
             thumb_status = f"{COLOR_GRAY}✗ thumbnail{COLOR_RESET}"
 
-        print(f"   Files: [{script_status}] | [{raw_info}] | [{to_rev_status}] | [{final_status}] | [{meta_status}] | [{thumb_status}]")
+        print(f"   Files: [{script_status}] | [{outline_status}] | [{raw_info}] | [{to_rev_status}] | [{final_status}] | [{meta_status}] | [{thumb_status}]")
 
         if verbose and (proj.script_files or proj.raw_files or proj.thumbnail_files or proj.title):
             if proj.title:
