@@ -1,0 +1,1 @@
+For any YT video related tasks, you'll almost always have to run some `phantom` CLI command, such as `phantom yt upload` to upload a video. For organizing or processing videos, follow the `organize-recordings` skill file.
