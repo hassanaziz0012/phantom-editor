@@ -47,6 +47,7 @@ Automatic publishing and uploading scripts to distribute finalized content acros
 * 💼 **[LinkedIn](linkedin.md)**: Share posts and updates automatically.
 * 🧵 **[Threads](threads.md)**: Publish single posts and multi-part threads with image attachments.
 * 📝 **[Substack](substack.md)**: Post Substack Notes with optional images and video.
+* 👩‍💻 **[DEV Community](devto.md)**: Publish, schedule or draft dev.to posts from Markdown files.
 * 🤖 **[Reddit](reddit.md)**: Scrape posts/feeds, analyze community sentiment with Groq, and automate YouTube video promotion outreach.
 * 📱 **[Shorts Workflow](shorts.md)**: Multi-platform short-form video uploader and tracker.
 
