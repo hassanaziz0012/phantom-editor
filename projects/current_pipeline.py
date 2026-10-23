@@ -7,7 +7,8 @@ video projects, their current stage in the content pipeline, and the next step r
 Stages:
   1. New               - New project folder created, needs video script (.excalidraw) and outline.md.
   2. Scripted          - Script (.excalidraw) and outline.md (filled-in "# Hook" & "# Outline"
-                         sections) created, needs raw video recordings.
+                         sections, plus a [LIKE / SUBSCRIBE] marker for the engagement CTA)
+                         created, needs raw video recordings.
   3. Recorded          - Raw footage present, needs Phantom processing (to-review.mp4).
   4. Processed         - Phantom processing complete (to-review.mp4), needs manual review (final.mp4).
   5. Reviewed          - Manual review complete (final.mp4), needs metadata & thumbnail.
@@ -86,6 +87,9 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 GENERATED_PREFIXES = ("to-review", "final", "after-", "temp", "preview", "processed-audio")
 OUTLINE_FILENAME = "outline.md"
 OUTLINE_SECTIONS = ("Hook", "Outline")
+# Marks where in the video to ask viewers to like & subscribe; must appear somewhere in outline.md.
+OUTLINE_CTA_MARKER = "[LIKE / SUBSCRIBE]"
+OUTLINE_CTA_PATTERN = re.compile(r"\[\s*LIKE\s*/\s*SUBSCRIBE\s*\]", re.IGNORECASE)
 
 
 def is_valid_yt_url(url: str) -> bool:
@@ -127,6 +131,7 @@ class VideoProject:
     script_files: List[Path] = field(default_factory=list)
     outline_file: Optional[Path] = None
     outline_missing_sections: List[str] = field(default_factory=list)
+    outline_has_cta: bool = False
     raw_files: List[Path] = field(default_factory=list)
     to_review_file: Optional[Path] = None
     final_file: Optional[Path] = None
@@ -144,7 +149,7 @@ class VideoProject:
 
     @property
     def has_outline(self) -> bool:
-        return self.outline_file is not None and not self.outline_missing_sections
+        return self.outline_file is not None and not self.outline_missing_sections and self.outline_has_cta
 
     @property
     def is_scripted(self) -> bool:
@@ -161,6 +166,7 @@ class VideoProject:
             "script_files": [f.name for f in self.script_files],
             "has_outline": self.has_outline,
             "outline_missing_sections": self.outline_missing_sections,
+            "outline_has_cta": self.outline_has_cta,
             "raw_files": [f.name for f in self.raw_files],
             "to_review_file": self.to_review_file.name if self.to_review_file else None,
             "final_file": self.final_file.name if self.final_file else None,
@@ -185,17 +191,27 @@ def is_script_file(file_path: Path) -> bool:
 
 
 def missing_outline_sections(outline_file: Path) -> List[str]:
-    """Return the OUTLINE_SECTIONS that outline.md lacks a "# <Section>" heading for, or that have no text."""
+    """Return the OUTLINE_SECTIONS that outline.md lacks a "# <Section>" heading for, or that have no text.
+
+    Only "# <Section>" headings for OUTLINE_SECTIONS start a new section; any other "# " heading
+    (e.g. a title line inside the outline) counts as text of the current section.
+    """
+    section_names = {name.lower() for name in OUTLINE_SECTIONS}
     sections = {}
     current = None
     for line in outline_file.read_text(encoding="utf-8", errors="replace").splitlines():
-        if line.startswith("# "):
+        if line.startswith("# ") and line[2:].strip().lower() in section_names:
             current = line[2:].strip().lower()
             sections.setdefault(current, False)
         # Blank lines, "---" separators and empty bullets don't count as text.
         elif current is not None and not re.fullmatch(r"[-*_\s]*", line):
             sections[current] = True
     return [name for name in OUTLINE_SECTIONS if not sections.get(name.lower())]
+
+
+def has_outline_cta(outline_file: Path) -> bool:
+    """Check if outline.md contains the OUTLINE_CTA_MARKER anywhere (case and spacing are ignored)."""
+    return bool(OUTLINE_CTA_PATTERN.search(outline_file.read_text(encoding="utf-8", errors="replace")))
 
 
 def is_raw_video_file(file_path: Path) -> bool:
@@ -423,6 +439,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
             project.outline_file = item
             try:
                 project.outline_missing_sections = missing_outline_sections(item)
+                project.outline_has_cta = has_outline_cta(item)
             except OSError:
                 project.outline_missing_sections = list(OUTLINE_SECTIONS)
         elif is_script_file(item):
@@ -513,7 +530,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.next_step = "Process video using Phantom (`phantom process` or `process_video.py`)"
         project.status_color = COLOR_MAGENTA
 
-    # Stage 2: Scripted (.excalidraw file and filled-in outline.md present, no raw video files)
+    # Stage 2: Scripted (.excalidraw file and filled-in outline.md with the CTA marker present, no raw video files)
     elif project.is_scripted:
         project.stage_num = 2
         project.stage_name = "Scripted"
@@ -528,10 +545,16 @@ def analyze_project(project_dir: Path) -> VideoProject:
         if not project.script_files:
             todo.append("create .excalidraw presentation with notes & diagrams")
         if not project.outline_file:
-            todo.append(f"write {OUTLINE_FILENAME} with {' & '.join(f'# {s}' for s in OUTLINE_SECTIONS)} sections")
-        elif project.outline_missing_sections:
-            sections = " & ".join(f"# {s}" for s in project.outline_missing_sections)
-            todo.append(f"fill in the {sections} section(s) of {OUTLINE_FILENAME}")
+            todo.append(
+                f"write {OUTLINE_FILENAME} with {' & '.join(f'# {s}' for s in OUTLINE_SECTIONS)} sections"
+                f" and a {OUTLINE_CTA_MARKER} marker"
+            )
+        else:
+            if project.outline_missing_sections:
+                sections = " & ".join(f"# {s}" for s in project.outline_missing_sections)
+                todo.append(f"fill in the {sections} section(s) of {OUTLINE_FILENAME}")
+            if not project.outline_has_cta:
+                todo.append(f"add a {OUTLINE_CTA_MARKER} marker to {OUTLINE_FILENAME} where the viewer should be asked to engage")
         project.next_step = f"Script the video ({'; '.join(todo)})"
         project.status_color = COLOR_GRAY
 
@@ -651,7 +674,8 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         if proj.has_outline:
             outline_status = f"{COLOR_GREEN}✓ {proj.outline_file.name}{COLOR_RESET}"
         elif proj.outline_file:
-            missing = ", ".join(f"# {s}" for s in proj.outline_missing_sections)
+            missing = ", ".join([f"# {s}" for s in proj.outline_missing_sections]
+                                + ([] if proj.outline_has_cta else [OUTLINE_CTA_MARKER]))
             outline_status = f"{COLOR_YELLOW}✗ {proj.outline_file.name} (missing/empty: {missing}){COLOR_RESET}"
         else:
             outline_status = f"{COLOR_GRAY}✗ {OUTLINE_FILENAME}{COLOR_RESET}"
