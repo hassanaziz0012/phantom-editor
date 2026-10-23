@@ -96,6 +96,9 @@ show_usage() {
     echo "  linkedin:"
     echo "    post [<text>] [-f <file>] [-i <images>...] [--url <url>]"
     echo ""
+    echo "  devto:"
+    echo "    post <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
+    echo ""
     echo "  review:"
     echo "    inspect <video_path> [arguments]"
     echo "    audio <video_or_audio_path> [arguments]"
@@ -517,6 +520,17 @@ case "$COMMAND" in
         else
             echo "Unknown linkedin subcommand: $SUBCOMMAND"
             echo "Usage: phantom linkedin post [<text>] [-f <file>] [-i <images>...] [--url <url>]"
+            exit 1
+        fi
+        ;;
+    devto)
+        SUBCOMMAND="$1"
+        shift
+        if [ "$SUBCOMMAND" = "post" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/devto/post.py" "$@"
+        else
+            echo "Unknown devto subcommand: $SUBCOMMAND"
+            echo "Usage: phantom devto post <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
             exit 1
         fi
         ;;
