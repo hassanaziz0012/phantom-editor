@@ -40,6 +40,7 @@ show_usage() {
     echo "    desc [<project_path>] [arguments]"
     echo "    tweet [<project_path>] [arguments]"
     echo "    timestamps [<captions_srt_path>] [arguments]"
+    echo "    titles [<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>]"
     echo "    read [<project_or_video_path>] [--json]"
     echo "    manual <video_path>"
     echo "    recommend [<project_path>] [arguments]"
@@ -239,6 +240,8 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/auto_gen_tweet.py" "$@"
         elif [ "$SUBCOMMAND" = "timestamps" ] || [ "$SUBCOMMAND" = "generate-timestamps" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/generate_timestamps.py" "$@"
+        elif [ "$SUBCOMMAND" = "titles" ] || [ "$SUBCOMMAND" = "generate-titles" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/generate_titles.py" "$@"
         elif [ "$SUBCOMMAND" = "read" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/read_metadata.py" "$@"
         elif [ "$SUBCOMMAND" = "manual" ] || [ "$SUBCOMMAND" = "interactive" ]; then
@@ -257,6 +260,7 @@ case "$COMMAND" in
             echo "       phantom metadata desc [<project_path>] [arguments]"
             echo "       phantom metadata tweet [<project_path>] [arguments]"
             echo "       phantom metadata timestamps [<captions_srt_path>] [arguments]"
+            echo "       phantom metadata titles [<project_path>] [arguments]"
             echo "       phantom metadata read [<project_or_video_path>] [--json]"
             echo "       phantom metadata manual <video_path>"
             echo "       phantom metadata recommend [<project_path>] [arguments]"
