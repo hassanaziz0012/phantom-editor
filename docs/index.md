@@ -26,6 +26,11 @@ Automation scripts to handle video rendering, splitting, and effects.
 
 * **Main Scripts**: automated subtitle generation, rendering workflows, and timeline parsing.
 
+### 🎞️ [B-roll Templates](broll.md)
+Reusable HyperFrames B-roll clips timed to the video's word-level captions from a small cue file.
+
+* **Main Script**: `broll-templates/broll.py` (`phantom broll`)
+
 ### 🤖 [Filmora Automation](filmora-automation.md)
 Automating timeline composition and video editing workflows in Wondershare Filmora.
 
