@@ -8,6 +8,7 @@ If captions (.srt) are found, automatically generates:
 2. Promotional tweet template
 3. Video recommendations from channel archive
 4. Video chapters & timestamps
+5. Scored video title ideas
 """
 
 from __future__ import annotations
@@ -32,12 +33,14 @@ try:
     from metadata.auto_gen_tweet import generate_tweet_for_project
     from metadata.recommendations.recommend import recommend_videos_for_project
     from metadata.generate_timestamps import generate_timestamps_for_project
+    from metadata.generate_titles import generate_titles_for_project
 except ImportError:
     import utils  # noqa: E402
     from auto_gen_desc import generate_description_for_project  # noqa: E402
     from auto_gen_tweet import generate_tweet_for_project  # noqa: E402
     from recommendations.recommend import recommend_videos_for_project  # noqa: E402
     from generate_timestamps import generate_timestamps_for_project  # noqa: E402
+    from generate_titles import generate_titles_for_project  # noqa: E402
 
 
 T = TypeVar("T")
@@ -130,6 +133,7 @@ def auto_create_metadata(
     metadata.setdefault("tweetTemplate", "🎬 New video just dropped! {url}")
     metadata.setdefault("recommendations", metadata.get("recommendations", []))
     metadata.setdefault("timestamps", metadata.get("timestamps", []))
+    metadata.setdefault("titles", metadata.get("titles", []))
 
     # Write the base fields first: the generators below read the title from metadata.json
     save_metadata(metadata_path, metadata)
@@ -141,7 +145,7 @@ def auto_create_metadata(
             # Ensure BrowserLLM browser is ready before running parallel workers
             ensure_browserllm_ready()
 
-            # Define the 4 AI generation tasks
+            # Define the AI generation tasks
             def run_description() -> str | None:
                 return retry_with_backoff(
                     lambda: generate_description_for_project(captions_path, metadata_path=metadata_path),
@@ -179,11 +183,20 @@ def auto_create_metadata(
                     step_name="Timestamps generation",
                 )
 
+            def run_titles() -> list[dict[str, Any]] | None:
+                return retry_with_backoff(
+                    lambda: generate_titles_for_project(captions_path, metadata_path=metadata_path),
+                    max_retries=3,
+                    base_delay=2.0,
+                    step_name="Titles generation",
+                )
+
             # Prepare tasks to run
             tasks: dict[str, Callable[[], Any]] = {
                 "description": run_description,
                 "tweet": run_tweet,
                 "timestamps": run_timestamps,
+                "titles": run_titles,
             }
             if not skip_recommendations:
                 tasks["recommendations"] = run_recommendations
@@ -208,6 +221,8 @@ def auto_create_metadata(
                                 print(f"✓ [{task_name}] Generated {len(result)} recommendations.")
                             elif task_name == "timestamps":
                                 print(f"✓ [{task_name}] Generated {len(result)} timestamps.")
+                            elif task_name == "titles":
+                                print(f"✓ [{task_name}] Generated {len(result)} titles.")
                             else:
                                 print(f"✓ [{task_name}] Generated successfully.")
                         else:
@@ -225,10 +240,12 @@ def auto_create_metadata(
                 metadata["recommendations"] = results["recommendations"]
             if results.get("timestamps") is not None:
                 metadata["timestamps"] = results["timestamps"]
+            if results.get("titles") is not None:
+                metadata["titles"] = results["titles"]
 
         else:
             print("\n⚠️  No phrase-level .srt captions file found in project folder.")
-            print("   Skipping AI generation of description, tweet template, recommendations, and timestamps.")
+            print("   Skipping AI generation of description, tweet template, recommendations, timestamps, and titles.")
             print("   Run `phantom edit transcribe <video>` to generate captions first if needed.")
 
     formatted_json = save_metadata(metadata_path, metadata)
@@ -277,7 +294,7 @@ def main():
         "--skip-ai",
         action="store_true",
         default=False,
-        help="Skip AI generation of description, tweet template, recommendations, and timestamps.",
+        help="Skip AI generation of description, tweet template, recommendations, timestamps, and titles.",
     )
     parser.add_argument(
         "--skip-recommendations",
