@@ -20,6 +20,9 @@ phantom metadata timestamps [<captions_srt_path>] [arguments]
 # Inspect parsed metadata.json
 phantom metadata read [<project_or_video_path>] [--json]
 
+# Generate scored title ideas (writes titles.json + metadata.json "titles")
+phantom metadata titles [<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>]
+
 # Interactively create metadata manually
 phantom metadata manual <video_path>
 ```
@@ -33,6 +36,7 @@ Automatically creates or updates `metadata.json` in a YouTube video project fold
 1. Generating a concise, deslopified video description (`description`)
 2. Generating a promotional tweet template with `{url}` placeholder (`tweetTemplate`)
 3. Generating video recommendations from channel archive (`recommendations`)
+4. Generating scored title ideas (`titles`, plus the full response in `titles.json`)
 
 *Note: Timestamps/chapters are generated separately using `phantom metadata timestamps` after manual video review cuts are finalized.*
 
@@ -58,6 +62,13 @@ Analyzes video transcript cues and generates a promotional tweet template (<= 24
 Generates YouTube chapters and topics from phrase-level `.srt` captions using Claude via BrowserLLM. Automatically ensures the first chapter starts at `00:00` (`Introduction`) and saves the structured list to `metadata.json`.
 
 * **CLI Command**: `phantom metadata timestamps [<captions_srt_path>] [--metadata <path>]`
+
+---
+
+### [generate_titles.py](../metadata/generate_titles.py)
+Reads `trimmed.srt` and sends the timestamped transcript to Claude via BrowserLLM with the [`generate_video_titles.md`](../agentic/prompts/generate_video_titles.md) prompt. The prompt extracts the video's key facts, writes 25 titles across 6+ archetypes, scores each out of 16, and returns the 7 best. The full response (extracted facts, all 25 titles, flags) is saved to `titles.json` in the project folder; the ranked top titles (rank, title, archetype, scores, total, payoff timestamp, thumbnail text) are saved to the `titles` list in `metadata.json`. Does not change the `title` field.
+
+* **CLI Command**: `phantom metadata titles [<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>] [--metadata <path>]`
 
 ---
 
