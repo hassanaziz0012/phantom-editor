@@ -1,0 +1,412 @@
+<!doctype html>
+<!--
+  Big stat: one huge number that counts up like an odometer, with an optional kicker above,
+  a label underneath and a source line at the bottom. Opaque ground, hard cut in and out.
+
+  `value` is written the way it should read: "70%", "$3.4B", "19,000", "1.3 billion",
+  "200 req/hour", "5x". The first run of digits counts up (keeping its commas and decimals);
+  what comes before and after stays put. Short symbols ("$", "%", "B", "x", "+") are drawn at
+  full size, words ("billion", "req/hour") small on the same baseline.
+
+  Elastic length: the clip runs for the root's data-duration. Variables can't change it, so
+  the render wrapper patches data-duration="..." on #root in a temp copy; nothing else here
+  is timed. Fixed entrance (~1.3 s count) -> slow push-in hold -> last 6 frames still.
+
+  Theme: `theme` picks the dark or light palette. A colour variable left at its default
+  follows the theme; any other value overrides it in both themes.
+
+  Render one card:
+    hyperframes render -o stat.mp4 --variables '{"value":"$3.4B","label":"AI budget gone in four months"}'
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"value","type":"string","label":"Value (as it should read: 70%, $3.4B, 19,000, 1.3 billion)","default":"95%","maxLength":24},
+    {"id":"label","type":"string","label":"Label under the number","default":"of the weekly limit, gone by Wednesday","maxLength":90},
+    {"id":"kicker","type":"string","label":"Kicker above the number (optional)","default":"","placeholder":"Uber AI budget","maxLength":40},
+    {"id":"source","type":"string","label":"Source line (optional)","default":"","placeholder":"Source: Stack Overflow survey 2025","maxLength":90},
+    {"id":"count","type":"boolean","label":"Count up (off = the number just lands)","default":true},
+    {"id":"layout","type":"enum","label":"Layout","default":"center","options":[{"value":"center","label":"Centred"},{"value":"left","label":"Left-aligned"}]},
+    {"id":"theme","type":"enum","label":"Theme","default":"dark","options":[{"value":"dark","label":"Dark"},{"value":"light","label":"Light"}]},
+    {"id":"color-ground","type":"color","label":"Background (default follows theme)","default":"#050608"},
+    {"id":"color-ink","type":"color","label":"Label (default follows theme)","default":"#f2f4f7"},
+    {"id":"color-muted","type":"color","label":"Kicker & source (default follows theme)","default":"#8b929c"},
+    {"id":"color-accent","type":"color","label":"Number (default follows theme)","default":"#ff2d3d"},
+    {"id":"font","type":"enum","label":"Number & label font","default":"Inter","options":[
+      {"value":"Inter","label":"Inter"},
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Nunito","label":"Nunito"},
+      {"value":"Roboto","label":"Roboto"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"League Gothic","label":"League Gothic"},
+      {"value":"Archivo Black","label":"Archivo Black"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"},
+      {"value":"JetBrains Mono","label":"JetBrains Mono"},
+      {"value":"Space Mono","label":"Space Mono"}
+    ]},
+    {"id":"font-label","type":"enum","label":"Kicker & source font","default":"IBM Plex Mono","options":[
+      {"value":"IBM Plex Mono","label":"IBM Plex Mono"},
+      {"value":"JetBrains Mono","label":"JetBrains Mono"},
+      {"value":"Space Mono","label":"Space Mono"},
+      {"value":"Source Code Pro","label":"Source Code Pro"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Oswald","label":"Oswald"}
+    ]}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* The runtime owns the --color-* variables; the script resolves them against the theme into --bs-* */
+      :root {
+        --color-ground: #050608;
+        --color-ink: #f2f4f7;
+        --color-muted: #8b929c;
+        --color-accent: #ff2d3d;
+        --bs-ground: var(--color-ground);
+        --bs-ink: var(--color-ink);
+        --bs-muted: var(--color-muted);
+        --bs-accent: var(--color-accent);
+        --bs-font: "Inter";
+        --bs-font-label: "IBM Plex Mono";
+        --bs-track-num: -0.035em;
+        --bs-track-label: -0.025em;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--bs-ground);
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        background: var(--bs-ground);
+        font-family: var(--bs-font), sans-serif;
+      }
+      #card {
+        position: absolute;
+        inset: 0;
+      }
+      #bs-inner {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 96px 160px 150px;
+      }
+      #root.bs-left #bs-inner {
+        align-items: flex-start;
+        text-align: left;
+      }
+      #bs-kicker {
+        font-family: var(--bs-font-label), monospace;
+        font-size: 36px;
+        font-weight: 500;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--bs-muted);
+        margin-bottom: 12px;
+      }
+      #bs-kicker:empty,
+      #bs-source:empty {
+        display: none;
+      }
+      #bs-num {
+        font-size: 440px;
+        font-weight: 900;
+        line-height: 1;
+        white-space: nowrap;
+        color: var(--bs-accent);
+        font-variant-numeric: lining-nums tabular-nums;
+      }
+      /* Every part of the number is a 1em box aligned by its bottom edge, so they share one
+         baseline. Digit columns clip only vertically, so wide glyphs are never cut off. */
+      .bs-box {
+        display: inline-block;
+        height: 1em;
+        line-height: 1em;
+        vertical-align: bottom;
+        margin-right: var(--bs-track-num);
+      }
+      .bs-sep {
+        margin: 0 0.01em;
+      }
+      .bs-mask {
+        clip-path: inset(0 -0.5em);
+      }
+      .bs-col div {
+        height: 1em;
+      }
+      .bs-unit {
+        font-size: 0.3em;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        margin-left: 0.2em;
+      }
+      .bs-unit-pre {
+        margin-left: 0;
+        margin-right: 0.2em;
+      }
+      #bs-label {
+        max-width: 1500px;
+        margin-top: 28px;
+        font-size: 88px;
+        font-weight: 800;
+        line-height: 1.06;
+        letter-spacing: var(--bs-track-label);
+        color: var(--bs-ink);
+      }
+      #bs-source {
+        position: absolute;
+        left: 160px;
+        right: 160px;
+        bottom: 96px;
+        font-family: var(--bs-font-label), monospace;
+        font-size: 30px;
+        font-weight: 400;
+        letter-spacing: 0.04em;
+        color: var(--bs-muted);
+        text-align: center;
+      }
+      #root.bs-left #bs-source {
+        text-align: left;
+      }
+      /* Names every font option so the compiler bundles it; the variables pick one at runtime. */
+      #bs-fonts {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        opacity: 0;
+      }
+      #bs-fonts .f1 { font-family: "Inter"; }
+      #bs-fonts .f2 { font-family: "Montserrat"; }
+      #bs-fonts .f3 { font-family: "Outfit"; }
+      #bs-fonts .f4 { font-family: "Poppins"; }
+      #bs-fonts .f5 { font-family: "Nunito"; }
+      #bs-fonts .f6 { font-family: "Roboto"; }
+      #bs-fonts .f7 { font-family: "Oswald"; }
+      #bs-fonts .f8 { font-family: "League Gothic"; }
+      #bs-fonts .f9 { font-family: "Archivo Black"; }
+      #bs-fonts .f10 { font-family: "Playfair Display"; }
+      #bs-fonts .f11 { font-family: "EB Garamond"; }
+      #bs-fonts .f12 { font-family: "JetBrains Mono"; }
+      #bs-fonts .f13 { font-family: "Space Mono"; }
+      #bs-fonts .f14 { font-family: "IBM Plex Mono"; }
+      #bs-fonts .f15 { font-family: "Source Code Pro"; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="3.5" data-width="1920" data-height="1080">
+      <div id="card">
+        <div id="bs-inner">
+          <div id="bs-kicker"></div>
+          <div id="bs-num" data-layout-allow-overflow></div>
+          <div id="bs-label"></div>
+        </div>
+        <div id="bs-source"></div>
+      </div>
+      <div id="bs-fonts" data-layout-ignore aria-hidden="true">
+        <span class="f1">0</span><span class="f2">0</span><span class="f3">0</span><span class="f4">0</span><span class="f5">0</span><span class="f6">0</span><span class="f7">0</span><span class="f8">0</span><span class="f9">0</span><span class="f10">0</span><span class="f11">0</span><span class="f12">0</span><span class="f13">0</span><span class="f14">0</span><span class="f15">0</span>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const DARK = { "color-ground": "#050608", "color-ink": "#f2f4f7", "color-muted": "#8b929c", "color-accent": "#ff2d3d" };
+        const LIGHT = { "color-ground": "#f5f4f0", "color-ink": "#0c0e12", "color-muted": "#6a707a", "color-accent": "#e11d2e" };
+
+        const root = document.getElementById("root");
+        const v = (window.__hyperframes && window.__hyperframes.getVariables()) || {};
+        const value = String(v.value ?? "95%").trim();
+        const label = String(v.label ?? "of the weekly limit, gone by Wednesday").trim();
+        const kicker = String(v.kicker ?? "").trim();
+        const source = String(v.source ?? "").trim();
+        const count = v.count !== false && v.count !== "false";
+        const duration = Math.max(1, Number(root.getAttribute("data-duration")) || 3.5);
+        if (v.layout === "left") root.classList.add("bs-left");
+
+        // Palette: a colour still at its (dark) default follows the theme, anything else wins
+        const palette = v.theme === "light" ? LIGHT : DARK;
+        const css = document.documentElement.style;
+        const colors = {};
+        Object.keys(DARK).forEach((id) => {
+          colors[id] = v[id] && String(v[id]).toLowerCase() !== DARK[id] ? v[id] : palette[id];
+          css.setProperty(id.replace("color-", "--bs-"), colors[id]);
+        });
+        const font = `"${v.font || "Inter"}"`;
+        const fontLabel = `"${v["font-label"] || "IBM Plex Mono"}"`;
+        css.setProperty("--bs-font", font);
+        css.setProperty("--bs-font-label", fontLabel);
+        // Tight tracking suits the wide sans fonts; condensed and serif fonts need it opened up
+        const TRACK = {
+          "Oswald": ["0em", "0.005em"],
+          "League Gothic": ["0.01em", "0.02em"],
+          "Playfair Display": ["-0.02em", "0em"],
+          "EB Garamond": ["-0.02em", "0em"],
+          "JetBrains Mono": ["-0.04em", "-0.02em"],
+          "Space Mono": ["-0.04em", "-0.02em"],
+        }[v.font];
+        if (TRACK) {
+          css.setProperty("--bs-track-num", TRACK[0]);
+          css.setProperty("--bs-track-label", TRACK[1]);
+        }
+
+        document.getElementById("bs-kicker").textContent = kicker;
+        document.getElementById("bs-source").textContent = source;
+
+        // Label split into words for the grey-to-ink read-along
+        const labelEl = document.getElementById("bs-label");
+        const words = label.split(/\s+/).filter(Boolean).map((w, i) => {
+          if (i) labelEl.appendChild(document.createTextNode(" "));
+          const s = document.createElement("span");
+          s.textContent = w;
+          labelEl.appendChild(s);
+          return s;
+        });
+
+        // value = prefix + digits + suffix; symbols stay full size, words become small units
+        const numEl = document.getElementById("bs-num");
+        const m = value.match(/^(.*?)(\d[\d,]*(?:\.\d+)?)(.*)$/s);
+        const isWord = (part) => /\s/.test(part) || part.replace(/[^A-Za-z]/g, "").length >= 3;
+        const statics = [];
+        const cols = [];
+
+        function box(child, mask) {
+          const b = document.createElement("span");
+          b.className = mask ? "bs-box bs-mask" : "bs-box";
+          b.setAttribute("data-layout-ignore", "");
+          b.appendChild(child);
+          numEl.appendChild(b);
+          return b;
+        }
+        function addStatic(text, pre) {
+          if (!text.trim()) return;
+          const s = document.createElement("span");
+          s.textContent = text.trim();
+          if (isWord(text)) s.className = pre ? "bs-unit bs-unit-pre" : "bs-unit";
+          statics.push(box(s));
+        }
+
+        if (!m) {
+          addStatic(value);
+        } else {
+          addStatic(m[1], true);
+          const digits = m[2];
+          const decLen = digits.includes(".") ? digits.split(".")[1].length : 0;
+          const n = Number(digits.replace(/[,.]/g, ""));
+          const onlyDigits = digits.replace(/[,.]/g, "");
+          let k = onlyDigits.length; // place of the next digit, counted from the right
+          for (const ch of digits) {
+            if (ch === "," || ch === ".") {
+              const s = document.createElement("span");
+              s.textContent = ch;
+              const b = box(s);
+              b.classList.add("bs-sep");
+              statics.push(b);
+              continue;
+            }
+            k -= 1;
+            // Odometer: this column rolls through floor(n / 10^k) digits. Fast low columns are
+            // capped to three spins plus their digit; columns left of the units start blank.
+            let roll = count ? Math.floor(n / Math.pow(10, k)) : 0;
+            if (roll > 39) roll = 30 + (roll % 10);
+            const col = document.createElement("div");
+            col.className = "bs-col";
+            for (let i = 0; i <= roll; i++) {
+              const cell = document.createElement("div");
+              cell.textContent = i === 0 && roll > 0 && k > decLen ? " " : i === roll ? ch : String(i % 10);
+              col.appendChild(cell);
+            }
+            box(col, true);
+            if (roll > 0) cols.push({ col, roll });
+          }
+          addStatic(m[3], false);
+        }
+
+        const inner = document.getElementById("bs-inner");
+        const kickerEl = document.getElementById("bs-kicker");
+
+        // Largest label size (MAX..MIN) that fits in MAX_LINES with no word wider than the column
+        function fitLabel() {
+          const MAX = 88, MIN = 52, MAX_LINES = 2;
+          const width = labelEl.clientWidth;
+          for (let size = MAX; size >= MIN; size -= 4) {
+            labelEl.style.fontSize = `${size}px`;
+            const lines = Math.round(labelEl.scrollHeight / (size * 1.06));
+            if (lines <= MAX_LINES && words.every((w) => w.offsetWidth <= width)) return;
+          }
+        }
+
+        // Largest number that fits the width, with the label, inside the safe area
+        function fit() {
+          const availW = inner.clientWidth - 320;
+          const availH = 1080 - 96 - 150;
+          for (let size = 440; size >= 150; size -= 10) {
+            numEl.style.fontSize = `${size}px`;
+            fitLabel();
+            const h = kickerEl.offsetHeight + numEl.offsetHeight + labelEl.offsetHeight + 40;
+            if (numEl.scrollWidth <= availW && h <= availH) return;
+          }
+        }
+
+        function build() {
+          fit();
+
+          const HOLD = 0.2; // last 6 frames still, so the hard cut lands on a still frame
+          const COUNT = Math.min(1.3, Math.max(0.6, duration * 0.4));
+          const push = Math.min(0.04, 0.012 * duration);
+          const tl = gsap.timeline({ paused: true });
+
+          tl.fromTo(numEl, { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power2.out" }, 0);
+          cols.forEach(({ col, roll }) => {
+            tl.fromTo(col, { yPercent: 0, filter: "blur(10px)" }, { yPercent: (-100 * roll) / (roll + 1), filter: "blur(0px)", duration: COUNT, ease: "power4.out" }, 0.04);
+          });
+          if (statics.length) {
+            tl.fromTo(statics, { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 0.1);
+          }
+          if (kicker) tl.fromTo(kickerEl, { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.18, ease: "power4.out" }, 0.15);
+          if (words.length) {
+            // The label lands in grey, then reads itself into ink word by word
+            const labelAt = Math.min(0.45, COUNT * 0.4);
+            tl.fromTo(labelEl, { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power2.out" }, labelAt);
+            const step = Math.min(0.08, (duration * 0.5) / words.length);
+            tl.fromTo(words, { color: colors["color-muted"] }, { color: colors["color-ink"], duration: 0.12, stagger: step, ease: "power1.out" }, labelAt + 0.15);
+          }
+          if (source) tl.fromTo("#bs-source", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" }, Math.min(COUNT, duration * 0.4));
+          // Elastic hold: slow push-in across the whole clip
+          tl.fromTo(inner, { scale: 1 }, { scale: 1 + push, duration: Math.max(0.1, duration - HOLD), ease: "sine.inOut" }, 0);
+
+          window.__timelines = window.__timelines || {};
+          window.__timelines["main"] = tl;
+        }
+
+        Promise.all([
+          document.fonts.load(`900 440px ${font}`),
+          document.fonts.load(`800 88px ${font}`),
+          document.fonts.load(`500 36px ${fontLabel}`),
+        ])
+          .catch(() => {})
+          .then(() => document.fonts.ready)
+          .then(build);
+      })();
+    </script>
+  </body>
+</html>

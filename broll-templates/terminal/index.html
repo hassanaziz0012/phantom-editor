@@ -1,0 +1,485 @@
+<!doctype html>
+<!--
+  Terminal: a terminal window types a command, prints optional output lines, then shows a
+  fresh prompt. An optional flag badge ("Deletes everything") lands on the window when the
+  command is entered, and an optional part of the command turns the accent colour with it.
+
+  `output` is one line per newline (a literal "\n" also works, for --var on the command line).
+  A line may start with [red], [green] or [dim] to colour it. `beats` (seconds from clip start,
+  comma-separated, filled in by the render wrapper) times each output line to speech;
+  without it the lines print quickly one after another.
+
+  Elastic length: the clip runs for the root's data-duration. Variables can't change it, so
+  the render wrapper patches data-duration="..." on #root in a temp copy; nothing else here
+  is timed. Window on screen at frame 0 -> typing (at most 45% of the clip) -> output ->
+  blinking prompt with a slow push-in -> last 6 frames still.
+
+  Theme: `theme` picks the dark or light palette. A colour variable left at its default
+  follows the theme; any other value overrides it in both themes.
+
+  Render one clip:
+    hyperframes render -o rm.mp4 --variables '{"command":"rm -rf /","flag":"Deletes everything","highlight":"-rf /"}'
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"command","type":"string","label":"Command","default":"npm run build","placeholder":"curl -fsSL https://example.sh/install | bash","maxLength":140},
+    {"id":"prompt","type":"string","label":"Prompt","default":"$","placeholder":"~/project $","maxLength":24},
+    {"id":"output","type":"string","label":"Output lines (one per line; [red] [green] [dim] prefixes)","default":"","placeholder":"[dim]Downloading installer...\n[red]Permission denied","maxLength":600},
+    {"id":"flag","type":"string","label":"Flag badge (optional; empty = no badge)","default":"","placeholder":"Deletes everything","maxLength":40},
+    {"id":"highlight","type":"string","label":"Part of the command to colour (optional)","default":"","placeholder":"-rf","maxLength":60},
+    {"id":"title","type":"string","label":"Window title","default":"bash","maxLength":40},
+    {"id":"chrome","type":"enum","label":"Window bar","default":"dots","options":[{"value":"dots","label":"Title bar with dots"},{"value":"plain","label":"No title bar"}]},
+    {"id":"typing-speed","type":"number","label":"Typing speed (characters per second)","default":24,"min":6,"max":80,"step":1},
+    {"id":"beats","type":"string","label":"Output line times (seconds, comma-separated; set by the wrapper)","default":"","maxLength":200},
+    {"id":"theme","type":"enum","label":"Theme","default":"dark","options":[{"value":"dark","label":"Dark"},{"value":"light","label":"Light"}]},
+    {"id":"color-ground","type":"color","label":"Background (default follows theme)","default":"#050608"},
+    {"id":"color-window","type":"color","label":"Window (default follows theme)","default":"#0f1115"},
+    {"id":"color-ink","type":"color","label":"Command (default follows theme)","default":"#f2f4f7"},
+    {"id":"color-muted","type":"color","label":"Output & title (default follows theme)","default":"#9aa1ab"},
+    {"id":"color-prompt","type":"color","label":"Prompt & [green] (default follows theme)","default":"#3fd17a"},
+    {"id":"color-accent","type":"color","label":"Flag, highlight & [red] (default follows theme)","default":"#ff2d3d"},
+    {"id":"font","type":"enum","label":"Terminal font","default":"JetBrains Mono","options":[
+      {"value":"JetBrains Mono","label":"JetBrains Mono"},
+      {"value":"IBM Plex Mono","label":"IBM Plex Mono"},
+      {"value":"Source Code Pro","label":"Source Code Pro"},
+      {"value":"Space Mono","label":"Space Mono"}
+    ]},
+    {"id":"font-label","type":"enum","label":"Flag & title font","default":"IBM Plex Mono","options":[
+      {"value":"IBM Plex Mono","label":"IBM Plex Mono"},
+      {"value":"JetBrains Mono","label":"JetBrains Mono"},
+      {"value":"Space Mono","label":"Space Mono"},
+      {"value":"Source Code Pro","label":"Source Code Pro"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Oswald","label":"Oswald"}
+    ]}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* The runtime owns the --color-* variables; the script resolves them against the theme into --tm-* */
+      :root {
+        --color-ground: #050608;
+        --color-window: #0f1115;
+        --color-ink: #f2f4f7;
+        --color-muted: #9aa1ab;
+        --color-prompt: #3fd17a;
+        --color-accent: #ff2d3d;
+        --tm-ground: var(--color-ground);
+        --tm-window: var(--color-window);
+        --tm-border: #262a31;
+        --tm-ink: var(--color-ink);
+        --tm-muted: var(--color-muted);
+        --tm-prompt: var(--color-prompt);
+        --tm-accent: var(--color-accent);
+        --tm-font: "JetBrains Mono";
+        --tm-font-label: "IBM Plex Mono";
+        --tm-size: 72px;
+        --tm-out-size: 48px;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--tm-ground);
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        background: var(--tm-ground);
+      }
+      #card {
+        position: absolute;
+        inset: 0;
+      }
+      #tm-stage {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 96px 160px;
+      }
+      #tm-window {
+        position: relative;
+        width: 100%;
+        background: var(--tm-window);
+        border: 3px solid var(--tm-border);
+        border-radius: 28px;
+        box-shadow: 0 40px 120px rgba(0, 0, 0, 0.35);
+      }
+      #tm-bar {
+        position: relative;
+        height: 76px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 0 32px;
+        border-bottom: 2px solid var(--tm-border);
+      }
+      #root.tm-plain #tm-bar {
+        display: none;
+      }
+      .tm-dot {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+      }
+      .tm-dot:nth-child(1) { background: #ff5f57; }
+      .tm-dot:nth-child(2) { background: #febc2e; }
+      .tm-dot:nth-child(3) { background: #28c840; }
+      #tm-title {
+        position: absolute;
+        left: 160px;
+        right: 160px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: center;
+        font-family: var(--tm-font-label), monospace;
+        font-size: 30px;
+        color: var(--tm-muted);
+        letter-spacing: 0.04em;
+      }
+      #tm-body {
+        position: relative;
+        padding: 52px 60px 64px;
+        font-family: var(--tm-font), monospace;
+        font-variant-ligatures: none;
+      }
+      .tm-line {
+        font-size: var(--tm-size);
+        line-height: 1.3;
+        font-weight: 500;
+        color: var(--tm-ink);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .tm-word {
+        white-space: nowrap;
+      }
+      .tm-prompt {
+        color: var(--tm-prompt);
+        font-weight: 700;
+      }
+      #tm-cmd .tm-ch,
+      .tm-out,
+      #tm-next {
+        opacity: 0;
+      }
+      #tm-outs:empty {
+        display: none;
+      }
+      #tm-outs {
+        margin: 10px 0 6px;
+      }
+      .tm-out {
+        font-size: var(--tm-out-size);
+        line-height: 1.35;
+        color: var(--tm-muted);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .tm-out.tm-red { color: var(--tm-accent); }
+      .tm-out.tm-green { color: var(--tm-prompt); }
+      .tm-out.tm-dim { opacity: 0; }
+      #tm-caret {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0.58em;
+        height: 1.1em;
+        font-size: var(--tm-size);
+        background: var(--tm-ink);
+        opacity: 0;
+      }
+      #tm-flag {
+        position: absolute;
+        bottom: 0;
+        right: 56px;
+        transform-origin: 50% 50%;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 16px 30px 16px 24px;
+        border-radius: 16px;
+        background: var(--tm-accent);
+        color: #ffffff;
+        font-family: var(--tm-font-label), monospace;
+        font-size: 44px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+        opacity: 0;
+      }
+      #tm-flag svg {
+        width: 46px;
+        height: 46px;
+        flex: none;
+      }
+      /* Names every font option so the compiler bundles it; the variables pick one at runtime. */
+      #tm-fonts {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        opacity: 0;
+      }
+      #tm-fonts .f1 { font-family: "JetBrains Mono"; }
+      #tm-fonts .f2 { font-family: "IBM Plex Mono"; }
+      #tm-fonts .f3 { font-family: "Source Code Pro"; }
+      #tm-fonts .f4 { font-family: "Space Mono"; }
+      #tm-fonts .f5 { font-family: "Inter"; }
+      #tm-fonts .f6 { font-family: "Montserrat"; }
+      #tm-fonts .f7 { font-family: "Outfit"; }
+      #tm-fonts .f8 { font-family: "Poppins"; }
+      #tm-fonts .f9 { font-family: "Oswald"; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="5" data-width="1920" data-height="1080">
+      <div id="card">
+        <div id="tm-stage">
+          <div id="tm-window">
+            <div id="tm-bar">
+              <span class="tm-dot"></span><span class="tm-dot"></span><span class="tm-dot"></span>
+              <div id="tm-title">bash</div>
+            </div>
+            <div id="tm-body">
+              <div id="tm-cmd" class="tm-line"><span class="tm-prompt"></span></div>
+              <div id="tm-outs"></div>
+              <div id="tm-next" class="tm-line"><span class="tm-prompt"></span></div>
+              <div id="tm-caret" data-layout-ignore></div>
+            </div>
+            <div id="tm-flag" data-layout-allow-overflow>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 23 21.5H1Z" fill="#ffffff" /><path d="M12 9v6.2" stroke="var(--tm-accent)" stroke-width="2.6" stroke-linecap="round" /><circle cx="12" cy="18.2" r="1.5" fill="var(--tm-accent)" /></svg>
+              <span id="tm-flag-text"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="tm-fonts" data-layout-ignore aria-hidden="true">
+        <span class="f1">0</span><span class="f2">0</span><span class="f3">0</span><span class="f4">0</span><span class="f5">0</span><span class="f6">0</span><span class="f7">0</span><span class="f8">0</span><span class="f9">0</span>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const DARK = {
+          "color-ground": "#050608", "color-window": "#0f1115", "color-ink": "#f2f4f7",
+          "color-muted": "#9aa1ab", "color-prompt": "#3fd17a", "color-accent": "#ff2d3d",
+        };
+        const LIGHT = {
+          "color-ground": "#f5f4f0", "color-window": "#ffffff", "color-ink": "#0c0e12",
+          "color-muted": "#5f656e", "color-prompt": "#0e8a4a", "color-accent": "#e11d2e",
+        };
+
+        const root = document.getElementById("root");
+        const v = (window.__hyperframes && window.__hyperframes.getVariables()) || {};
+        const command = String(v.command ?? "npm run build");
+        const prompt = String(v.prompt ?? "$");
+        const flag = String(v.flag ?? "").trim();
+        const highlight = String(v.highlight ?? "");
+        const speed = Math.max(6, Number(v["typing-speed"] ?? 24));
+        const duration = Math.max(1, Number(root.getAttribute("data-duration")) || 5);
+        const outputs = String(v.output ?? "").replace(/\\n/g, "\n").split("\n").filter((l) => l.trim());
+        const beats = String(v.beats ?? "").split(",").map((b) => parseFloat(b)).filter((b) => !isNaN(b));
+        if (v.chrome === "plain") root.classList.add("tm-plain");
+
+        // Palette: a colour still at its (dark) default follows the theme, anything else wins
+        const light = v.theme === "light";
+        const palette = light ? LIGHT : DARK;
+        const css = document.documentElement.style;
+        const colors = {};
+        Object.keys(DARK).forEach((id) => {
+          colors[id] = v[id] && String(v[id]).toLowerCase() !== DARK[id] ? v[id] : palette[id];
+          css.setProperty(id.replace("color-", "--tm-"), colors[id]);
+        });
+        css.setProperty("--tm-border", light ? "#dcd9d1" : "#262a31");
+        const font = `"${v.font || "JetBrains Mono"}"`;
+        const fontLabel = `"${v["font-label"] || "IBM Plex Mono"}"`;
+        css.setProperty("--tm-font", font);
+        css.setProperty("--tm-font-label", fontLabel);
+
+        document.getElementById("tm-title").textContent = v.title ?? "bash";
+        document.querySelectorAll(".tm-prompt").forEach((p) => (p.textContent = prompt ? prompt + " " : ""));
+        document.getElementById("tm-flag-text").textContent = flag;
+        const flagEl = document.getElementById("tm-flag");
+        if (!flag) flagEl.remove();
+
+        // Command split into characters so each can be typed; the highlighted part is marked
+        const cmdEl = document.getElementById("tm-cmd");
+        const hlAt = highlight.trim() ? command.indexOf(highlight) : -1;
+        // Words are no-wrap groups, so a long flag never breaks at its hyphens; lines break at spaces
+        let word = null;
+        const chars = Array.from(command).map((ch, i) => {
+          const s = document.createElement("span");
+          s.className = "tm-ch";
+          s.textContent = ch;
+          if (hlAt >= 0 && i >= hlAt && i < hlAt + highlight.length) s.classList.add("tm-hl");
+          if (ch === " ") {
+            word = null;
+            cmdEl.appendChild(s);
+          } else {
+            if (!word) {
+              word = document.createElement("span");
+              word.className = "tm-word";
+              cmdEl.appendChild(word);
+            }
+            word.appendChild(s);
+          }
+          return s;
+        });
+        const hlChars = chars.filter((c) => c.classList.contains("tm-hl"));
+
+        const outsEl = document.getElementById("tm-outs");
+        const outEls = outputs.map((line) => {
+          const d = document.createElement("div");
+          const tag = line.match(/^\[(red|green|dim)\]\s?/);
+          d.className = "tm-out" + (tag ? ` tm-${tag[1]}` : "");
+          d.textContent = tag ? line.slice(tag[0].length) : line;
+          outsEl.appendChild(d);
+          return d;
+        });
+
+        const body = document.getElementById("tm-body");
+        const win = document.getElementById("tm-window");
+        const nextEl = document.getElementById("tm-next");
+        const caret = document.getElementById("tm-caret");
+
+        // Largest command size where the command fits in 2 (else 3) lines, no word is wider
+        // than the window and the whole window fits inside the safe area
+        function fit() {
+          const width = cmdEl.clientWidth;
+          const words = command.split(/\s+/).filter(Boolean);
+          const probe = document.createElement("span");
+          probe.style.whiteSpace = "pre";
+          cmdEl.appendChild(probe);
+          // Two lines down to 60px reads better than three huge ones; then allow three
+          const tries = [];
+          for (let size = 84; size >= 60; size -= 4) tries.push([size, 2]);
+          for (let size = 84; size >= 48; size -= 4) tries.push([size, 3]);
+          for (const [size, maxLines] of tries) {
+            css.setProperty("--tm-size", `${size}px`);
+            css.setProperty("--tm-out-size", `${Math.max(40, Math.round(size * 0.64))}px`);
+            const lines = Math.round(cmdEl.offsetHeight / (size * 1.3));
+            const widest = Math.max(...words.map((w) => ((probe.textContent = w), probe.offsetWidth)));
+            if (lines <= maxLines && widest <= width && win.offsetHeight <= 1080 - 2 * 96) break;
+          }
+          probe.remove();
+        }
+
+        // Small deterministic PRNG, so the typing rhythm is human but identical every render
+        let seed = 7;
+        const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+        function build() {
+          fit();
+
+          // Caret stops: before the first character, then after each one, then the next prompt
+          const bodyBox = body.getBoundingClientRect();
+          const caretH = caret.offsetHeight;
+          const at = (el, right) => {
+            const r = el.getBoundingClientRect();
+            const lineH = parseFloat(getComputedStyle(el).fontSize) * 1.3;
+            return { x: (right ? r.right : r.left) - bodyBox.left, y: r.top - bodyBox.top + (lineH - caretH) / 2 + (r.height - lineH) / 2 };
+          };
+          const promptEl = cmdEl.querySelector(".tm-prompt");
+          const start = chars.length ? at(chars[0], false) : at(promptEl, true);
+          const stops = chars.map((c) => at(c, true));
+          const nextPrompt = nextEl.querySelector(".tm-prompt");
+          const next = prompt ? at(nextPrompt, true) : at(nextEl, false);
+
+          const HOLD = 0.2; // last 6 frames still, so the hard cut lands on a still frame
+          const END = duration - HOLD;
+          const T0 = Math.min(0.3, duration * 0.1);
+          // Typing gaps: jittered around 1/speed, a little longer after spaces, scaled to fit
+          let gaps = chars.map((c) => (1 / speed) * (0.6 + rand() * 0.8) * (c.textContent === " " ? 1.6 : 1));
+          const natural = gaps.reduce((a, b) => a + b, 0);
+          const maxType = Math.max(0.4, duration * 0.45);
+          if (natural > maxType) gaps = gaps.map((g) => (g * maxType) / natural);
+          const typed = [];
+          let t = T0;
+          gaps.forEach((g) => typed.push((t += g)));
+          const enter = Math.min(t + 0.25, END - 0.3);
+
+          const outAt = outEls.map((_, i) => {
+            const fallback = enter + 0.12 + i * 0.16;
+            const b = beats[i];
+            return Math.min(END - 0.25, b !== undefined && b > enter ? b : fallback);
+          });
+          const lastOut = outAt.length ? outAt[outAt.length - 1] : enter;
+          const nextAt = Math.min(lastOut + 0.18, END - 0.1);
+
+          const tl = gsap.timeline({ paused: true });
+          // Window already on screen at frame 0, settling in
+          tl.fromTo(win, { scale: 1.015 }, { scale: 1, duration: 0.6, ease: "power3.out" }, 0);
+
+          // Caret: blinks while idle, solid while typing, always on for the final hold
+          function blink(from, to) {
+            let on = true;
+            for (let b = from + 0.5; b < to - 0.25; b += 0.5) {
+              on = !on;
+              tl.set(caret, { opacity: on ? 1 : 0 }, b);
+            }
+            tl.set(caret, { opacity: 1 }, to);
+          }
+          tl.set(caret, { x: start.x, y: start.y, opacity: 1 }, 0.05);
+          blink(0.05, T0);
+          chars.forEach((c, i) => {
+            tl.set(c, { opacity: 1 }, typed[i]);
+            tl.set(caret, { x: stops[i].x, y: stops[i].y }, typed[i]);
+          });
+          tl.set(caret, { opacity: 0 }, enter);
+
+          outEls.forEach((el, i) => {
+            const dim = el.classList.contains("tm-dim");
+            tl.fromTo(el, { opacity: 0 }, { opacity: dim ? 0.55 : 1, duration: 0.06, ease: "none" }, outAt[i]);
+          });
+          tl.set(nextEl, { opacity: 1 }, nextAt);
+          tl.set(caret, { x: next.x, y: next.y, opacity: 1 }, nextAt);
+          blink(nextAt, END);
+
+          if (flag) {
+            // The flag lands on the window's bottom edge as the command is entered
+            const flagAt = Math.min(enter + 0.1, END - 0.4);
+            tl.fromTo(flagEl, { opacity: 0, scale: 1.35, rotation: -9, yPercent: 50 }, { opacity: 1, scale: 1, rotation: -3, yPercent: 50, duration: 0.45, ease: "back.out(1.6)" }, flagAt);
+            tl.to(win, { borderColor: colors["color-accent"], duration: 0.2, ease: "power2.out" }, flagAt);
+            if (hlChars.length) tl.to(hlChars, { color: colors["color-accent"], duration: 0.2, ease: "power2.out" }, flagAt);
+          } else if (hlChars.length) {
+            tl.to(hlChars, { color: colors["color-accent"], duration: 0.2, ease: "power2.out" }, enter);
+          }
+
+          // Elastic hold: slow push-in across the whole clip
+          const push = Math.min(0.03, 0.01 * duration);
+          tl.fromTo("#tm-stage", { scale: 1 }, { scale: 1 + push, duration: Math.max(0.1, END), ease: "sine.inOut" }, 0);
+
+          window.__timelines = window.__timelines || {};
+          window.__timelines["main"] = tl;
+        }
+
+        Promise.all([
+          document.fonts.load(`500 72px ${font}`),
+          document.fonts.load(`700 72px ${font}`),
+          document.fonts.load(`700 44px ${fontLabel}`),
+        ])
+          .catch(() => {})
+          .then(() => document.fonts.ready)
+          .then(build);
+      })();
+    </script>
+  </body>
+</html>

@@ -100,6 +100,12 @@ show_usage() {
     echo "  devto:"
     echo "    post <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
     echo ""
+    echo "  broll:"
+    echo "    list [<template>]"
+    echo "    find <phrase> [--srt <word_srt>] [--after <timestamp>]"
+    echo "    render <cue_file.json> [--srt <word_srt>] [--only <file>...] [--dry-run] [--force]"
+    echo "    clip <template> -o <output.mp4> [--cue <phrase>] [--until <phrase>] [--var key=value...] [arguments]"
+    echo ""
     echo "  review:"
     echo "    inspect <video_path> [arguments]"
     echo "    audio <video_or_audio_path> [arguments]"
@@ -535,6 +541,19 @@ case "$COMMAND" in
         else
             echo "Unknown devto subcommand: $SUBCOMMAND"
             echo "Usage: phantom devto post <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
+            exit 1
+        fi
+        ;;
+    broll)
+        SUBCOMMAND="$1"
+        if [ "$SUBCOMMAND" = "list" ] || [ "$SUBCOMMAND" = "find" ] || [ "$SUBCOMMAND" = "render" ] || [ "$SUBCOMMAND" = "clip" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/broll-templates/broll.py" "$@"
+        else
+            echo "Unknown broll subcommand: $SUBCOMMAND"
+            echo "Usage: phantom broll list [<template>]"
+            echo "       phantom broll find <phrase> [--srt <word_srt>] [--after <timestamp>]"
+            echo "       phantom broll render <cue_file.json> [--srt <word_srt>] [--only <file>...] [--dry-run] [--force]"
+            echo "       phantom broll clip <template> -o <output.mp4> [--cue <phrase>] [--until <phrase>] [--var key=value...] [arguments]"
             exit 1
         fi
         ;;

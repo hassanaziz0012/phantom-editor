@@ -1,6 +1,6 @@
 # B-roll Templates
 
-Reusable HyperFrames B-roll clips (numbered cards, and later stats, terminal commands and so on), rendered at exactly the length of the speech they cover. Each template is authored once; per video you only write a small cue file and run one command, which costs no LLM tokens.
+Reusable HyperFrames B-roll clips (numbered cards, big stats, terminal commands, and more to come), rendered at exactly the length of the speech they cover. Each template is authored once; per video you only write a small cue file and run one command, which costs no LLM tokens.
 
 ## Architecture
 
@@ -60,6 +60,25 @@ A list of clips, or an object with shared `defaults` and an optional `srt` path.
 | `after` | The cue must be said after this timestamp (for phrases said more than once) |
 | `offset` | Seconds added to the start (negative starts earlier) |
 | `beats` | Phrases or seconds, for templates with a `beats` variable; sent as seconds from the clip start |
+
+Templates: `step-card` (numbered point), `big-stat` (a number that counts up, with a label) and
+`terminal` (a command typed into a terminal, with optional output and warning flag). Their
+variables are in [broll-templates/README.md](../broll-templates/README.md), or run
+`phantom broll list <template>`. Mixing templates in one cue file:
+
+```json
+{
+  "clips": [
+    {"template": "big-stat", "file": "uber-budget.mp4", "cue": "three point four billion", "until": "in four months",
+     "variables": {"value": "$3.4B", "label": "AI budget, gone in four months", "kicker": "Uber"}},
+    {"template": "terminal", "file": "skip-perms.mp4", "cue": "dangerously skip permissions", "until": "no safety net",
+     "beats": ["starting the agent", "permission checks"],
+     "variables": {"command": "claude --dangerously-skip-permissions", "flag": "No safety net",
+                   "highlight": "--dangerously-skip-permissions",
+                   "output": "[dim]Starting agent...\n[red]Permission checks disabled"}}
+  ]
+}
+```
 
 ## Output
 
