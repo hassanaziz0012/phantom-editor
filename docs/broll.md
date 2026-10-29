@@ -1,6 +1,6 @@
 # B-roll Templates
 
-Reusable HyperFrames B-roll clips (numbered cards, big stats, terminal commands, and more to come), rendered at exactly the length of the speech they cover. Each template is authored once; per video you only write a small cue file and run one command, which costs no LLM tokens.
+Reusable HyperFrames B-roll clips (numbered cards, big stats, terminal commands, flow diagrams, checklists, and more to come), rendered at exactly the length of the speech they cover. Each template is authored once; per video you only write a small cue file and run one command, which costs no LLM tokens.
 
 ## Architecture
 
@@ -61,8 +61,10 @@ A list of clips, or an object with shared `defaults` and an optional `srt` path.
 | `offset` | Seconds added to the start (negative starts earlier) |
 | `beats` | Phrases or seconds, for templates with a `beats` variable; sent as seconds from the clip start |
 
-Templates: `step-card` (numbered point), `big-stat` (a number that counts up, with a label) and
-`terminal` (a command typed into a terminal, with optional output and warning flag). Their
+Templates: `step-card` (numbered point), `big-stat` (a number that counts up, with a label),
+`terminal` (a command typed into a terminal, with optional output and warning flag), `flow`
+(2–6 boxes joined by arrows that light up in turn, optional loop-back) and `checklist` (items
+that get a tick or a cross on their beats). Their
 variables are in [broll-templates/README.md](../broll-templates/README.md), or run
 `phantom broll list <template>`. Mixing templates in one cue file:
 
@@ -75,7 +77,13 @@ variables are in [broll-templates/README.md](../broll-templates/README.md), or r
      "beats": ["starting the agent", "permission checks"],
      "variables": {"command": "claude --dangerously-skip-permissions", "flag": "No safety net",
                    "highlight": "--dangerously-skip-permissions",
-                   "output": "[dim]Starting agent...\n[red]Permission checks disabled"}}
+                   "output": "[dim]Starting agent...\n[red]Permission checks disabled"}},
+    {"template": "flow", "file": "agent-loop.mp4", "cue": "the agent loop", "until": "and then it repeats",
+     "beats": ["it thinks", "it acts", "it observes", "repeats"],
+     "variables": {"steps": "Think|Act|Observe", "loop": true, "title": "The agent loop"}},
+    {"template": "checklist", "file": "dont-automate.mp4", "cue": "what not to automate", "until": "creative work",
+     "beats": ["one-off", "sensitive", "creative work"],
+     "variables": {"title": "Don't automate", "items": "One-off tasks|Sensitive tasks|Creative work", "mark": "cross"}}
   ]
 }
 ```

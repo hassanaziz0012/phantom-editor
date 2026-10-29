@@ -1,0 +1,428 @@
+<!doctype html>
+<!--
+  Checklist: an optional title over 1-6 items, each with a box that gets a tick or a cross
+  on its beat. Good for "do / don't" lists, review checklists and red flags.
+
+  `items` is the items separated by "|" (or by newlines when an item itself has a "|").
+  Every item gets the `mark` (tick or cross); start an item with [do] or [dont] to give it
+  the other one, for a mixed list. Text in `backticks` is set in a code font.
+  `beats` (seconds from clip start, comma-separated, filled in by the render wrapper) times
+  each item to speech; without it the items land evenly through the first part of the clip.
+
+  `reveal`: `each` (default) brings each item in on its beat; `all` shows the whole list dim
+  from frame 0 and only the marks land on the beats.
+
+  Elastic length: the clip runs for the root's data-duration. Variables can't change it, so
+  the render wrapper patches data-duration="..." on #root in a temp copy; nothing else here
+  is timed. Title on screen at frame 0 -> items on their beats -> slow push-in -> last 6 frames still.
+
+  Theme: `theme` picks the dark or light palette. A colour variable left at its default
+  follows the theme; any other value overrides it in both themes.
+
+  Render one clip:
+    hyperframes render -o dont.mp4 --variables '{"title":"Don&apos;t automate","items":"One-off tasks|Sensitive tasks|Creative work","mark":"cross"}'
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"items","type":"string","label":"Items (separated by |; [do] or [dont] prefix overrides the mark)","default":"Architecture|Performance|Security","placeholder":"[do]Read the diff|[dont]Merge blind","maxLength":400},
+    {"id":"title","type":"string","label":"Title (optional)","default":"Review every AI change for","placeholder":"Don&apos;t automate","maxLength":60},
+    {"id":"kicker","type":"string","label":"Kicker above the title (optional)","default":"","placeholder":"Before you merge","maxLength":40},
+    {"id":"mark","type":"enum","label":"Mark for items without a prefix","default":"check","options":[{"value":"check","label":"Tick (do)"},{"value":"cross","label":"Cross (don&apos;t)"}]},
+    {"id":"reveal","type":"enum","label":"Reveal","default":"each","options":[{"value":"each","label":"Each item on its beat"},{"value":"all","label":"Whole list dim, marks on the beats"}]},
+    {"id":"strike","type":"boolean","label":"Strike through crossed items","default":false},
+    {"id":"beats","type":"string","label":"Item times (seconds, comma-separated; set by the wrapper)","default":"","maxLength":200},
+    {"id":"theme","type":"enum","label":"Theme","default":"dark","options":[{"value":"dark","label":"Dark"},{"value":"light","label":"Light"}]},
+    {"id":"color-ground","type":"color","label":"Background (default follows theme)","default":"#050608"},
+    {"id":"color-ink","type":"color","label":"Title & items (default follows theme)","default":"#f2f4f7"},
+    {"id":"color-muted","type":"color","label":"Kicker, boxes & dim items (default follows theme)","default":"#8b929c"},
+    {"id":"color-check","type":"color","label":"Tick (default follows theme)","default":"#3fd17a"},
+    {"id":"color-accent","type":"color","label":"Cross (default follows theme)","default":"#ff2d3d"},
+    {"id":"font","type":"enum","label":"Title & item font","default":"Inter","options":[
+      {"value":"Inter","label":"Inter"},
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Nunito","label":"Nunito"},
+      {"value":"Roboto","label":"Roboto"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"League Gothic","label":"League Gothic"},
+      {"value":"Archivo Black","label":"Archivo Black"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"},
+      {"value":"JetBrains Mono","label":"JetBrains Mono"},
+      {"value":"Space Mono","label":"Space Mono"}
+    ]},
+    {"id":"font-label","type":"enum","label":"Kicker & code font","default":"IBM Plex Mono","options":[
+      {"value":"IBM Plex Mono","label":"IBM Plex Mono"},
+      {"value":"JetBrains Mono","label":"JetBrains Mono"},
+      {"value":"Space Mono","label":"Space Mono"},
+      {"value":"Source Code Pro","label":"Source Code Pro"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Oswald","label":"Oswald"}
+    ]}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* The runtime owns the --color-* variables; the script resolves them against the theme into --cl-* */
+      :root {
+        --color-ground: #050608;
+        --color-ink: #f2f4f7;
+        --color-muted: #8b929c;
+        --color-check: #3fd17a;
+        --color-accent: #ff2d3d;
+        --cl-ground: var(--color-ground);
+        --cl-ink: var(--color-ink);
+        --cl-muted: var(--color-muted);
+        --cl-check: var(--color-check);
+        --cl-accent: var(--color-accent);
+        --cl-box: #3a3f47;
+        --cl-code-bg: rgba(242, 244, 247, 0.08);
+        --cl-font: "Inter";
+        --cl-font-label: "IBM Plex Mono";
+        --cl-track: -0.02em;
+        --cl-title-size: 104px;
+        --cl-size: 68px;
+        --cl-gap: 28px;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--cl-ground);
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        background: var(--cl-ground);
+      }
+      #card {
+        position: absolute;
+        inset: 0;
+      }
+      #cl-stage {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 96px 160px;
+      }
+      #cl-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        width: fit-content;
+        max-width: 1600px;
+      }
+      #cl-kicker {
+        margin-bottom: 28px;
+        font-family: var(--cl-font-label), monospace;
+        font-size: 44px;
+        font-weight: 500;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--cl-muted);
+      }
+      #cl-kicker:empty,
+      #cl-title:empty {
+        display: none;
+      }
+      #cl-title {
+        margin-bottom: 0.5em;
+        font-family: var(--cl-font), sans-serif;
+        font-size: var(--cl-title-size);
+        font-weight: 800;
+        line-height: 1.05;
+        letter-spacing: var(--cl-track);
+        color: var(--cl-ink);
+      }
+      #cl-items {
+        display: flex;
+        flex-direction: column;
+        gap: var(--cl-gap);
+      }
+      .cl-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5em;
+        font-size: var(--cl-size);
+        line-height: 1.2;
+      }
+      .cl-box {
+        position: relative;
+        flex: none;
+        width: 0.95em;
+        height: 0.95em;
+        margin-top: 0.125em;
+        border: 0.075em solid var(--cl-box);
+        border-radius: 0.2em;
+      }
+      .cl-box svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+      .cl-box path {
+        fill: none;
+        stroke: var(--cl-ground);
+        stroke-width: 3.4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .cl-text {
+        font-family: var(--cl-font), sans-serif;
+        font-weight: 600;
+        letter-spacing: var(--cl-track);
+        color: var(--cl-muted);
+        text-decoration-line: none;
+      }
+      .cl-text.cl-strike {
+        text-decoration-line: line-through;
+        text-decoration-thickness: 0.07em;
+        text-decoration-color: transparent;
+      }
+      .cl-text code {
+        font-family: var(--cl-font-label), monospace;
+        font-size: 0.88em;
+        font-weight: 500;
+        letter-spacing: 0;
+        padding: 0 0.18em;
+        border-radius: 0.14em;
+        background: var(--cl-code-bg);
+      }
+      /* Names every font option so the compiler bundles it; the variables pick one at runtime. */
+      #cl-fonts {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        opacity: 0;
+      }
+      #cl-fonts .f1 { font-family: "Inter"; }
+      #cl-fonts .f2 { font-family: "Montserrat"; }
+      #cl-fonts .f3 { font-family: "Outfit"; }
+      #cl-fonts .f4 { font-family: "Poppins"; }
+      #cl-fonts .f5 { font-family: "Nunito"; }
+      #cl-fonts .f6 { font-family: "Roboto"; }
+      #cl-fonts .f7 { font-family: "Oswald"; }
+      #cl-fonts .f8 { font-family: "League Gothic"; }
+      #cl-fonts .f9 { font-family: "Archivo Black"; }
+      #cl-fonts .f10 { font-family: "Playfair Display"; }
+      #cl-fonts .f11 { font-family: "EB Garamond"; }
+      #cl-fonts .f12 { font-family: "JetBrains Mono"; }
+      #cl-fonts .f13 { font-family: "Space Mono"; }
+      #cl-fonts .f14 { font-family: "IBM Plex Mono"; }
+      #cl-fonts .f15 { font-family: "Source Code Pro"; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="5" data-width="1920" data-height="1080">
+      <div id="card">
+        <div id="cl-stage">
+          <div id="cl-inner">
+            <div id="cl-kicker"></div>
+            <div id="cl-title"></div>
+            <div id="cl-items"></div>
+          </div>
+        </div>
+      </div>
+      <div id="cl-fonts" data-layout-ignore aria-hidden="true">
+        <span class="f1">0</span><span class="f2">0</span><span class="f3">0</span><span class="f4">0</span><span class="f5">0</span><span class="f6">0</span><span class="f7">0</span><span class="f8">0</span><span class="f9">0</span><span class="f10">0</span><span class="f11">0</span><span class="f12">0</span><span class="f13">0</span><span class="f14">0</span><span class="f15">0</span>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const DARK = {
+          "color-ground": "#050608", "color-ink": "#f2f4f7", "color-muted": "#8b929c",
+          "color-check": "#3fd17a", "color-accent": "#ff2d3d",
+        };
+        const LIGHT = {
+          "color-ground": "#f5f4f0", "color-ink": "#0c0e12", "color-muted": "#6a707a",
+          "color-check": "#0e8a4a", "color-accent": "#e11d2e",
+        };
+
+        const root = document.getElementById("root");
+        const v = (window.__hyperframes && window.__hyperframes.getVariables()) || {};
+        // A list is split on newlines when it has any (so an item can contain "|"), else on "|"
+        const text = String(v.items ?? "Architecture|Performance|Security").replace(/\\n/g, "\n");
+        const raw = text.split(text.includes("\n") ? "\n" : "|").map((x) => x.trim()).filter(Boolean).slice(0, 6);
+        const title = String(v.title ?? "Review every AI change for").trim();
+        const kicker = String(v.kicker ?? "").trim();
+        const defaultMark = v.mark === "cross" ? "cross" : "check";
+        const reveal = v.reveal === "all" ? "all" : "each";
+        const strike = v.strike === true || v.strike === "true";
+        const duration = Math.max(1, Number(root.getAttribute("data-duration")) || 5);
+        const beats = String(v.beats ?? "").split(",").map((b) => parseFloat(b)).filter((b) => !isNaN(b));
+
+        // Palette: a colour still at its (dark) default follows the theme, anything else wins
+        const light = v.theme === "light";
+        const palette = light ? LIGHT : DARK;
+        const css = document.documentElement.style;
+        const colors = {};
+        Object.keys(DARK).forEach((id) => {
+          colors[id] = v[id] && String(v[id]).toLowerCase() !== DARK[id] ? v[id] : palette[id];
+          css.setProperty(id.replace("color-", "--cl-"), colors[id]);
+        });
+        const rgba = (hex, a) => {
+          const m = String(hex).match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
+          return m ? `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${a})` : hex;
+        };
+        const boxColor = rgba(colors["color-muted"], 0.7);
+        css.setProperty("--cl-box", boxColor);
+        css.setProperty("--cl-code-bg", rgba(colors["color-ink"], light ? 0.07 : 0.1));
+        const font = `"${v.font || "Inter"}"`;
+        const fontLabel = `"${v["font-label"] || "IBM Plex Mono"}"`;
+        css.setProperty("--cl-font", font);
+        css.setProperty("--cl-font-label", fontLabel);
+        // Tight tracking suits the wide sans fonts; condensed and serif fonts need it opened up
+        const TRACK = { "Oswald": "0.005em", "League Gothic": "0.02em", "Playfair Display": "0em", "EB Garamond": "0em", "JetBrains Mono": "-0.03em", "Space Mono": "-0.03em" }[v.font];
+        if (TRACK) css.setProperty("--cl-track", TRACK);
+
+        document.getElementById("cl-kicker").textContent = kicker;
+        const titleEl = document.getElementById("cl-title");
+        titleEl.textContent = title;
+
+        const SVGNS = "http://www.w3.org/2000/svg";
+        const MARKS = { check: ["M5.5 12.5 L10 17 L18.5 7"], cross: ["M7 7 L17 17", "M17 7 L7 17"] };
+        const itemsEl = document.getElementById("cl-items");
+        const items = raw.map((line) => {
+          const tag = line.match(/^\[(do|dont|don't)\]\s*/i);
+          const kind = tag ? (tag[1].toLowerCase() === "do" ? "check" : "cross") : defaultMark;
+          const label = tag ? line.slice(tag[0].length) : line;
+
+          const row = document.createElement("div");
+          row.className = "cl-item";
+          const box = document.createElement("div");
+          box.className = "cl-box";
+          const svg = document.createElementNS(SVGNS, "svg");
+          svg.setAttribute("viewBox", "0 0 24 24");
+          const paths = MARKS[kind].map((d) => {
+            const p = document.createElementNS(SVGNS, "path");
+            p.setAttribute("d", d);
+            svg.appendChild(p);
+            return p;
+          });
+          box.appendChild(svg);
+          const t = document.createElement("div");
+          t.className = "cl-text" + (strike && kind === "cross" ? " cl-strike" : "");
+          // `code` spans; everything else is plain text
+          label.split(/`([^`]+)`/).forEach((part, i) => {
+            if (!part) return;
+            if (i % 2) {
+              const c = document.createElement("code");
+              c.textContent = part;
+              t.appendChild(c);
+            } else t.appendChild(document.createTextNode(part));
+          });
+          row.append(box, t);
+          itemsEl.appendChild(row);
+          return { row, box, text: t, paths, kind };
+        });
+
+        const inner = document.getElementById("cl-inner");
+        const SAFE_H = 1080 - 2 * 96;
+        const lines = (el) => Math.round(el.offsetHeight / parseFloat(getComputedStyle(el).lineHeight));
+
+        // Title: largest size (128..96) on one line, else largest (112..72) in 2 lines.
+        // Items: largest size (88..44) where each item fits in 2 lines and the whole block fits
+        // the safe height. Items stay smaller than the title.
+        function fit() {
+          const tries = [];
+          for (let size = 128; size >= 96; size -= 4) tries.push([size, 1]);
+          for (let size = 112; size >= 72; size -= 4) tries.push([size, 2]);
+          for (const [size, maxLines] of tries) {
+            css.setProperty("--cl-title-size", `${size}px`);
+            if (!title || lines(titleEl) <= maxLines) break;
+          }
+          const titleSize = parseFloat(getComputedStyle(titleEl).fontSize);
+          for (let size = Math.min(88, title ? Math.floor(titleSize * 0.72) : 96); size >= 44; size -= 4) {
+            css.setProperty("--cl-size", `${size}px`);
+            css.setProperty("--cl-gap", `${Math.round(size * 0.42)}px`);
+            if (items.every((it) => lines(it.text) <= 2) && inner.offsetHeight <= SAFE_H) return;
+          }
+        }
+
+        function build() {
+          fit();
+          items.forEach((it) => it.paths.forEach((p) => {
+            p.len = p.getTotalLength();
+            p.style.strokeDasharray = `${p.len} ${p.len}`;
+            p.style.strokeDashoffset = `${p.len}`;
+          }));
+
+          const HOLD = 0.2; // last 6 frames still, so the hard cut lands on a still frame
+          const END = duration - HOLD;
+          const LAST = END - 0.45; // latest an item may land and still settle before the end
+          const n = items.length;
+          // Fallback spacing: items spread through the first ~60% of the clip
+          const T0 = Math.min(title || kicker ? 0.4 : 0.15, duration * 0.1);
+          const gap = n > 1 ? Math.min(0.75, Math.max(0.25, (END * 0.6 - T0) / (n - 1))) : 0;
+          const at = [];
+          for (let i = 0; i < n; i++) {
+            const prev = i ? at[i - 1] : 0;
+            const b = beats[i];
+            const t = b !== undefined && b >= prev + (i ? 0.15 : 0) ? b : i ? prev + gap : T0;
+            at.push(Math.min(LAST, Math.max(i ? prev + 0.15 : 0.05, t)));
+          }
+
+          const tl = gsap.timeline({ paused: true });
+          // Title on screen at frame 0, settling in
+          tl.fromTo(["#cl-kicker", "#cl-title"], { y: 14 }, { y: 0, duration: 0.6, ease: "power3.out" }, 0);
+
+          items.forEach((it, i) => {
+            const t = at[i];
+            const color = it.kind === "check" ? colors["color-check"] : colors["color-accent"];
+            let markAt = t;
+            if (reveal === "each") {
+              // The row slides in on its beat and the mark lands just after
+              tl.fromTo(it.row, { opacity: 0, x: -36, filter: "blur(6px)" }, { opacity: 1, x: 0, filter: "blur(0px)", duration: 0.28, ease: "power3.out" }, Math.max(0, t - 0.06));
+              markAt = t + 0.12;
+            }
+            tl.fromTo(it.box, { borderColor: boxColor, backgroundColor: rgba(color, 0) }, { borderColor: color, backgroundColor: color, duration: 0.1, ease: "power2.out", immediateRender: false }, markAt);
+            tl.fromTo(it.box, { scale: 1 }, { scale: 1.16, duration: 0.1, ease: "power2.out", immediateRender: false }, markAt);
+            tl.fromTo(it.box, { scale: 1.16 }, { scale: 1, duration: 0.35, ease: "back.out(2)", immediateRender: false }, markAt + 0.1);
+            it.paths.forEach((p, k) => {
+              tl.fromTo(p, { strokeDashoffset: p.len }, { strokeDashoffset: 0, duration: 0.2, ease: "power2.out", immediateRender: false }, markAt + 0.04 + k * 0.08);
+            });
+            tl.fromTo(it.text, { color: colors["color-muted"] }, { color: colors["color-ink"], duration: 0.2, ease: "power2.out", immediateRender: false }, markAt);
+            if (it.text.classList.contains("cl-strike")) {
+              tl.fromTo(it.text, { textDecorationColor: rgba(colors["color-accent"], 0) }, { textDecorationColor: colors["color-accent"], duration: 0.2, ease: "power2.out", immediateRender: false }, markAt + 0.12);
+            }
+          });
+
+          // Elastic hold: slow push-in across the whole clip
+          const push = Math.min(0.03, 0.01 * duration);
+          tl.fromTo(inner, { scale: 1 }, { scale: 1 + push, duration: Math.max(0.1, END), ease: "sine.inOut" }, 0);
+
+          window.__timelines = window.__timelines || {};
+          window.__timelines["main"] = tl;
+        }
+
+        Promise.all([
+          document.fonts.load(`800 104px ${font}`),
+          document.fonts.load(`600 68px ${font}`),
+          document.fonts.load(`500 44px ${fontLabel}`),
+        ])
+          .catch(() => {})
+          .then(() => document.fonts.ready)
+          .then(build);
+      })();
+    </script>
+  </body>
+</html>

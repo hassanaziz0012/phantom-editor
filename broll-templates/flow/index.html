@@ -1,0 +1,600 @@
+<!doctype html>
+<!--
+  Flow: 2-6 labelled boxes joined by arrows. The whole diagram is on screen (dim) at frame 0;
+  each step lights up in turn as the arrow into it draws, and an optional loop-back arrow
+  returns from the last step to the first ("the agent loop").
+
+  `steps` is the step labels separated by "|" (or by newlines when a label itself has a "|").
+  `notes` (optional) is a small line under each label, in the same order; leave a slot empty
+  to skip one. `beats` (seconds from clip start, comma-separated, filled in by the render
+  wrapper) times each step to speech; with `loop` on, one extra beat times the loop-back.
+  Without beats the steps light up evenly through the first part of the clip.
+
+  Layout: `row` (left to right) or `column` (top to bottom); `auto` picks a row unless the
+  labels would get too small, then a column.
+
+  Elastic length: the clip runs for the root's data-duration. Variables can't change it, so
+  the render wrapper patches data-duration="..." on #root in a temp copy; nothing else here
+  is timed. Diagram settles in -> steps light on their beats -> slow push-in -> last 6 frames still.
+
+  Theme: `theme` picks the dark or light palette. A colour variable left at its default
+  follows the theme; any other value overrides it in both themes.
+
+  Render one clip:
+    hyperframes render -o loop.mp4 --variables '{"steps":"Think|Act|Observe","loop":true,"title":"The agent loop"}'
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"steps","type":"string","label":"Steps (separated by |)","default":"Record|Fix mistakes|Process|Publish","placeholder":"User|App|Vector DB|LLM","maxLength":300},
+    {"id":"notes","type":"string","label":"Note under each step (optional, separated by |)","default":"","placeholder":"asks|embeds query|finds chunks|answers","maxLength":300},
+    {"id":"title","type":"string","label":"Title above the diagram (optional)","default":"","placeholder":"The agent loop","maxLength":40},
+    {"id":"loop","type":"boolean","label":"Loop-back arrow from the last step to the first","default":false},
+    {"id":"loop-label","type":"string","label":"Label on the loop-back arrow (optional)","default":"","placeholder":"repeat","maxLength":24},
+    {"id":"numbered","type":"boolean","label":"Number the steps","default":false},
+    {"id":"layout","type":"enum","label":"Layout","default":"auto","options":[{"value":"auto","label":"Auto"},{"value":"row","label":"Row (left to right)"},{"value":"column","label":"Column (top to bottom)"}]},
+    {"id":"beats","type":"string","label":"Step times (seconds, comma-separated; set by the wrapper)","default":"","maxLength":200},
+    {"id":"theme","type":"enum","label":"Theme","default":"dark","options":[{"value":"dark","label":"Dark"},{"value":"light","label":"Light"}]},
+    {"id":"color-ground","type":"color","label":"Background (default follows theme)","default":"#050608"},
+    {"id":"color-node","type":"color","label":"Box fill (default follows theme)","default":"#0f1115"},
+    {"id":"color-ink","type":"color","label":"Lit labels (default follows theme)","default":"#f2f4f7"},
+    {"id":"color-muted","type":"color","label":"Dim labels, notes & title (default follows theme)","default":"#8b929c"},
+    {"id":"color-accent","type":"color","label":"Current step & arrows (default follows theme)","default":"#ff2d3d"},
+    {"id":"font","type":"enum","label":"Label font","default":"Inter","options":[
+      {"value":"Inter","label":"Inter"},
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Nunito","label":"Nunito"},
+      {"value":"Roboto","label":"Roboto"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"League Gothic","label":"League Gothic"},
+      {"value":"Archivo Black","label":"Archivo Black"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"},
+      {"value":"JetBrains Mono","label":"JetBrains Mono"},
+      {"value":"Space Mono","label":"Space Mono"}
+    ]},
+    {"id":"font-label","type":"enum","label":"Title, numbers & notes font","default":"IBM Plex Mono","options":[
+      {"value":"IBM Plex Mono","label":"IBM Plex Mono"},
+      {"value":"JetBrains Mono","label":"JetBrains Mono"},
+      {"value":"Space Mono","label":"Space Mono"},
+      {"value":"Source Code Pro","label":"Source Code Pro"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Oswald","label":"Oswald"}
+    ]}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* The runtime owns the --color-* variables; the script resolves them against the theme into --fl-* */
+      :root {
+        --color-ground: #050608;
+        --color-node: #0f1115;
+        --color-ink: #f2f4f7;
+        --color-muted: #8b929c;
+        --color-accent: #ff2d3d;
+        --fl-ground: var(--color-ground);
+        --fl-node: var(--color-node);
+        --fl-border: #262a31;
+        --fl-ink: var(--color-ink);
+        --fl-muted: var(--color-muted);
+        --fl-accent: var(--color-accent);
+        --fl-font: "Inter";
+        --fl-font-label: "IBM Plex Mono";
+        --fl-track: -0.02em;
+        --fl-size: 64px;
+        --fl-note-size: 44px;
+        --fl-gap: 96px;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--fl-ground);
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        background: var(--fl-ground);
+      }
+      #card {
+        position: absolute;
+        inset: 0;
+      }
+      #fl-stage {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 96px;
+      }
+      #fl-title {
+        margin-bottom: 64px;
+        font-family: var(--fl-font-label), monospace;
+        font-size: 48px;
+        font-weight: 500;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--fl-muted);
+        text-align: center;
+        white-space: nowrap;
+      }
+      #fl-title:empty {
+        display: none;
+      }
+      #fl-nodes {
+        position: relative;
+        display: flex;
+        gap: var(--fl-gap);
+        width: 100%;
+        justify-content: center;
+      }
+      #root.fl-column #fl-nodes {
+        flex-direction: column;
+        align-items: center;
+        width: auto;
+      }
+      .fl-node {
+        position: relative;
+        flex: 1 1 0;
+        max-width: 520px;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.22em;
+        padding: 0.75em 0.45em;
+        font-size: var(--fl-size);
+        text-align: center;
+        background: var(--fl-node);
+        border: 4px solid var(--fl-border);
+        border-radius: 28px;
+      }
+      #root.fl-column .fl-node {
+        flex: none;
+        max-width: none;
+        width: var(--fl-col-width, 1100px);
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 0.5em;
+        padding: 0.32em 0.7em;
+        text-align: left;
+      }
+      .fl-idx {
+        font-family: var(--fl-font-label), monospace;
+        font-size: 44px;
+        font-weight: 500;
+        line-height: 1;
+        letter-spacing: 0.04em;
+        color: var(--fl-muted);
+        font-variant-numeric: lining-nums tabular-nums;
+      }
+      .fl-label {
+        font-family: var(--fl-font), sans-serif;
+        font-weight: 800;
+        line-height: 1.08;
+        letter-spacing: var(--fl-track);
+        color: var(--fl-muted);
+        overflow-wrap: normal;
+      }
+      #root.fl-column .fl-label {
+        white-space: nowrap;
+      }
+      .fl-note {
+        font-family: var(--fl-font-label), monospace;
+        font-size: var(--fl-note-size);
+        font-weight: 400;
+        line-height: 1.15;
+        color: var(--fl-muted);
+      }
+      .fl-note:empty {
+        display: none;
+      }
+      #root.fl-column .fl-note {
+        margin-left: auto;
+        padding-left: 0.6em;
+        text-align: right;
+        white-space: nowrap;
+      }
+      #fl-wires {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: visible;
+        pointer-events: none;
+      }
+      #fl-wires path {
+        fill: none;
+        stroke-width: 6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      #fl-wires .fl-idle {
+        stroke: var(--fl-border);
+      }
+      #fl-wires .fl-lit {
+        stroke: var(--fl-accent);
+      }
+      #fl-loop-label {
+        position: absolute;
+        left: 0;
+        top: 0;
+        padding: 4px 22px;
+        background: var(--fl-ground);
+        font-family: var(--fl-font-label), monospace;
+        font-size: 44px;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--fl-muted);
+        white-space: nowrap;
+      }
+      /* Names every font option so the compiler bundles it; the variables pick one at runtime. */
+      #fl-fonts {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        opacity: 0;
+      }
+      #fl-fonts .f1 { font-family: "Inter"; }
+      #fl-fonts .f2 { font-family: "Montserrat"; }
+      #fl-fonts .f3 { font-family: "Outfit"; }
+      #fl-fonts .f4 { font-family: "Poppins"; }
+      #fl-fonts .f5 { font-family: "Nunito"; }
+      #fl-fonts .f6 { font-family: "Roboto"; }
+      #fl-fonts .f7 { font-family: "Oswald"; }
+      #fl-fonts .f8 { font-family: "League Gothic"; }
+      #fl-fonts .f9 { font-family: "Archivo Black"; }
+      #fl-fonts .f10 { font-family: "Playfair Display"; }
+      #fl-fonts .f11 { font-family: "EB Garamond"; }
+      #fl-fonts .f12 { font-family: "JetBrains Mono"; }
+      #fl-fonts .f13 { font-family: "Space Mono"; }
+      #fl-fonts .f14 { font-family: "IBM Plex Mono"; }
+      #fl-fonts .f15 { font-family: "Source Code Pro"; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="6" data-width="1920" data-height="1080">
+      <div id="card">
+        <div id="fl-stage">
+          <div id="fl-title"></div>
+          <div id="fl-nodes"></div>
+          <svg id="fl-wires" data-layout-ignore aria-hidden="true"></svg>
+          <div id="fl-loop-label" data-layout-ignore></div>
+        </div>
+      </div>
+      <div id="fl-fonts" data-layout-ignore aria-hidden="true">
+        <span class="f1">0</span><span class="f2">0</span><span class="f3">0</span><span class="f4">0</span><span class="f5">0</span><span class="f6">0</span><span class="f7">0</span><span class="f8">0</span><span class="f9">0</span><span class="f10">0</span><span class="f11">0</span><span class="f12">0</span><span class="f13">0</span><span class="f14">0</span><span class="f15">0</span>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const DARK = {
+          "color-ground": "#050608", "color-node": "#0f1115", "color-ink": "#f2f4f7",
+          "color-muted": "#8b929c", "color-accent": "#ff2d3d",
+        };
+        const LIGHT = {
+          "color-ground": "#f5f4f0", "color-node": "#ffffff", "color-ink": "#0c0e12",
+          "color-muted": "#6a707a", "color-accent": "#e11d2e",
+        };
+
+        const root = document.getElementById("root");
+        const v = (window.__hyperframes && window.__hyperframes.getVariables()) || {};
+        // A list is split on newlines when it has any (so a label can contain "|"), else on "|"
+        const list = (s) => {
+          const text = String(s ?? "").replace(/\\n/g, "\n");
+          return text.split(text.includes("\n") ? "\n" : "|").map((x) => x.trim());
+        };
+        const steps = list(v.steps ?? "Record|Fix mistakes|Process|Publish").filter(Boolean).slice(0, 6);
+        const notes = list(v.notes);
+        const title = String(v.title ?? "").trim();
+        const loop = (v.loop === true || v.loop === "true") && steps.length > 1;
+        const loopLabel = String(v["loop-label"] ?? "").trim();
+        const numbered = v.numbered === true || v.numbered === "true";
+        const duration = Math.max(1, Number(root.getAttribute("data-duration")) || 6);
+        const beats = String(v.beats ?? "").split(",").map((b) => parseFloat(b)).filter((b) => !isNaN(b));
+
+        // Palette: a colour still at its (dark) default follows the theme, anything else wins
+        const light = v.theme === "light";
+        const palette = light ? LIGHT : DARK;
+        const css = document.documentElement.style;
+        const colors = {};
+        Object.keys(DARK).forEach((id) => {
+          colors[id] = v[id] && String(v[id]).toLowerCase() !== DARK[id] ? v[id] : palette[id];
+          css.setProperty(id.replace("color-", "--fl-"), colors[id]);
+        });
+        const border = light ? "#dcd9d1" : "#262a31";
+        css.setProperty("--fl-border", border);
+        const rgba = (hex, a) => {
+          const m = String(hex).match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
+          return m ? `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${a})` : hex;
+        };
+        // Current step: accent border on an accent tint. Done steps keep ink labels on a quieter border.
+        const tint = rgba(colors["color-accent"], light ? 0.08 : 0.14);
+        const doneBorder = rgba(colors["color-ink"], 0.32);
+        const font = `"${v.font || "Inter"}"`;
+        const fontLabel = `"${v["font-label"] || "IBM Plex Mono"}"`;
+        css.setProperty("--fl-font", font);
+        css.setProperty("--fl-font-label", fontLabel);
+        // Tight tracking suits the wide sans fonts; condensed and serif fonts need it opened up
+        const TRACK = { "Oswald": "0.005em", "League Gothic": "0.02em", "Playfair Display": "0em", "EB Garamond": "0em" }[v.font];
+        if (TRACK) css.setProperty("--fl-track", TRACK);
+
+        document.getElementById("fl-title").textContent = title;
+        const nodesEl = document.getElementById("fl-nodes");
+        const nodes = steps.map((label, i) => {
+          const n = document.createElement("div");
+          n.className = "fl-node";
+          if (numbered) {
+            const idx = document.createElement("div");
+            idx.className = "fl-idx";
+            idx.textContent = String(i + 1).padStart(2, "0");
+            n.appendChild(idx);
+          }
+          const l = document.createElement("div");
+          l.className = "fl-label";
+          l.textContent = label;
+          n.appendChild(l);
+          const note = document.createElement("div");
+          note.className = "fl-note";
+          note.textContent = notes[i] || "";
+          n.appendChild(note);
+          nodesEl.appendChild(n);
+          return n;
+        });
+        const labels = nodes.map((n) => n.querySelector(".fl-label"));
+        const idxs = nodes.map((n) => n.querySelector(".fl-idx")).filter(Boolean);
+        const noteEls = nodes.map((n) => n.querySelector(".fl-note"));
+        const loopLabelEl = document.getElementById("fl-loop-label");
+        loopLabelEl.textContent = loop ? loopLabel : "";
+        if (!loop || !loopLabel) loopLabelEl.remove();
+
+        const stage = document.getElementById("fl-stage");
+        const titleEl = document.getElementById("fl-title");
+        const SAFE_W = 1920 - 2 * 96;
+        const SAFE_H = 1080 - 2 * 96;
+        // Overflow of centred content doesn't show in scrollHeight, so add up the parts
+        const fits = () => (title ? titleEl.offsetHeight + 64 : 0) + nodesEl.offsetHeight <= SAFE_H && nodesEl.scrollWidth <= SAFE_W + 1;
+        const LOOP_ROOM = 150; // space under a row (or beside a column) for the loop-back arrow
+        const probe = document.createElement("span");
+        probe.style.cssText = "position:absolute;white-space:nowrap;visibility:hidden";
+        document.body.appendChild(probe);
+        const widest = (el, text) => {
+          const cs = getComputedStyle(el);
+          Object.assign(probe.style, { fontFamily: cs.fontFamily, fontSize: cs.fontSize, fontWeight: cs.fontWeight, letterSpacing: cs.letterSpacing });
+          return Math.max(0, ...String(text).split(/\s+/).filter(Boolean).map((w) => ((probe.textContent = w), probe.offsetWidth)));
+        };
+        // Computed line-height is in px, since every text style here sets a unitless one
+        const lines = (el) => Math.round(el.offsetHeight / parseFloat(getComputedStyle(el).lineHeight));
+        // A centred flex child is only as wide as its text, so measure against the box itself
+        const inner = (node) => {
+          const cs = getComputedStyle(node);
+          return node.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        };
+
+        // Row: largest label size where every label fits in 2 lines and every note in 3,
+        // with no word wider than its box. Returns false when even the smallest won't do.
+        function fitRow() {
+          root.classList.remove("fl-column");
+          nodesEl.style.paddingBottom = loop ? `${LOOP_ROOM}px` : "0px";
+          for (let size = 100; size >= 48; size -= 4) {
+            css.setProperty("--fl-size", `${size}px`);
+            css.setProperty("--fl-note-size", `${Math.max(44, Math.round(size * 0.6))}px`);
+            css.setProperty("--fl-gap", `${steps.length > 4 ? 72 : 96}px`);
+            const ok = nodes.every((n, i) => {
+              const w = inner(n) + 1;
+              return lines(labels[i]) <= 2 && widest(labels[i], steps[i]) <= w &&
+                (!notes[i] || (lines(noteEls[i]) <= 3 && widest(noteEls[i], notes[i]) <= w));
+            });
+            if (ok && fits()) return true;
+          }
+          return false;
+        }
+
+        // Column: largest label size where every box (one line, note on the right) fits the
+        // width and all boxes plus the gaps fit the height
+        function fitColumn() {
+          root.classList.add("fl-column");
+          nodesEl.style.paddingBottom = "0px";
+          nodesEl.style.paddingRight = loop ? `${LOOP_ROOM}px` : "0px";
+          const maxW = 1920 - 2 * 96 - (loop ? LOOP_ROOM * 2 : 0);
+          for (let size = 76; size >= 44; size -= 4) {
+            css.setProperty("--fl-size", `${size}px`);
+            css.setProperty("--fl-note-size", `${Math.max(44, Math.round(size * 0.62))}px`);
+            css.setProperty("--fl-gap", `${Math.max(48, Math.round(size * 0.8))}px`);
+            css.setProperty("--fl-col-width", "max-content");
+            const natural = Math.max(...nodes.map((n) => n.scrollWidth));
+            const width = Math.min(maxW, Math.max(natural, 1000));
+            css.setProperty("--fl-col-width", `${width}px`);
+            if (natural <= maxW && fits()) return;
+          }
+        }
+
+        function fit() {
+          const mode = v.layout || "auto";
+          if (mode === "column" || (!fitRow() && mode !== "row")) fitColumn();
+          else if (mode === "row") fitRow();
+          // Long titles shrink to fit on one line
+          for (let s = 48; s > 44 && titleEl.scrollWidth > 1920 - 2 * 96; s -= 2) titleEl.style.fontSize = `${s}px`;
+          probe.remove();
+        }
+
+        // Wires: an arrow into each step from the one before, plus the loop-back. Each wire is
+        // a dim track (on screen from frame 0) under a lit copy that draws on.
+        const SVGNS = "http://www.w3.org/2000/svg";
+        const wires = document.getElementById("fl-wires");
+        function wire(d, headAt, dir) {
+          const [hx, hy] = headAt;
+          const [dx, dy] = dir;
+          const a = 22;
+          // Chevron pointing along (dx, dy)
+          const head = `M ${hx - dx * a - dy * a} ${hy - dy * a + dx * a} L ${hx} ${hy} L ${hx - dx * a + dy * a} ${hy - dy * a - dx * a}`;
+          const make = (cls, path) => {
+            const p = document.createElementNS(SVGNS, "path");
+            p.setAttribute("d", path);
+            p.setAttribute("class", cls);
+            wires.appendChild(p);
+            return p;
+          };
+          make("fl-idle", d);
+          make("fl-idle", head);
+          return { line: make("fl-lit", d), head: make("fl-lit", head) };
+        }
+
+        function layoutWires() {
+          const base = stage.getBoundingClientRect();
+          const box = nodes.map((n) => {
+            const r = n.getBoundingClientRect();
+            return { l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, cx: r.left - base.left + r.width / 2, cy: r.top - base.top + r.height / 2 };
+          });
+          const column = root.classList.contains("fl-column");
+          const PAD = column ? 10 : 16; // space between an arrow and the boxes it joins
+          const links = [];
+          for (let i = 1; i < box.length; i++) {
+            const p = box[i - 1], q = box[i];
+            if (column) {
+              const x = p.cx;
+              links.push(wire(`M ${x} ${p.b + PAD} L ${x} ${q.t - PAD}`, [x, q.t - PAD], [0, 1]));
+            } else {
+              const y = (Math.max(p.t, q.t) + Math.min(p.b, q.b)) / 2;
+              links.push(wire(`M ${p.r + PAD} ${y} L ${q.l - PAD} ${y}`, [q.l - PAD, y], [1, 0]));
+            }
+          }
+          let back = null;
+          if (loop) {
+            const f = box[0], z = box[box.length - 1], R = 36;
+            if (column) {
+              const x = Math.max(...box.map((b) => b.r)) + 90;
+              const y0 = z.cy, y1 = f.cy;
+              back = wire(
+                `M ${z.r + PAD} ${y0} L ${x - R} ${y0} Q ${x} ${y0} ${x} ${y0 - R} L ${x} ${y1 + R} Q ${x} ${y1} ${x - R} ${y1} L ${f.r + PAD} ${y1}`,
+                [f.r + PAD, y1], [-1, 0]
+              );
+              back.mid = [x, (y0 + y1) / 2];
+            } else {
+              const y = Math.max(...box.map((b) => b.b)) + 90;
+              const x0 = z.cx, x1 = f.cx;
+              back = wire(
+                `M ${x0} ${z.b + PAD} L ${x0} ${y - R} Q ${x0} ${y} ${x0 - R} ${y} L ${x1 + R} ${y} Q ${x1} ${y} ${x1} ${y - R} L ${x1} ${f.b + PAD}`,
+                [x1, f.b + PAD], [0, -1]
+              );
+              back.mid = [(x0 + x1) / 2, y];
+            }
+            if (loopLabel) {
+              loopLabelEl.style.left = `${back.mid[0] - loopLabelEl.offsetWidth / 2}px`;
+              loopLabelEl.style.top = `${back.mid[1] - loopLabelEl.offsetHeight / 2}px`;
+            }
+          }
+          [...links, back].filter(Boolean).forEach((w) => {
+            const len = w.line.getTotalLength();
+            w.len = len;
+            w.line.style.strokeDasharray = `${len} ${len}`;
+            w.line.style.strokeDashoffset = `${len}`;
+            w.head.style.opacity = "0";
+          });
+          return { links, back };
+        }
+
+        function build() {
+          fit();
+          const { links, back } = layoutWires();
+
+          const HOLD = 0.2; // last 6 frames still, so the hard cut lands on a still frame
+          const END = duration - HOLD;
+          const LAST = END - 0.35; // latest a step may light and still settle before the end
+          const n = steps.length;
+          const slots = n + (loop ? 1 : 0);
+          // Fallback spacing: steps spread through the first ~70% of the clip
+          const T0 = Math.min(0.35, duration * 0.08);
+          const gap = slots > 1 ? Math.min(0.9, Math.max(0.3, (END * 0.7 - T0) / (slots - 1))) : 0;
+          const at = [];
+          for (let i = 0; i < slots; i++) {
+            const prev = i ? at[i - 1] : 0;
+            const b = beats[i];
+            const t = b !== undefined && b >= prev + (i ? 0.2 : 0) ? b : i ? prev + gap : T0;
+            at.push(Math.min(LAST, Math.max(i ? prev + 0.2 : 0.05, t)));
+          }
+
+          const tl = gsap.timeline({ paused: true });
+          // Whole diagram on screen at frame 0, settling in
+          tl.fromTo(nodesEl, { scale: 1.02 }, { scale: 1, duration: 0.6, ease: "power3.out" }, 0);
+
+          // Every state change is a fromTo from the step's tracked state, so seeking in any
+          // order lands on the same frame
+          const state = nodes.map(() => ({ border, fill: colors["color-node"], label: colors["color-muted"], idx: colors["color-muted"] }));
+          function to(i, next, t, d) {
+            const node = nodes[i], s = state[i];
+            tl.fromTo(node, { borderColor: s.border, backgroundColor: s.fill }, { borderColor: next.border, backgroundColor: next.fill, duration: d, ease: "power2.out", immediateRender: false }, t);
+            if (s.label !== next.label) tl.fromTo(labels[i], { color: s.label }, { color: next.label, duration: d, ease: "power2.out", immediateRender: false }, t);
+            const idx = node.querySelector(".fl-idx");
+            if (idx) tl.fromTo(idx, { color: s.idx }, { color: next.idx, duration: d, ease: "power2.out", immediateRender: false }, t);
+            state[i] = next;
+          }
+          function light(i, t) {
+            to(i, { border: colors["color-accent"], fill: tint, label: colors["color-ink"], idx: colors["color-accent"] }, t, 0.16);
+            tl.fromTo(nodes[i], { scale: 1 }, { scale: 1.05, duration: 0.12, ease: "power2.out", immediateRender: false }, t);
+            tl.fromTo(nodes[i], { scale: 1.05 }, { scale: 1, duration: 0.4, ease: "power3.out", immediateRender: false }, t + 0.12);
+          }
+          function done(i, t) {
+            to(i, { border: doneBorder, fill: colors["color-node"], label: colors["color-ink"], idx: colors["color-muted"] }, t, 0.2);
+          }
+          function draw(w, t, from) {
+            // The arrow travels into the step and lands with it
+            const d = Math.max(0.12, Math.min(0.32, (t - from) * 0.7));
+            tl.fromTo(w.line, { strokeDashoffset: w.len }, { strokeDashoffset: 0, duration: d, ease: "power2.inOut", immediateRender: false }, t - d);
+            tl.fromTo(w.head, { opacity: 0 }, { opacity: 1, duration: 0.06, ease: "none", immediateRender: false }, t - 0.06);
+          }
+
+          light(0, at[0]);
+          for (let i = 1; i < n; i++) {
+            draw(links[i - 1], at[i], at[i - 1]);
+            done(i - 1, at[i]);
+            light(i, at[i]);
+          }
+          if (back) {
+            const t = at[n];
+            draw(back, t, at[n - 1]);
+            if (loopLabel) tl.fromTo(loopLabelEl, { color: colors["color-muted"] }, { color: colors["color-accent"], duration: 0.2, immediateRender: false }, t - 0.1);
+            done(n - 1, t);
+            light(0, t);
+          }
+
+          // Elastic hold: slow push-in across the whole clip
+          const push = Math.min(0.03, 0.01 * duration);
+          tl.fromTo(stage, { scale: 1 }, { scale: 1 + push, duration: Math.max(0.1, END), ease: "sine.inOut" }, 0);
+
+          window.__timelines = window.__timelines || {};
+          window.__timelines["main"] = tl;
+        }
+
+        Promise.all([
+          document.fonts.load(`800 64px ${font}`),
+          document.fonts.load(`500 44px ${fontLabel}`),
+          document.fonts.load(`400 44px ${fontLabel}`),
+        ])
+          .catch(() => {})
+          .then(() => document.fonts.ready)
+          .then(build);
+      })();
+    </script>
+  </body>
+</html>

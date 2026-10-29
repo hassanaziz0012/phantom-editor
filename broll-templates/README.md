@@ -11,6 +11,8 @@ Everything renders at 1920x1080, 30 fps.
 | `step-card` | elastic (default 3.2 s) | `number`, `total`, `label`, `title`, `theme`, `color-ground`, `color-ink`, `color-muted`, `color-accent`, `font`, `font-label` | Numbered point card: "Step 2 of 4", "Red flag #3", "Automation Tip #7", "#1 of 15" |
 | `big-stat`  | elastic (default 3.5 s) | `value`, `label`, `kicker`, `source`, `count`, `layout`, `theme`, `color-ground`, `color-ink`, `color-muted`, `color-accent`, `font`, `font-label` | One big number: "70%", "$3.4B", "19,000", "1.3 billion", "200 req/hour" |
 | `terminal`  | elastic (default 5 s) | `command`, `prompt`, `output`, `flag`, `highlight`, `title`, `chrome`, `typing-speed`, `beats`, `theme`, `color-ground`, `color-window`, `color-ink`, `color-muted`, `color-prompt`, `color-accent`, `font`, `font-label` | A command typed into a terminal: `rm -rf`, `sudo`, `curl … \| bash`, `--dangerously-skip-permissions` |
+| `flow`      | elastic (default 6 s) | `steps`, `notes`, `title`, `loop`, `loop-label`, `numbered`, `layout`, `beats`, `theme`, `color-ground`, `color-node`, `color-ink`, `color-muted`, `color-accent`, `font`, `font-label` | 2–6 boxes joined by arrows that light up in turn: the agent loop, user → app → vector DB → LLM, record → fix → process → publish |
+| `checklist` | elastic (default 5 s) | `items`, `title`, `kicker`, `mark`, `reveal`, `strike`, `beats`, `theme`, `color-ground`, `color-ink`, `color-muted`, `color-check`, `color-accent`, `font`, `font-label` | Items that get a tick or a cross: "Don't automate: …", "Review for architecture / performance / security", command red flags |
 
 ### `step-card`
 
@@ -78,6 +80,48 @@ Everything renders at 1920x1080, 30 fps.
 - `font`: JetBrains Mono (default), IBM Plex Mono, Source Code Pro, Space Mono.
   `font-label` (flag and title): same options as `step-card`'s label font.
 - Unlike the other templates, the window is already on screen at frame 0 (an empty prompt).
+
+### `flow`
+
+- `steps`: the box labels separated by `|` (2–6; extra ones are dropped). If a label itself
+  contains `|`, separate the steps with newlines instead (`\n` in JSON).
+- `notes` (optional): a small line under each label, same order and separator; leave a slot
+  empty to skip one (`"asks||finds chunks|answers"`).
+- `beats`: give the clip one beat per step and each step lights up on it, with the arrow
+  drawing into it. With `loop` on, one extra beat times the loop-back. Without beats the steps
+  light up evenly through the first ~70% of the clip.
+- Frame 0 already shows the whole diagram, dim. The current step gets the `color-accent`
+  border and tint; steps already passed keep ink labels on a quieter border.
+- `loop` (default off): an arrow from the last step back to the first, which lights the first
+  step again. `loop-label` (optional) sits on that arrow, e.g. `"repeat"`.
+- `numbered` (default off): "01", "02", … above each label.
+- `layout`: `auto` (default) uses a row unless the labels would drop under 48px (long
+  labels, 6 steps), then a column. `row` and `column` force one.
+- `title` (optional): small caps line above the diagram.
+- `theme`: dark (default) or light; `color-node` is the box fill (`#0f1115` dark, `#ffffff`
+  light). Other colours as in `step-card`: `color-ink` lit labels, `color-muted` dim labels,
+  notes and title, `color-accent` the current step and arrows. `font` (labels) and
+  `font-label` (title, numbers, notes) have the same options as `step-card`.
+
+### `checklist`
+
+- `items`: separated by `|` (1–6), or by newlines if an item contains `|`. Each item fits in
+  up to 2 lines. Text in `` `backticks` `` is set in the `font-label` font on a code chip
+  (`` "`rm -rf`|`sudo` when you didn't expect it" ``).
+- `mark`: `check` (default, a tick in `color-check`) or `cross` (a cross in `color-accent`)
+  for every item. Start an item with `[do]` or `[dont]` to give it a tick or a cross in a
+  mixed list: `"[do]Read the diff|[dont]Merge blind"`.
+- `beats`: one per item; each item's mark lands on its beat. Without beats they land evenly
+  through the first ~60% of the clip.
+- `reveal`: `each` (default) slides each item in on its beat; `all` shows the whole list dim
+  from frame 0 and only the marks land on the beats.
+- `strike` (default off): crossed items get a red line through them.
+- `title` (default `"Review every AI change for"`; set `""` for none) auto-fits 128px on one
+  line, down to 72px on two. `kicker` (optional) is a small caps line above it. Items auto-fit
+  up to 88px (smaller than the title), down to 44px.
+- `theme`: dark (default) or light; `color-check` is `#3fd17a` dark, `#0e8a4a` light. Other
+  colours and fonts as in `step-card` (`color-muted` is the kicker, empty boxes and items
+  that haven't landed yet).
 
 ## Rendering with `phantom broll`
 

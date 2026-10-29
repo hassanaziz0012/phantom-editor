@@ -10,12 +10,14 @@ Source of truth for the reusable B-roll feature. Start new chats from this file.
 | `step-card-hassandev` template | **Deleted** (not wanted). Themes are now variables inside one template |
 | `big-stat` template | **Done** (2026-10-29). Odometer count-up of any `value` string ("$3.4B", "19,000", "1.3 billion"), label, kicker, source, centre/left layout, themes, fonts |
 | `terminal` template | **Done** (2026-10-29). Typed command, output lines on beats, fresh prompt, optional flag badge + highlighted part, themes, fonts |
+| `flow` template | **Done** (2026-10-30). 2–6 boxes, arrows draw and steps light on beats, optional loop-back arrow + label, notes, numbering, auto row/column layout, themes, fonts |
+| `checklist` template | **Done** (2026-10-30). 1–6 items, tick or cross lands on each beat, mixed `[do]`/`[dont]` lists, `code` chips, reveal each/all, optional strike, title + kicker, themes, fonts |
 | Wrapper (`phantom broll`) | **Done.** Finds timing in the captions, patches the length, renders, writes placement info |
 | End-to-end test | **Passed** on "everything is falling apart" (see [Test record](#test-record)) |
 | Docs | `docs/broll.md` (mkdocs site), `broll-templates/README.md` (per-template variables) |
 | Committed to git | **Yes** (2026-10-30): `broll-templates/` (all three templates + `broll.py`), the `phantom broll` CLI case, `docs/broll.md`, `mkdocs.yml` and this file. `.hyperframes/` and `renders/` inside templates are git-ignored |
 | Re-verified | 2026-10-30: `check` passes on all three; real `phantom broll clip` renders of `big-stat` (4 s) and `terminal` (6 s, flag + highlight + output) look right |
-| Next | Versus split, Flow, Checklist, … (backlog order). Pending for later: the `organize-recordings` skill step and the automated overlay step |
+| Next | **Test all five templates on the video recorded 2026-10-30** (first real use of `big-stat`, `terminal`, `flow`, `checklist`). Then the overlay step and the `organize-recordings` skill step. More templates after that (Versus split next) |
 
 ## Goal
 
@@ -148,6 +150,13 @@ Cue file keys per clip: `template`, `file` (relative to the cue file), `variable
 - **`big-stat` and `terminal`** (2026-10-29, re-checked 2026-10-30): `check` passes
   (`big-stat` has the same `first_frame_empty` warning; `terminal` has none, its window is on
   screen at frame 0). Real renders through `phantom broll clip --at 0 --duration N` at 4 s and 6 s.
+- **`flow` and `checklist`** (2026-10-30): `check` passes (`flow` warns only about file size,
+  `checklist` is clean). Rendered through `phantom broll` at 2 s, 5–7 s: default, agent loop
+  (loop + label + numbers + title), notes under labels, 6 long labels in light theme (auto
+  switched to column, fits the safe area); checklist default, all-cross with strike, red flags
+  with `code` chips and `reveal: all`, a mixed 6-item light list, a 2 s one with no title.
+  Numeric beats checked frame by frame (steps and marks land on the beat); phrase beats
+  resolved against "everything is falling apart" in a dry run.
 - **Wrapper, end to end** on "everything is falling apart" (outputs went to a scratch folder,
   not the project):
 
@@ -195,7 +204,11 @@ Everything `broll.py` needs from a template, plus HyperFrames gotchas hit while 
    every variant shows the fallback font there.
 9. **Optional extras default to empty** (a flag, a highlight, a source line), so a clip only
    gets them when its cue file asks. Never make a warning or decoration the default.
-10. **Tracking per font**: tight negative letter-spacing suits Inter/Montserrat but crushes
+10. **`fromTo` renders its "from" at build time** (`immediateRender` defaults to true). Two
+    `fromTo`s on the same element at different times: the later one's "from" paints frame 0.
+    Pass `immediateRender: false` on every `fromTo` after an element's first, or the colour
+    states of later steps show at frame 0 (hit in `flow`).
+11. **Tracking per font**: tight negative letter-spacing suits Inter/Montserrat but crushes
     condensed fonts (Oswald, League Gothic) and serifs; set it per font option (`big-stat` has a
     `TRACK` table).
 
@@ -244,10 +257,10 @@ Ordered roughly by how often the pattern comes up.
 4. **Versus split.** Two sides with a value/label each, optional winner highlight or
    result ("5x faster"). E.g. $5,200 vs $260 (API vs cached), senior vs junior with AI,
    LLM vs harness, prompt vs semantic caching, 1 CPU core vs 4, Lovable/Bolt vs Claude Code.
-5. **Flow / pipeline.** 3–6 labelled boxes, arrows light up on beats, optional loop-back
+5. ~~**Flow / pipeline.**~~ Done as `flow`. 3–6 labelled boxes, arrows light up on beats, optional loop-back
    arrow. E.g. the agent loop, user → app → vector DB → LLM,
    track → find → automate → repeat, record → fix mistakes → process → publish.
-6. **Checklist (do / don't).** Items tick ✓ or cross ✗ on beats. E.g. the 4 command red
+6. ~~**Checklist (do / don't).**~~ Done as `checklist`. Items tick ✓ or cross ✗ on beats. E.g. the 4 command red
    flags; architecture / performance / security; "don't automate: one-offs, sensitive
    tasks, creative work".
 7. **Quote / emphasis card.** Styles via an `enum`: plain quote, comment card (for
@@ -270,7 +283,9 @@ Ordered roughly by how often the pattern comes up.
 2. ~~Write the wrapper and prove it end to end on "everything is falling apart".~~ Done:
    `phantom broll`.
 3. ~~Build **Big stat** and **Terminal command** templates.~~ Done as `big-stat` and `terminal`.
-4. Then Versus, Flow, Checklist, Quote, Definition, Meter, Headline stack as needed.
+4. ~~Build **Flow** and **Checklist**.~~ Done as `flow` and `checklist` (2026-10-30).
+5. Test all five on a real video (recorded 2026-10-30), then the two pending steps below.
+6. Then Versus, Quote, Definition, Meter, Headline stack as needed.
 
 Pending (deferred, not dropped):
 
