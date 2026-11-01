@@ -12,9 +12,9 @@ Stages:
   3. Recorded          - Raw footage present, needs Phantom processing (to-review.mp4).
   4. Processed         - Phantom processing complete (to-review.mp4), needs manual review (final.mp4).
   5. Reviewed          - Manual review complete (final.mp4), needs metadata & thumbnail.
-  6. Added Metadata    - metadata.json created, needs thumbnail.
-  7. Added Thumbnail   - Thumbnail(s) created, needs metadata.json.
-  8. Ready to Schedule - final.mp4 + metadata.json + thumbnail(s) complete, ready for release/upload.
+  6. Added Metadata    - metadata.json created with every key in REQUIRED_METADATA_KEYS, needs thumbnail.
+  7. Added Thumbnail   - Thumbnail(s) created, needs a complete metadata.json.
+  8. Ready to Schedule - final.mp4 + complete metadata.json + thumbnail(s), ready for release/upload.
   9. Scheduled         - Video has scheduled publish date, needs YouTube upload.
  10. Uploaded          - Video uploaded to YouTube (metadata.json has valid YT URL). Complete!
  11. Needs Repackaging - 48h after publish, its first days' CTR was below the channel's 28-day CTR.
@@ -90,6 +90,8 @@ OUTLINE_SECTIONS = ("Hook", "Outline")
 # Marks where in the video to ask viewers to like & subscribe; must appear somewhere in outline.md.
 OUTLINE_CTA_MARKER = "[LIKE / SUBSCRIBE]"
 OUTLINE_CTA_PATTERN = re.compile(r"\[\s*LIKE\s*/\s*SUBSCRIBE\s*\]", re.IGNORECASE)
+# Keys metadata.json must contain for the metadata step to count as done.
+REQUIRED_METADATA_KEYS = ("title", "titles", "description", "tweetTemplate", "recommendations", "timestamps")
 
 
 def is_valid_yt_url(url: str) -> bool:
@@ -136,6 +138,7 @@ class VideoProject:
     to_review_file: Optional[Path] = None
     final_file: Optional[Path] = None
     metadata_file: Optional[Path] = None
+    metadata_missing_keys: List[str] = field(default_factory=list)
     thumbnail_files: List[Path] = field(default_factory=list)
     yt_url: Optional[str] = None
     title: Optional[str] = None
@@ -150,6 +153,10 @@ class VideoProject:
     @property
     def has_outline(self) -> bool:
         return self.outline_file is not None and not self.outline_missing_sections and self.outline_has_cta
+
+    @property
+    def has_metadata(self) -> bool:
+        return self.metadata_file is not None and not self.metadata_missing_keys
 
     @property
     def is_scripted(self) -> bool:
@@ -170,7 +177,8 @@ class VideoProject:
             "raw_files": [f.name for f in self.raw_files],
             "to_review_file": self.to_review_file.name if self.to_review_file else None,
             "final_file": self.final_file.name if self.final_file else None,
-            "has_metadata": self.metadata_file is not None,
+            "has_metadata": self.has_metadata,
+            "metadata_missing_keys": self.metadata_missing_keys,
             "title": self.title,
             "thumbnails": [f.name for f in self.thumbnail_files],
             "yt_url": self.yt_url,
@@ -212,6 +220,27 @@ def missing_outline_sections(outline_file: Path) -> List[str]:
 def has_outline_cta(outline_file: Path) -> bool:
     """Check if outline.md contains the OUTLINE_CTA_MARKER anywhere (case and spacing are ignored)."""
     return bool(OUTLINE_CTA_PATTERN.search(outline_file.read_text(encoding="utf-8", errors="replace")))
+
+
+def missing_metadata_keys(metadata_file: Path) -> List[str]:
+    """Return the REQUIRED_METADATA_KEYS that metadata.json lacks (all of them if it can't be read as an object).
+
+    Reads the raw JSON: read_metadata() fills in defaults, so it can't tell a missing key from a default.
+    """
+    try:
+        data = json.loads(metadata_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return list(REQUIRED_METADATA_KEYS)
+    if not isinstance(data, dict):
+        return list(REQUIRED_METADATA_KEYS)
+    return [key for key in REQUIRED_METADATA_KEYS if key not in data]
+
+
+def metadata_todo(project: VideoProject) -> str:
+    """What's left to do for the project's metadata.json."""
+    if project.metadata_file is None:
+        return "Create metadata.json file (title, titles, description, tweetTemplate, recommendations, timestamps)"
+    return f"Add the missing keys to metadata.json ({', '.join(project.metadata_missing_keys)})"
 
 
 def is_raw_video_file(file_path: Path) -> bool:
@@ -421,6 +450,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
             project.final_file = item
         elif item.name.lower() == "metadata.json":
             project.metadata_file = item
+            project.metadata_missing_keys = missing_metadata_keys(item)
             try:
                 meta = read_metadata(item)
                 if meta.title:
@@ -489,31 +519,31 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.status_color = COLOR_YELLOW
 
     # Stage 8: Ready to Schedule (final.mp4 + metadata.json + thumbnail(s))
-    elif project.final_file and project.metadata_file and project.thumbnail_files:
+    elif project.final_file and project.has_metadata and project.thumbnail_files:
         project.stage_num = 8
         project.stage_name = "Ready to Schedule"
         project.next_step = "Upload video to YouTube (`phantom yt upload`) or set publishDate in metadata.json"
         project.status_color = COLOR_CYAN
 
-    # Stage 7: Added Thumbnail (final.mp4 + thumbnail, missing metadata)
+    # Stage 7: Added Thumbnail (final.mp4 + thumbnail, missing or incomplete metadata)
     elif project.final_file and project.thumbnail_files:
         project.stage_num = 7
         project.stage_name = "Added Thumbnail"
-        project.next_step = "Create metadata.json file (title, description, tags)"
+        project.next_step = metadata_todo(project)
         project.status_color = COLOR_CYAN
 
-    # Stage 6: Added Metadata (final.mp4 + metadata.json, missing thumbnail)
-    elif project.final_file and project.metadata_file:
+    # Stage 6: Added Metadata (final.mp4 + complete metadata.json, missing thumbnail)
+    elif project.final_file and project.has_metadata:
         project.stage_num = 6
         project.stage_name = "Added Metadata"
         project.next_step = "Design and add thumbnail (e.g. thumbnail.png)"
         project.status_color = COLOR_CYAN
 
-    # Stage 5: Reviewed (final.mp4 exists, missing both metadata and thumbnail)
+    # Stage 5: Reviewed (final.mp4 exists, missing both a complete metadata.json and thumbnail)
     elif project.final_file:
         project.stage_num = 5
         project.stage_name = "Reviewed"
-        project.next_step = "Create metadata.json AND design thumbnail (e.g. thumbnail.png)"
+        project.next_step = f"{metadata_todo(project)} AND design thumbnail (e.g. thumbnail.png)"
         project.status_color = COLOR_PURPLE
 
     # Stage 4: Processed (to-review.mp4 exists, final.mp4 does not)
@@ -618,13 +648,13 @@ def render_stage_bar(proj: VideoProject) -> str:
             elif idx == 5:
                 is_complete = proj.final_file is not None and proj.stage_num > 5
             elif idx == 6:
-                is_complete = proj.metadata_file is not None
+                is_complete = proj.has_metadata
             elif idx == 7:
                 is_complete = bool(proj.thumbnail_files)
             elif idx == 8:
                 is_complete = proj.stage_num > 8 or (
                     proj.final_file is not None
-                    and proj.metadata_file is not None
+                    and proj.has_metadata
                     and bool(proj.thumbnail_files)
                 )
             elif idx == 9:
@@ -684,7 +714,9 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         to_rev_status = f"{COLOR_GREEN}✓ {proj.to_review_file.name}{COLOR_RESET}" if proj.to_review_file else f"{COLOR_GRAY}✗ to-review.mp4{COLOR_RESET}"
         final_status = f"{COLOR_GREEN}✓ {proj.final_file.name}{COLOR_RESET}" if proj.final_file else f"{COLOR_GRAY}✗ final.mp4{COLOR_RESET}"
         
-        if proj.metadata_file:
+        if proj.metadata_file and proj.metadata_missing_keys:
+            meta_status = f"{COLOR_YELLOW}✗ metadata.json (missing: {', '.join(proj.metadata_missing_keys)}){COLOR_RESET}"
+        elif proj.metadata_file:
             if proj.yt_url:
                 date_str = proj.uploaded_date or proj.scheduled_date
                 date_label = f" (Uploaded: {date_str})" if date_str else " (URL set)"
