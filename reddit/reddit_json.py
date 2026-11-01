@@ -230,14 +230,17 @@ def feed_item_fields(post: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-# Most posts /by_id answers for in one request
+# Most posts /api/info answers for in one request
 MAX_INFO_IDS = 100
 
 
 def info_url(post_ids: List[str]) -> str:
-    """The /by_id .json URL (Reddit 403s /api/info.json) for up to MAX_INFO_IDS posts, by ID with or without the "t3_" prefix."""
+    """
+    The /api/info .json URL for up to MAX_INFO_IDS posts, by ID with or without the "t3_" prefix.
+    Reddit 403s /api/info.json and every form of /by_id, but answers /api/info/.json.
+    """
     fullnames = ",".join(i if i.startswith("t3_") else f"t3_{i}" for i in post_ids)
-    return f"https://www.reddit.com/by_id/{fullnames}.json?raw_json=1&limit={MAX_INFO_IDS}"
+    return f"https://www.reddit.com/api/info/.json?id={fullnames}&raw_json=1"
 
 
 def info_item_fields(post: Dict[str, Any]) -> Dict[str, Any]:

@@ -68,8 +68,12 @@ FETCH_TIMEOUT_MS = 30000
 
 RATE_LIMIT_HEADERS = ["x-ratelimit-remaining", "x-ratelimit-reset", "retry-after"]
 
+# No referrer: Reddit answers .json requests whose referrer is robots.txt with a 403 block page,
+# while the same request with no referrer (as when the URL is typed into the address bar) gets the JSON
 FETCH_JS = """async ([url, timeout, headerNames]) => {
-    const resp = await fetch(url, {credentials: "include", signal: AbortSignal.timeout(timeout)});
+    const resp = await fetch(url, {
+        credentials: "include", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(timeout),
+    });
     const headers = Object.fromEntries(headerNames.map(name => [name, resp.headers.get(name)]));
     return [resp.status, await resp.text(), headers];
 }"""

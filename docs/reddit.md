@@ -81,7 +81,7 @@ Scrapes posts from any subreddit feed (`best`, `hot`, `new`, `rising`, or `top` 
 
 ### 3. [scrape_search.py](../reddit/scrape_search.py)
 
-Scrapes post results from a Reddit search (`https://www.reddit.com/search/?q=...&type=posts`), scrolling to lazy-load more results until the limit is reached or results run out. Each result includes title, subreddit, author, relative and ISO post date, votes, comment count, thumbnail (if any), and URL.
+Scrapes post results from a Reddit search (`https://www.reddit.com/search/?q=...&type=posts`). Search has no usable `.json` URL (www.reddit.com blocks it, and old.reddit.com's legacy search ranks results differently), so the scraper `fetch()`es the search page's HTML from a tab and parses it without rendering, then follows the 7-results-at-a-time fragments the page would load on scroll (`/svc/shreddit/search/?...&cursor=...`) until the limit is reached or results run out. Each result includes title, subreddit, author, relative and ISO post date, votes, comment count, thumbnail (if any), and URL.
 
 * **CLI Usage**:
   ```bash

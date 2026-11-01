@@ -4,6 +4,14 @@ Reddit Search Results Scraper using Playwright & Chrome DevTools Protocol (CDP).
 Scrapes post results from a Reddit search (https://www.reddit.com/search/?q=...&type=posts)
 by attaching to a persistent native Google Chrome instance via CDP.
 
+Search has no usable .json: www.reddit.com's search .json URLs get a "blocked by network security"
+403, and old.reddit.com/search.json runs Reddit's legacy search, whose results differ from the site's
+(only 6 of the site's top 40 for one query were in its top 100). So the scraper gets the search
+page's HTML with fetch() from a tab on robots.txt (as serve.py does) and parses it with DOMParser,
+without rendering it. The page only holds 7 results; it ends with a <faceplate-partial> whose src is the HTML fragment
+of the next 7 (/svc/shreddit/search/?...&cursor=...), which the page would load on scroll, so the
+scraper fetches those in turn until it has enough.
+
 Extracts:
 - post title & post url
 - subreddit
@@ -26,10 +34,11 @@ import json
 import os
 import sys
 import urllib.parse
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError, async_playwright
+from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
 # Ensure repo root is in python path for module imports
@@ -39,6 +48,8 @@ if REPO_ROOT not in sys.path:
 
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 from reddit.navigate import goto_with_retries
+from reddit.reddit_json import relative_age
+from reddit.serve import HOME_URL, RedditFetcher
 
 # ==============================================================================
 # Configuration & Constants
@@ -47,10 +58,12 @@ SEARCH_URL = "https://www.reddit.com/search/"
 SORT_OPTIONS = ["relevance", "hot", "top", "new", "comments"]
 TIME_OPTIONS = ["all", "year", "month", "week", "day", "hour"]
 
-# Extracts every search result post currently in the DOM. Each result is a
-# search-telemetry-tracker carrying a JSON tracking context with post/author/subreddit info.
+# Parses the HTML of a search page or results fragment and returns [results, next fragment's src].
+# Each result is a search-telemetry-tracker carrying a JSON tracking context with post/author/subreddit
+# info. The relative date text is left empty: faceplate-timeago only fills it in once rendered.
 EXTRACT_RESULTS_JS = """
-() => {
+(html) => {
+    const document = new DOMParser().parseFromString(html, 'text/html');
     const results = [];
     for (const el of document.querySelectorAll('[data-testid="search-sdui-post"]')) {
         let ctx = {};
@@ -78,13 +91,10 @@ EXTRACT_RESULTS_JS = """
             thumbnail_url: thumb ? thumb.getAttribute('src') || '' : '',
         });
     }
-    return results;
+    const next = document.querySelector('faceplate-partial[src*="/svc/shreddit/search/"]');
+    return [results, next ? next.getAttribute('src') : null];
 }
 """
-
-
-COUNT_RESULTS_JS = """document.querySelectorAll('[data-testid="search-sdui-post"]').length"""
-SCROLL_WAIT_MS = 2000
 
 
 def build_search_url(query: str, sort: str = "relevance", time_filter: str = "all") -> str:
@@ -133,12 +143,18 @@ def to_search_post_item(raw: dict) -> SearchPostItem:
     permalink = raw.get("permalink") or ""
     full_url = f"https://www.reddit.com{permalink}" if permalink.startswith("/") else permalink
 
+    date_posted = raw.get("date_posted")
+    if not date_posted and raw.get("created_timestamp"):
+        # The age the rendered page shows, e.g. "4d ago"
+        created = datetime.strptime(raw["created_timestamp"], "%Y-%m-%dT%H:%M:%S.%f%z")
+        date_posted = f"{relative_age(created.timestamp())} ago"
+
     return SearchPostItem(
         post_id=raw.get("post_id") or "",
         title=raw.get("title") or "Untitled Post",
         subreddit=f"r/{subreddit}" if subreddit else "Unknown subreddit",
         author=f"u/{author}" if author else "u/anonymous",
-        date_posted=raw.get("date_posted") or "Unknown date",
+        date_posted=date_posted or "Unknown date",
         created_timestamp=raw.get("created_timestamp") or None,
         upvotes=str(raw.get("upvotes") or "0"),
         comments_n=str(raw.get("comments_n") or "0"),
@@ -146,6 +162,15 @@ def to_search_post_item(raw: dict) -> SearchPostItem:
         thumbnail_url=raw.get("thumbnail_url") or None,
         url=full_url,
     )
+
+
+async def fetch_results(fetcher: RedditFetcher, url: str) -> Tuple[List[dict], Optional[str]]:
+    """Gets a search page or results fragment and returns its raw results and the next fragment's URL."""
+    status, html = await fetcher.get(url)
+    if status != 200:
+        raise RuntimeError(f"Reddit returned HTTP {status} for {url}")
+    raw_results, next_src = await fetcher.page.evaluate(EXTRACT_RESULTS_JS, html)
+    return raw_results, urllib.parse.urljoin(url, next_src) if next_src else None
 
 
 async def scrape_search(
@@ -193,29 +218,22 @@ async def scrape_search(
 
         page = await get_clean_page(context)
         try:
-            if not quiet:
-                print(f"[*] Navigating to: {search_url}")
-
-            await goto_with_retries(page, search_url, quiet=quiet)
-
-            # Wait for search results to attach
-            try:
-                await page.locator('[data-testid="search-sdui-post"]').first.wait_for(state="attached", timeout=15000)
-            except Exception:
-                if not quiet:
-                    print("[!] Warning: search result selector wait timed out, continuing with available DOM...")
+            await goto_with_retries(page, HOME_URL, quiet=quiet)
+            fetcher = RedditFetcher(page)
 
             scraped_items: List[SearchPostItem] = []
             seen_ids = set()
 
-            # Stop once we hit the limit, or when several scrolls in a row load nothing new
-            max_stale_scrolls = 3
-            stale_scrolls = 0
+            # Follow each page's next-fragment link until we hit the limit or results run out
+            url: Optional[str] = search_url
+            while url and len(scraped_items) < limit:
+                if not quiet:
+                    print(f"[*] Fetching: {url[:120]}")
+                raw_results, url = await fetch_results(fetcher, url)
+                if not raw_results:
+                    break
 
-            while len(scraped_items) < limit and stale_scrolls < max_stale_scrolls:
-                before = len(scraped_items)
-
-                for raw in await page.evaluate(EXTRACT_RESULTS_JS):
+                for raw in raw_results:
                     if len(scraped_items) >= limit:
                         break
                     key = raw.get("post_id") or raw.get("permalink")
@@ -223,16 +241,6 @@ async def scrape_search(
                         continue
                     seen_ids.add(key)
                     scraped_items.append(to_search_post_item(raw))
-
-                if len(scraped_items) < limit:
-                    stale_scrolls = stale_scrolls + 1 if len(scraped_items) == before else 0
-                    # Scroll to the bottom to trigger lazy loading of additional results, and
-                    # wait (up to SCROLL_WAIT_MS) only until more of them are in the DOM
-                    shown = await page.evaluate("window.scrollTo(0, document.body.scrollHeight); " + COUNT_RESULTS_JS)
-                    try:
-                        await page.wait_for_function(f"n => {COUNT_RESULTS_JS} > n", arg=shown, timeout=SCROLL_WAIT_MS)
-                    except PlaywrightTimeoutError:
-                        pass
 
             if not quiet:
                 print(f"[✓] Successfully scraped {len(scraped_items)} posts for search '{query}'.")
