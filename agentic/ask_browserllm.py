@@ -75,6 +75,9 @@ def ask_browserllm(
     timeout: Optional[float] = None,
     profile: Optional[str] = None,
     headless: bool = False,
+    model: Optional[str] = None,
+    effort: Optional[str] = None,
+    output_json: bool = False,
     **kwargs: Any,
 ) -> Union[T, Dict[str, Any], List[Any], str]:
     """Queries a provider (claude, chatgpt, gemini) via BrowserLLM."""
@@ -106,6 +109,12 @@ def ask_browserllm(
         cmd = [BROWSERLLM_BIN, "-p", prompt_path, "-P", provider.lower(), "-o", output_path]
         if image:
             cmd.extend(["-i", str(image)])
+        if model:
+            cmd.extend(["--model", model])
+        if effort:
+            cmd.extend(["--effort", effort])
+        if output_json or schema is not None:
+            cmd.append("--output-json")
         if profile:
             cmd.extend(["--profile", str(profile)])
         if headless:
@@ -173,6 +182,7 @@ def main() -> None:
     parser.add_argument("-o", "--output", type=str, help="Output file path.")
     parser.add_argument("--profile", "--browserllm-profile", type=str, default=None, dest="profile", help="Browser profile name.")
     parser.add_argument("--headless", action="store_true", help="Run browser in headless mode.")
+    parser.add_argument("--output-json", action="store_true", help="Have BrowserLLM parse the response as JSON.")
 
     args = parser.parse_args()
     if not args.prompt and not args.template:
@@ -185,6 +195,7 @@ def main() -> None:
         image=args.image,
         profile=args.profile,
         headless=args.headless,
+        output_json=args.output_json,
     )
 
     if args.output:

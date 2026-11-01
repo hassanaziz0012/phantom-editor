@@ -40,35 +40,37 @@ Automatically creates or updates `metadata.json` in a YouTube video project fold
 
 *Note: Timestamps/chapters are generated separately using `phantom metadata timestamps` after manual video review cuts are finalized.*
 
-* **CLI Command**: `phantom metadata create [<project_path>] [--title <title>] [--tags <tags>] [--skip-ai]`
+`--profile` selects the BrowserLLM browser profile used for every LLM call (and for the `browserllm blank` warm-up); each individual generator below accepts it too.
+
+* **CLI Command**: `phantom metadata create [<project_path>] [--title <title>] [--tags <tags>] [--skip-ai] [--profile <name>]`
 
 ---
 
 ### [auto_gen_desc.py](../metadata/auto_gen_desc.py)
 Extracts transcript cues from phrase-level `.srt` captions and sends them to Claude via BrowserLLM with anti-AI writing rules ([`deslopify_text.md`](../agentic/prompts/deslopify_text.md)) to generate a punchy 2-3 sentence video description. Saves directly to `metadata.json`.
 
-* **CLI Command**: `phantom metadata desc [<project_path>] [--metadata <path>]`
+* **CLI Command**: `phantom metadata desc [<project_path>] [--metadata <path>] [--profile <name>]`
 
 ---
 
 ### [auto_gen_tweet.py](../metadata/auto_gen_tweet.py)
 Analyzes video transcript cues and generates a promotional tweet template (<= 240 characters) highlighting the problem solved. Ensures the `{url}` placeholder is attached and validates total length against Twitter's limit. Saves directly to `metadata.json` as `tweetTemplate`.
 
-* **CLI Command**: `phantom metadata tweet [<project_path>] [--metadata <path>]`
+* **CLI Command**: `phantom metadata tweet [<project_path>] [--metadata <path>] [--profile <name>]`
 
 ---
 
 ### [generate_timestamps.py](../metadata/generate_timestamps.py)
 Generates YouTube chapters and topics from phrase-level `.srt` captions using Claude via BrowserLLM. Automatically ensures the first chapter starts at `00:00` (`Introduction`) and saves the structured list to `metadata.json`.
 
-* **CLI Command**: `phantom metadata timestamps [<captions_srt_path>] [--metadata <path>]`
+* **CLI Command**: `phantom metadata timestamps [<captions_srt_path>] [--metadata <path>] [--profile <name>]`
 
 ---
 
 ### [generate_titles.py](../metadata/generate_titles.py)
 Reads `trimmed.srt` and sends the timestamped transcript to Claude via BrowserLLM with the [`generate_video_titles.md`](../agentic/prompts/generate_video_titles.md) prompt. The prompt extracts the video's key facts, writes 25 titles across 6+ archetypes, scores each out of 16, and returns the 7 best. The full response (extracted facts, all 25 titles, flags) is saved to `titles.json` in the project folder; the ranked top titles (rank, title, archetype, scores, total, payoff timestamp, thumbnail text) are saved to the `titles` list in `metadata.json`. Does not change the `title` field.
 
-* **CLI Command**: `phantom metadata titles [<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>] [--metadata <path>]`
+* **CLI Command**: `phantom metadata titles [<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>] [--metadata <path>] [--profile <name>]`
 
 ---
 
@@ -95,7 +97,7 @@ Orchestrates YouTube channel video summarization and vector embedding generation
 
 ### [utils.py](../metadata/utils.py)
 Shared helper module containing:
-- `query_claude(prompt_text)`: Invokes `browserllm -p <file> --provider claude -o <file>`.
+- `query_claude(prompt_text)`: Invokes `browserllm -p <file> --provider claude -o <file>` (add `--output-json` via `output_json=True` for JSON prompts).
 - `parse_claude_json(response_text)`: Parses JSON arrays or objects from Claude's response (handles code fences and plain text).
 - `load_prompt(prompt_name, **kwargs)`: Loads prompts from `agentic/prompts/` and auto-injects deslopifier guidelines.
 - `resolve_project_paths(target)`: Intelligently resolves project directory, `metadata.json`, captions `.srt`, and title.

@@ -49,6 +49,7 @@ def format_tweet_template(raw_tweet: str) -> str:
 def generate_tweet_for_project(
     target: str | Path | None = None,
     metadata_path: Path | None = None,
+    profile: str | None = None,
 ) -> str:
     """Generates a promotional tweet template and saves it to metadata.json for the project."""
     project_dir, default_meta_path, captions_path, title = utils.resolve_project_paths(target)
@@ -62,7 +63,7 @@ def generate_tweet_for_project(
 
     print("🤖 Generating promotional tweet template with Claude via BrowserLLM...")
     prompt = utils.load_prompt("generate_video_tweet.md", transcript=transcript)
-    raw_response = utils.query_claude(prompt)
+    raw_response = utils.query_claude(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
 
     parsed = utils.parse_claude_json(raw_response)
     if isinstance(parsed, dict):
@@ -109,12 +110,17 @@ def main():
         default=None,
         help="Path to metadata.json (default: metadata.json in the project folder).",
     )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="BrowserLLM browser profile to use (default: BrowserLLM's default).",
+    )
 
     args = parser.parse_args()
 
     try:
         custom_meta = Path(args.metadata).resolve() if args.metadata else None
-        tweet_template = generate_tweet_for_project(args.target, metadata_path=custom_meta)
+        tweet_template = generate_tweet_for_project(args.target, metadata_path=custom_meta, profile=args.profile)
 
         print("\n🐦 Generated Tweet Template:")
         print("-" * 50)

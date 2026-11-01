@@ -68,11 +68,14 @@ def retry_with_backoff(
     return None
 
 
-def ensure_browserllm_ready() -> bool:
+def ensure_browserllm_ready(profile: str | None = None) -> bool:
     """Run `browserllm blank` to ensure browser window is open, then wait 1s."""
     print("\n🌐 Ensuring BrowserLLM browser window is open...")
+    cmd = ["browserllm", "blank"]
+    if profile:
+        cmd.extend(["--profile", profile])
     try:
-        subprocess.run(["browserllm", "blank"], check=True, capture_output=True, text=True, timeout=30)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=30)
         print("   BrowserLLM window opened successfully.")
     except subprocess.CalledProcessError as e:
         print(f"   ⚠️  browserllm blank failed (exit code {e.returncode}): {e.stderr.strip()}")
@@ -104,6 +107,7 @@ def auto_create_metadata(
     made_for_kids: bool | None = None,
     skip_ai: bool = False,
     skip_recommendations: bool = False,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     """Creates or updates metadata.json for the targeted video project.
 
@@ -143,12 +147,12 @@ def auto_create_metadata(
             print(f"\n📂 Found captions file: {captions_path.name}")
 
             # Ensure BrowserLLM browser is ready before running parallel workers
-            ensure_browserllm_ready()
+            ensure_browserllm_ready(profile)
 
             # Define the AI generation tasks
             def run_description() -> str | None:
                 return retry_with_backoff(
-                    lambda: generate_description_for_project(captions_path, metadata_path=metadata_path),
+                    lambda: generate_description_for_project(captions_path, metadata_path=metadata_path, profile=profile),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Description generation",
@@ -156,7 +160,7 @@ def auto_create_metadata(
 
             def run_tweet() -> str | None:
                 return retry_with_backoff(
-                    lambda: generate_tweet_for_project(captions_path, metadata_path=metadata_path),
+                    lambda: generate_tweet_for_project(captions_path, metadata_path=metadata_path, profile=profile),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Tweet template generation",
@@ -168,7 +172,7 @@ def auto_create_metadata(
                 description = futures["description"].result() if "description" in futures else None
                 return retry_with_backoff(
                     lambda: recommend_videos_for_project(
-                        target=project_dir, metadata_path=metadata_path, description=description
+                        target=project_dir, metadata_path=metadata_path, description=description, profile=profile
                     ),
                     max_retries=3,
                     base_delay=2.0,
@@ -177,7 +181,7 @@ def auto_create_metadata(
 
             def run_timestamps() -> list[dict[str, str]] | None:
                 return retry_with_backoff(
-                    lambda: generate_timestamps_for_project(target=project_dir, metadata_path=metadata_path),
+                    lambda: generate_timestamps_for_project(target=project_dir, metadata_path=metadata_path, profile=profile),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Timestamps generation",
@@ -185,7 +189,7 @@ def auto_create_metadata(
 
             def run_titles() -> list[dict[str, Any]] | None:
                 return retry_with_backoff(
-                    lambda: generate_titles_for_project(captions_path, metadata_path=metadata_path),
+                    lambda: generate_titles_for_project(captions_path, metadata_path=metadata_path, profile=profile),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Titles generation",
@@ -302,6 +306,11 @@ def main():
         default=False,
         help="Skip generation of video recommendations.",
     )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="BrowserLLM browser profile to use (default: BrowserLLM's default).",
+    )
 
     args = parser.parse_args()
 
@@ -317,6 +326,7 @@ def main():
             made_for_kids=args.made_for_kids,
             skip_ai=args.skip_ai,
             skip_recommendations=args.skip_recommendations,
+            profile=args.profile,
         )
     except Exception as e:
         print(f"❌ Error: {e}", file=sys.stderr)

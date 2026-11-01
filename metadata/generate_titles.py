@@ -79,6 +79,7 @@ def generate_titles_for_project(
     traffic_goal: str = "both",
     channel_size: str = "small",
     thumbnail_concept: str = "none yet",
+    profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Generates title candidates, writes titles.json, and saves the ranked list to metadata.json."""
     project_dir, default_meta_path, captions_path, title = utils.resolve_project_paths(target)
@@ -100,7 +101,7 @@ def generate_titles_for_project(
         title=title,
         transcript=transcript,
     )
-    raw_response = utils.query_claude(prompt)
+    raw_response = utils.query_claude(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
 
     parsed_json = utils.parse_claude_json(raw_response)
     titles = format_titles(parsed_json)
@@ -158,6 +159,11 @@ def main():
         default="none yet",
         help="Thumbnail concept/text so titles don't repeat it (default: 'none yet').",
     )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="BrowserLLM browser profile to use (default: BrowserLLM's default).",
+    )
 
     args = parser.parse_args()
 
@@ -169,6 +175,7 @@ def main():
             traffic_goal=args.traffic,
             channel_size=args.channel_size,
             thumbnail_concept=args.thumbnail,
+            profile=args.profile,
         )
 
         print("\n✅ Generated Titles:")

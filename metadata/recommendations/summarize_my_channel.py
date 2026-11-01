@@ -54,7 +54,7 @@ def generate_video_ai_summary(transcript_text: str) -> str:
     """Generates a concise 2-3 sentence AI summary using ChatGPT via BrowserLLM."""
     logger.info("Generating AI summary with ChatGPT via BrowserLLM...")
     prompt = load_prompt("generate_video_description.md", transcript=transcript_text)
-    raw_response = ask_chatgpt(prompt)
+    raw_response = ask_chatgpt(prompt, output_json=True)
 
     raw_str = str(raw_response).strip()
     print(f"\n[BrowserLLM Response]:\n{raw_str}\n", flush=True)
@@ -122,7 +122,7 @@ def categorize_video(
         EXISTING_CATEGORIES_JSON_ARRAY=categories_json,
         VIDEO_OBJECT_JSON=video_json,
     )
-    raw_response = ask_chatgpt(prompt)
+    raw_response = ask_chatgpt(prompt, output_json=True)
 
     raw_str = str(raw_response).strip()
     print(f"\n[BrowserLLM Categorization Response]:\n{raw_str}\n", flush=True)

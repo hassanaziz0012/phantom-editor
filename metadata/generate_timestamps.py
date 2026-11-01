@@ -59,6 +59,7 @@ def format_timestamps(data: Any) -> list[dict[str, str]]:
 def generate_timestamps_for_project(
     target: str | Path | None = None,
     metadata_path: Path | None = None,
+    profile: str | None = None,
 ) -> list[dict[str, str]]:
     """Generates timestamps and saves them to metadata.json for the targeted project."""
     target_path = Path(target).expanduser().resolve() if target else Path.cwd()
@@ -96,7 +97,7 @@ def generate_timestamps_for_project(
 
     print("🤖 Generating timestamps with Claude via BrowserLLM...")
     prompt = utils.load_prompt("generate_timestamps.md", title=title, transcript=transcript)
-    raw_response = utils.query_claude(prompt)
+    raw_response = utils.query_claude(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
 
     parsed_json = utils.parse_claude_json(raw_response)
     timestamps = format_timestamps(parsed_json)
@@ -133,12 +134,17 @@ def main():
         default=None,
         help="Path to metadata.json (default: metadata.json in the project folder).",
     )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="BrowserLLM browser profile to use (default: BrowserLLM's default).",
+    )
 
     args = parser.parse_args()
 
     try:
         custom_meta = Path(args.metadata).resolve() if args.metadata else None
-        timestamps = generate_timestamps_for_project(args.target, metadata_path=custom_meta)
+        timestamps = generate_timestamps_for_project(args.target, metadata_path=custom_meta, profile=args.profile)
 
         print("\n✅ Generated Timestamps:")
         for item in timestamps:

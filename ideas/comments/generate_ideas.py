@@ -388,6 +388,7 @@ def main():
             profile=args.profile,
             profile_dir=args.profile_dir,
             chrome=not args.no_chrome,
+            output_json=True,
         )
     except Exception as e:
         if args.json:

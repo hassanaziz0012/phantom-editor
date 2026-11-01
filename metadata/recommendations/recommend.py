@@ -236,6 +236,7 @@ def select_recommendations_with_claude(
     current_title: str,
     current_summary: str,
     candidates: List[Dict[str, Any]],
+    profile: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Prompts Claude via BrowserLLM with the candidate shortlist to select and rank
@@ -250,7 +251,7 @@ def select_recommendations_with_claude(
     )
 
     logger.info("Querying Claude via BrowserLLM to select top recommendations...")
-    raw_response = ask_claude(prompt)
+    raw_response = ask_claude(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
     raw_text = str(raw_response).strip()
 
     parsed = parse_claude_json(raw_text)
@@ -302,6 +303,7 @@ def recommend_videos_for_project(
     top_n: int = TOP_CANDIDATES_COUNT,
     dry_run: bool = False,
     description: Optional[str] = None,
+    profile: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Main pipeline function:
@@ -344,6 +346,7 @@ def recommend_videos_for_project(
         current_title=title,
         current_summary=description,
         candidates=candidates,
+        profile=profile,
     )
 
     if not recommendations:
@@ -396,6 +399,11 @@ def main() -> None:
         action="store_true",
         help="Output recommendations exclusively as formatted JSON.",
     )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="BrowserLLM browser profile to use (default: BrowserLLM's default).",
+    )
 
     args = parser.parse_args()
     custom_meta = Path(args.metadata).resolve() if args.metadata else None
@@ -406,6 +414,7 @@ def main() -> None:
             metadata_path=custom_meta,
             top_n=args.top_n,
             dry_run=args.dry_run,
+            profile=args.profile,
         )
 
         if args.json:
