@@ -115,14 +115,14 @@ def resolve_channel_id(youtube, channel_input: str) -> str:
 def extract_video_id(input_str: str) -> str:
     """
     Extract the 11-character YouTube video ID from a raw ID or any common URL format
-    (watch?v=, youtu.be/, shorts/, embed/, v/, live/).
+    (watch?v=, youtu.be/, shorts/, embed/, v/, live/, studio.youtube.com/video/).
     """
     input_str = input_str.strip()
 
     if re.fullmatch(r"[a-zA-Z0-9_-]{11}", input_str):
         return input_str
 
-    match = re.search(r"(?:v=|/v/|embed/|shorts/|live/|youtu\.be/|/e/)([a-zA-Z0-9_-]{11})", input_str)
+    match = re.search(r"(?:v=|/v/|/video/|embed/|shorts/|live/|youtu\.be/|/e/)([a-zA-Z0-9_-]{11})", input_str)
     if match:
         return match.group(1)
 

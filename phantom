@@ -77,6 +77,7 @@ show_usage() {
     echo "    comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
     echo "    info <video> [--fresh] [--json] [--days <int>]"
     echo "    channel-stats [--fresh] [--json] [--history]"
+    echo "    endscreen <video>... [--template <name>] [--dry-run]"
     echo ""
     echo "  shorts:"
     echo "    metadata create <folder_path> [arguments]"
@@ -374,6 +375,8 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/video_info.py" "$@"
         elif [ "$SUBCOMMAND" = "channel-stats" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/channel_stats.py" "$@"
+        elif [ "$SUBCOMMAND" = "endscreen" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/add_endscreen.py" "$@"
         else
             echo "Unknown yt subcommand: $SUBCOMMAND"
             echo "Usage: phantom yt upload <video_path>"
@@ -383,6 +386,7 @@ case "$COMMAND" in
             echo "       phantom yt comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
             echo "       phantom yt info <video> [--fresh] [--json] [--days <int>]"
             echo "       phantom yt channel-stats [--fresh] [--json] [--history]"
+            echo "       phantom yt endscreen <video>... [--template <name>] [--dry-run]"
             exit 1
         fi
         ;;

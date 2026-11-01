@@ -31,6 +31,11 @@ Shows quick details about any YouTube video: a direct thumbnail URL, views/likes
 * **Usage**: `python youtube_api/video_info.py <video_url_or_id> [--fresh] [--json]` or via `phantom yt info <video> [--fresh] [--json]`
 * **Caching**: The channel's last 50 uploads are cached in `youtube_api/cache/baselines.json` for 24 hours. A cold lookup costs 3 quota units; a cached one costs 1. `--fresh` forces a refetch.
 
+### [add_endscreen.py](../youtube_api/add_endscreen.py)
+Adds an end screen to your videos by applying a YouTube Studio template, since the Data API has no end screen support. The default template, "Import from latest video", copies the end screen of your most recent video that has one (two videos and a subscribe element). It drives the video's Studio editor in the logged-in Chrome on port 9222. Videos that already have an end screen are skipped, and the video must have finished processing.
+
+* **Usage**: `phantom yt endscreen <video>... [--template <name>] [--dry-run]`. Accepts video IDs, watch URLs, or Studio URLs. `--dry-run` applies the template and lists the elements without saving.
+
 ### [channel_stats.py](../youtube_api/channel_stats.py)
 Your channel's long-form performance over the last 28 days, read live from YouTube Studio: impressions, CTR, views, average view duration, watch time, and subscribers. These match the Videos card on Studio's Content tab.
 
