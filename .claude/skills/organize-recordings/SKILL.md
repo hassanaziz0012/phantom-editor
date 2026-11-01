@@ -1,6 +1,6 @@
 ---
 name: organize-recordings
-description: Move freshly recorded OBS videos from ~/Videos into their YouTube project folders (as raw.mp4, plus mistakes.txt when one exists), run the Phantom processing pipeline on the videos that have no mistakes file, and finish with a report table. Also cuts bad takes out of projects with mistakes: the user gives the time ranges to remove, they are saved as cuts.txt and the pipeline cuts them during its normal encode. Use when the user says which recorded video (by time) belongs to which project, gives time ranges to cut from a project, or asks to organize / process their new recordings.
+description: Use when the user asks to organize or process video recordings or YouTube projects.
 ---
 
 # Organize recordings into YT projects
