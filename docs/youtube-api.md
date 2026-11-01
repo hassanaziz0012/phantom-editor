@@ -23,6 +23,8 @@ Defines shared dataclasses (`Video`, `VideoSeed`, `RankedVideo`, `VideoMetadata`
 ### [upload_video.py](../youtube_api/upload_video.py)
 Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a custom `thumbnail.png`, shares the link on Twitter (X), Substack Notes, and Threads, and sends an email broadcast to subscribers via Resend.
 
+The description is built from `DESCRIPTION_TEMPLATE` in [`config.py`](../config.py). Its RESOURCES section lists `metadata.json`'s `resources` (from `phantom metadata resources`) as `key: url` lines, and is left out when there are none. The upload stops before starting if any resource still has a blank `url`.
+
 * **Usage**: `python youtube_api/upload_video.py /path/to/video.mp4` or via `phantom yt upload <video_path>`
 
 ### [video_info.py](../youtube_api/video_info.py)

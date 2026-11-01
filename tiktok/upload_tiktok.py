@@ -62,7 +62,7 @@ def main():
     
     # Use global template if defined
     if hasattr(config, 'DESCRIPTION_TEMPLATE') and config.DESCRIPTION_TEMPLATE:
-        caption_parts.append(config.DESCRIPTION_TEMPLATE.format(video_description=short_desc, timestamps="", recommended=""))
+        caption_parts.append(config.DESCRIPTION_TEMPLATE.format(video_description=short_desc, timestamps="", recommended="", resources=""))
     else:
         caption_parts.append(short_desc)
         

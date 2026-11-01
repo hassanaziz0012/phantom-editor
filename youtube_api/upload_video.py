@@ -18,6 +18,7 @@ if str(repo_root) not in sys.path:
     sys.path.append(str(repo_root))
 import config
 from metadata.read_metadata import read_metadata, VideoMetadata
+from metadata.check_resource_links import blank_resources
 
 
 from googleapiclient.discovery import build
@@ -144,6 +145,30 @@ def format_recommendations_for_description(raw_recommendations: Any) -> str:
     return ""
 
 
+def format_resources_for_description(raw_resources: Any) -> str:
+    """Formats metadata.json "resources" into the description's RESOURCES section ("" if there are none).
+
+    The section ends with a blank line so it can sit right before the next heading in DESCRIPTION_TEMPLATE.
+    """
+    if not isinstance(raw_resources, list):
+        return ""
+
+    lines: list[str] = []
+    for item in raw_resources:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if key and url:
+            lines.append(f"{key}: {url}")
+        elif url:
+            lines.append(url)
+
+    if not lines:
+        return ""
+    return "RESOURCES\n" + "\n".join(lines) + "\n\n"
+
+
 def validate_metadata_for_upload(
     metadata: Union[VideoMetadata, dict],
     require_description: bool = True,
@@ -152,8 +177,9 @@ def validate_metadata_for_upload(
 ) -> tuple[str, str, str]:
     """
     Validates metadata fields before uploading.
-    Ensures 'description', 'timestamps', and 'recommendations' exist and are non-empty if required.
-    Returns (raw_description, formatted_timestamps, formatted_recommendations).
+    Ensures 'description', 'timestamps', and 'recommendations' exist and are non-empty if required,
+    and that every entry in 'resources' has a URL.
+    Returns (raw_description, formatted_timestamps, formatted_recommendations, formatted_resources).
     """
     raw_description = str(metadata.get("description", "") or "").strip()
 
@@ -184,7 +210,18 @@ def validate_metadata_for_upload(
             "   Please run `phantom metadata recommend <target>` or `phantom metadata auto <target>` to generate them."
         )
 
-    return raw_description, formatted_timestamps, formatted_recommendations
+    raw_resources = metadata.get("resources")
+    blank = blank_resources(raw_resources)
+    if blank:
+        raise ValueError(
+            "Some 'resources' in metadata.json have no URL:\n"
+            + "".join(f"     - {key}\n" for key in blank)
+            + "   The video promises to link these. Fill in each one's 'url' in metadata.json\n"
+            "   (or delete the entry if you don't want to link it)."
+        )
+    formatted_resources = format_resources_for_description(raw_resources)
+
+    return raw_description, formatted_timestamps, formatted_recommendations, formatted_resources
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +238,7 @@ def upload_video(
 ) -> str:
     """Upload the video and return its YouTube video ID."""
 
-    raw_description, formatted_timestamps, formatted_recommendations = validate_metadata_for_upload(
+    raw_description, formatted_timestamps, formatted_recommendations, formatted_resources = validate_metadata_for_upload(
         metadata,
         require_description=require_description,
         require_timestamps=require_timestamps,
@@ -211,6 +248,7 @@ def upload_video(
         video_description=raw_description,
         timestamps=formatted_timestamps,
         recommended=formatted_recommendations,
+        resources=formatted_resources,
     )
 
     body = {
@@ -323,7 +361,7 @@ def main():
     # Pre-check metadata requirements (description, timestamps & recommendations) before authentication or uploading
     print("🔍 Validating metadata...")
     try:
-        raw_description, formatted_timestamps, formatted_recommendations = validate_metadata_for_upload(
+        raw_description, formatted_timestamps, formatted_recommendations, formatted_resources = validate_metadata_for_upload(
             metadata,
             require_description=True,
             require_timestamps=True,
@@ -334,6 +372,11 @@ def main():
         rec_count = len(formatted_recommendations.splitlines())
         print(f"✅ Found {ts_count} timestamps for video chapters.")
         print(f"✅ Found {rec_count} recommended videos for 'WATCH THESE NEXT'.")
+        if formatted_resources:
+            res_count = len(formatted_resources.strip().splitlines()) - 1
+            print(f"✅ Found {res_count} resource links for 'RESOURCES'.")
+        elif "resources" not in metadata:
+            print("⚠️  No 'resources' in metadata.json. Run `phantom metadata resources` to check for promised links.")
     except ValueError as e:
         print(f"\n❌ Error: {e}\n", file=sys.stderr)
         sys.exit(1)

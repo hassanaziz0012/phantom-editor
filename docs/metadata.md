@@ -23,6 +23,9 @@ phantom metadata read [<project_or_video_path>] [--json]
 # Generate scored title ideas (writes titles.json + metadata.json "titles")
 phantom metadata titles [<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>]
 
+# List the resources the video promises to link (metadata.json "resources", URLs left blank for you)
+phantom metadata resources [<project_path>] [arguments]
+
 # Interactively create metadata manually
 phantom metadata manual <video_path>
 ```
@@ -37,6 +40,7 @@ Automatically creates or updates `metadata.json` in a YouTube video project fold
 2. Generating a promotional tweet template with `{url}` placeholder (`tweetTemplate`)
 3. Generating video recommendations from channel archive (`recommendations`)
 4. Generating scored title ideas (`titles`, plus the full response in `titles.json`)
+5. Listing the resources the video promises to link (`resources`, with blank URLs to fill in)
 
 *Note: Timestamps/chapters are generated separately using `phantom metadata timestamps` after manual video review cuts are finalized.*
 
@@ -71,6 +75,23 @@ Generates YouTube chapters and topics from phrase-level `.srt` captions using Cl
 Reads `trimmed.srt` and sends the timestamped transcript to Claude via BrowserLLM with the [`generate_video_titles.md`](../agentic/prompts/generate_video_titles.md) prompt. The prompt extracts the video's key facts, writes 25 titles across 6+ archetypes, scores each out of 16, and returns the 7 best. The full response (extracted facts, all 25 titles, flags) is saved to `titles.json` in the project folder; the ranked top titles (rank, title, archetype, scores, total, payoff timestamp, thumbnail text) are saved to the `titles` list in `metadata.json`. Does not change the `title` field.
 
 * **CLI Command**: `phantom metadata titles [<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>] [--metadata <path>] [--profile <name>]`
+
+---
+
+### [check_resource_links.py](../metadata/check_resource_links.py)
+Reads `trimmed.srt` and sends the timestamped transcript to Claude via BrowserLLM with the [`check_resource_links.md`](../agentic/prompts/check_resource_links.md) prompt, which finds every resource the video promises to link ("I'll link it in the description", "linked below"). They're saved to the `resources` list in `metadata.json`:
+
+```json
+"resources": [
+    {"key": "My n8n Beginner Tutorial", "url": "", "timestamp": "02:14", "quote": "I've got a beginner video, I'll link it in the description"}
+]
+```
+
+Claude always leaves `url` blank: fill each one in yourself. `timestamp` and `quote` show where the video promises the link. Re-running keeps URLs you've already filled in (matched by `key`), along with filled-in entries Claude didn't return again. An empty list means the video links nothing.
+
+Until every URL is filled in, `phantom projects status` doesn't count the metadata step as done, and `phantom yt upload` refuses to upload. On upload, the resources become a RESOURCES section (`key: url` per line) in the description, and the section is left out when the list is empty.
+
+* **CLI Command**: `phantom metadata resources [<project_path>] [--metadata <path>] [--profile <name>]`
 
 ---
 

@@ -1,5 +1,8 @@
 # Global Configuration for Phantom Editor
 
+# {resources} is the RESOURCES section built from metadata.json "resources" (a "RESOURCES" heading,
+# one "key: url" line per resource, then a blank line), or "" when the video links nothing.
+# It sits flush against TIMESTAMPS so an empty section leaves no extra blank lines.
 DESCRIPTION_TEMPLATE = """Book a call: https://calendly.com/itshassanaziz/discuss-a-project
 
 ==== ==== ====
@@ -11,7 +14,7 @@ Like, subscribe, & leave me a comment if you have a specific request. Thanks.
 
 ==== ==== ====
 
-TIMESTAMPS
+{resources}TIMESTAMPS
 {timestamps}
 
 WATCH THESE NEXT

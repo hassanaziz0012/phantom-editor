@@ -9,6 +9,7 @@ If captions (.srt) are found, automatically generates:
 3. Video recommendations from channel archive
 4. Video chapters & timestamps
 5. Scored video title ideas
+6. Resources the video promises to link (blank URLs for you to fill in)
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ try:
     from metadata.recommendations.recommend import recommend_videos_for_project
     from metadata.generate_timestamps import generate_timestamps_for_project
     from metadata.generate_titles import generate_titles_for_project
+    from metadata.check_resource_links import blank_resources, check_resource_links_for_project
 except ImportError:
     import utils  # noqa: E402
     from auto_gen_desc import generate_description_for_project  # noqa: E402
@@ -41,6 +43,7 @@ except ImportError:
     from recommendations.recommend import recommend_videos_for_project  # noqa: E402
     from generate_timestamps import generate_timestamps_for_project  # noqa: E402
     from generate_titles import generate_titles_for_project  # noqa: E402
+    from check_resource_links import blank_resources, check_resource_links_for_project  # noqa: E402
 
 
 T = TypeVar("T")
@@ -195,12 +198,21 @@ def auto_create_metadata(
                     step_name="Titles generation",
                 )
 
+            def run_resources() -> list[dict[str, str]] | None:
+                return retry_with_backoff(
+                    lambda: check_resource_links_for_project(captions_path, metadata_path=metadata_path, profile=profile),
+                    max_retries=3,
+                    base_delay=2.0,
+                    step_name="Resource links check",
+                )
+
             # Prepare tasks to run
             tasks: dict[str, Callable[[], Any]] = {
                 "description": run_description,
                 "tweet": run_tweet,
                 "timestamps": run_timestamps,
                 "titles": run_titles,
+                "resources": run_resources,
             }
             if not skip_recommendations:
                 tasks["recommendations"] = run_recommendations
@@ -227,6 +239,8 @@ def auto_create_metadata(
                                 print(f"✓ [{task_name}] Generated {len(result)} timestamps.")
                             elif task_name == "titles":
                                 print(f"✓ [{task_name}] Generated {len(result)} titles.")
+                            elif task_name == "resources":
+                                print(f"✓ [{task_name}] Found {len(result)} resources to link.")
                             else:
                                 print(f"✓ [{task_name}] Generated successfully.")
                         else:
@@ -246,10 +260,12 @@ def auto_create_metadata(
                 metadata["timestamps"] = results["timestamps"]
             if results.get("titles") is not None:
                 metadata["titles"] = results["titles"]
+            if results.get("resources") is not None:
+                metadata["resources"] = results["resources"]
 
         else:
             print("\n⚠️  No phrase-level .srt captions file found in project folder.")
-            print("   Skipping AI generation of description, tweet template, recommendations, timestamps, and titles.")
+            print("   Skipping AI generation of description, tweet template, recommendations, timestamps, titles, and resources.")
             print("   Run `phantom edit transcribe <video>` to generate captions first if needed.")
 
     formatted_json = save_metadata(metadata_path, metadata)
@@ -260,6 +276,12 @@ def auto_create_metadata(
     print(utils.highlight_json(formatted_json))
     print("=" * 50)
     print(f"\n✅ Successfully wrote {metadata_path}")
+
+    blank = blank_resources(metadata.get("resources"))
+    if blank:
+        print(f"\n🔗 The video promises {len(blank)} link(s) that still need a URL in `resources`:")
+        for key in blank:
+            print(f"   - {key}")
 
     return metadata
 
@@ -298,7 +320,7 @@ def main():
         "--skip-ai",
         action="store_true",
         default=False,
-        help="Skip AI generation of description, tweet template, recommendations, timestamps, and titles.",
+        help="Skip AI generation of description, tweet template, recommendations, timestamps, titles, and resources.",
     )
     parser.add_argument(
         "--skip-recommendations",

@@ -12,7 +12,8 @@ Stages:
   3. Recorded          - Raw footage present, needs Phantom processing (to-review.mp4).
   4. Processed         - Phantom processing complete (to-review.mp4), needs manual review (final.mp4).
   5. Reviewed          - Manual review complete (final.mp4), needs metadata & thumbnail.
-  6. Added Metadata    - metadata.json created with every key in REQUIRED_METADATA_KEYS, needs thumbnail.
+  6. Added Metadata    - metadata.json created with every key in REQUIRED_METADATA_KEYS and a URL for
+                         every entry in "resources", needs thumbnail.
   7. Added Thumbnail   - Thumbnail(s) created, needs a complete metadata.json.
   8. Ready to Schedule - final.mp4 + complete metadata.json + thumbnail(s), ready for release/upload.
   9. Scheduled         - Video has scheduled publish date, needs YouTube upload.
@@ -51,8 +52,10 @@ from typing import List, Optional, Any
 
 try:
     from metadata.read_metadata import read_metadata
+    from metadata.check_resource_links import blank_resources
 except ImportError:
     from read_metadata import read_metadata
+    from check_resource_links import blank_resources
 
 PERFORMANCE_CHECK_KEY = "performanceCheck"
 
@@ -91,7 +94,8 @@ OUTLINE_SECTIONS = ("Hook", "Outline")
 OUTLINE_CTA_MARKER = "[LIKE / SUBSCRIBE]"
 OUTLINE_CTA_PATTERN = re.compile(r"\[\s*LIKE\s*/\s*SUBSCRIBE\s*\]", re.IGNORECASE)
 # Keys metadata.json must contain for the metadata step to count as done.
-REQUIRED_METADATA_KEYS = ("title", "titles", "description", "tweetTemplate", "recommendations", "timestamps")
+# "resources" is written by `phantom metadata resources`; each entry's "url" must also be filled in.
+REQUIRED_METADATA_KEYS = ("title", "titles", "description", "tweetTemplate", "recommendations", "timestamps", "resources")
 
 
 def is_valid_yt_url(url: str) -> bool:
@@ -139,6 +143,8 @@ class VideoProject:
     final_file: Optional[Path] = None
     metadata_file: Optional[Path] = None
     metadata_missing_keys: List[str] = field(default_factory=list)
+    # Keys of metadata.json "resources" entries whose "url" is still blank
+    metadata_blank_resources: List[str] = field(default_factory=list)
     thumbnail_files: List[Path] = field(default_factory=list)
     yt_url: Optional[str] = None
     title: Optional[str] = None
@@ -156,7 +162,11 @@ class VideoProject:
 
     @property
     def has_metadata(self) -> bool:
-        return self.metadata_file is not None and not self.metadata_missing_keys
+        return (
+            self.metadata_file is not None
+            and not self.metadata_missing_keys
+            and not self.metadata_blank_resources
+        )
 
     @property
     def is_scripted(self) -> bool:
@@ -179,6 +189,7 @@ class VideoProject:
             "final_file": self.final_file.name if self.final_file else None,
             "has_metadata": self.has_metadata,
             "metadata_missing_keys": self.metadata_missing_keys,
+            "metadata_blank_resources": self.metadata_blank_resources,
             "title": self.title,
             "thumbnails": [f.name for f in self.thumbnail_files],
             "yt_url": self.yt_url,
@@ -222,25 +233,31 @@ def has_outline_cta(outline_file: Path) -> bool:
     return bool(OUTLINE_CTA_PATTERN.search(outline_file.read_text(encoding="utf-8", errors="replace")))
 
 
-def missing_metadata_keys(metadata_file: Path) -> List[str]:
-    """Return the REQUIRED_METADATA_KEYS that metadata.json lacks (all of them if it can't be read as an object).
+def check_metadata(metadata_file: Path) -> tuple[List[str], List[str]]:
+    """Return (the REQUIRED_METADATA_KEYS metadata.json lacks, the "resources" keys with a blank URL).
 
-    Reads the raw JSON: read_metadata() fills in defaults, so it can't tell a missing key from a default.
+    All keys count as missing if the file can't be read as an object. Reads the raw JSON:
+    read_metadata() fills in defaults, so it can't tell a missing key from a default.
     """
     try:
         data = json.loads(metadata_file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return list(REQUIRED_METADATA_KEYS)
+        return list(REQUIRED_METADATA_KEYS), []
     if not isinstance(data, dict):
-        return list(REQUIRED_METADATA_KEYS)
-    return [key for key in REQUIRED_METADATA_KEYS if key not in data]
+        return list(REQUIRED_METADATA_KEYS), []
+    return [key for key in REQUIRED_METADATA_KEYS if key not in data], blank_resources(data.get("resources"))
 
 
 def metadata_todo(project: VideoProject) -> str:
     """What's left to do for the project's metadata.json."""
     if project.metadata_file is None:
-        return "Create metadata.json file (title, titles, description, tweetTemplate, recommendations, timestamps)"
-    return f"Add the missing keys to metadata.json ({', '.join(project.metadata_missing_keys)})"
+        return f"Create metadata.json file ({', '.join(REQUIRED_METADATA_KEYS)})"
+    todos = []
+    if project.metadata_missing_keys:
+        todos.append(f"Add the missing keys to metadata.json ({', '.join(project.metadata_missing_keys)})")
+    if project.metadata_blank_resources:
+        todos.append(f"Fill in the resource URLs in metadata.json ({', '.join(project.metadata_blank_resources)})")
+    return " AND ".join(todos)
 
 
 def is_raw_video_file(file_path: Path) -> bool:
@@ -450,7 +467,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
             project.final_file = item
         elif item.name.lower() == "metadata.json":
             project.metadata_file = item
-            project.metadata_missing_keys = missing_metadata_keys(item)
+            project.metadata_missing_keys, project.metadata_blank_resources = check_metadata(item)
             try:
                 meta = read_metadata(item)
                 if meta.title:
@@ -714,8 +731,13 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         to_rev_status = f"{COLOR_GREEN}✓ {proj.to_review_file.name}{COLOR_RESET}" if proj.to_review_file else f"{COLOR_GRAY}✗ to-review.mp4{COLOR_RESET}"
         final_status = f"{COLOR_GREEN}✓ {proj.final_file.name}{COLOR_RESET}" if proj.final_file else f"{COLOR_GRAY}✗ final.mp4{COLOR_RESET}"
         
-        if proj.metadata_file and proj.metadata_missing_keys:
-            meta_status = f"{COLOR_YELLOW}✗ metadata.json (missing: {', '.join(proj.metadata_missing_keys)}){COLOR_RESET}"
+        if proj.metadata_file and (proj.metadata_missing_keys or proj.metadata_blank_resources):
+            problems = []
+            if proj.metadata_missing_keys:
+                problems.append(f"missing: {', '.join(proj.metadata_missing_keys)}")
+            if proj.metadata_blank_resources:
+                problems.append(f"resource URLs needed: {', '.join(proj.metadata_blank_resources)}")
+            meta_status = f"{COLOR_YELLOW}✗ metadata.json ({'; '.join(problems)}){COLOR_RESET}"
         elif proj.metadata_file:
             if proj.yt_url:
                 date_str = proj.uploaded_date or proj.scheduled_date
