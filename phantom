@@ -69,6 +69,7 @@ show_usage() {
     echo "    generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
     echo "    generate-from-outlier <video> [--no-export] [--fresh-summary] [--json]"
     echo "    export [--file <path> | --idea <text>] [arguments]"
+    echo "    archive [--dry-run]"
     echo ""
     echo "  yt:"
     echo "    upload <video_path>"
@@ -354,11 +355,14 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/generate_from_outlier.py" "$@"
         elif [ "$SUBCOMMAND" = "export" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/export_ideas_to_sheet.py" "$@"
+        elif [ "$SUBCOMMAND" = "archive" ]; then
+            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/archive_reviewed_ideas.py" "$@"
         else
             echo "Unknown ideas subcommand: $SUBCOMMAND"
             echo "Usage: phantom ideas generate-from-comments <video> [arguments]"
             echo "       phantom ideas generate-from-outlier <video> [arguments]"
             echo "       phantom ideas export [--file <path> | --idea <text>] [arguments]"
+            echo "       phantom ideas archive [--dry-run]"
             exit 1
         fi
         ;;

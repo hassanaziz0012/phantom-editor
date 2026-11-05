@@ -11,6 +11,11 @@ Sheet Columns:
   - Source Type: e.g. "YT Comments", "Reddit", "Twitter", etc.
   - Confidence Score: Optional rating (e.g. 0-10)
   - Best Formats: multi-select dropdown, e.g. "YT short, Twitter thread"
+  - Decision: review verdict dropdown (Yes / No / Maybe), filled in by hand
+  - Reason: why that decision was made, filled in by hand
+
+Rows with a Decision are moved to the 'Ideas Archive' tab by
+`phantom ideas archive` (ideas/archive_reviewed_ideas.py).
 """
 
 from __future__ import annotations
@@ -38,7 +43,10 @@ from projects.google_sheet_utils import get_sheets_service, get_spreadsheet_id
 logger = logging.getLogger("phantom.ideas.export")
 
 IDEAS_SHEET_NAME = "Ideas"
-DEFAULT_IDEAS_HEADERS = ["Idea", "Source", "Source Type", "Confidence Score", "Best Formats"]
+DEFAULT_IDEAS_HEADERS = ["Idea", "Source", "Source Type", "Confidence Score", "Best Formats", "Decision", "Reason"]
+
+# Options of the "Decision" dropdown in the sheet
+DECISION_OPTIONS = ["Yes", "No", "Maybe"]
 
 # Options of the "Best Formats" multi-select dropdown in the sheet (must match exactly)
 BEST_FORMAT_OPTIONS = ["YT video", "YT short", "LinkedIn post", "Twitter thread", "IG carousel", "Substack newsletter", "Reddit post"]
@@ -151,21 +159,57 @@ def ensure_ideas_sheet_headers(
             valueInputOption="USER_ENTERED",
             body={"values": [DEFAULT_IDEAS_HEADERS]}
         ).execute()
+        set_decision_dropdown(service, sheet_id, sheet_name, DEFAULT_IDEAS_HEADERS.index("Decision"))
         return DEFAULT_IDEAS_HEADERS
 
     headers = [str(c).strip() for c in rows[0]]
-    if not any("format" in h.lower() for h in headers):
-        col_idx = len(headers)
-        col_letter = chr(ord('A') + col_idx) if col_idx < 26 else "E"
+    while headers and not headers[-1]:
+        headers.pop()
+
+    # Add any columns introduced after the sheet was created
+    for keyword, header in (("format", "Best Formats"), ("decision", "Decision"), ("reason", "Reason")):
+        if any(keyword in h.lower() for h in headers):
+            continue
         service.spreadsheets().values().update(
             spreadsheetId=sheet_id,
-            range=f"{sheet_name}!{col_letter}1",
+            range=f"{sheet_name}!{column_letter(len(headers))}1",
             valueInputOption="USER_ENTERED",
-            body={"values": [["Best Formats"]]}
+            body={"values": [[header]]}
         ).execute()
-        headers.append("Best Formats")
+        if header == "Decision":
+            set_decision_dropdown(service, sheet_id, sheet_name, len(headers))
+        headers.append(header)
 
     return headers
+
+
+def column_letter(col_idx: int) -> str:
+    """0-based column index -> A1 column letter (0 -> A, 26 -> AA)."""
+    letters = ""
+    col_idx += 1
+    while col_idx:
+        col_idx, rem = divmod(col_idx - 1, 26)
+        letters = chr(ord("A") + rem) + letters
+    return letters
+
+
+def set_decision_dropdown(service, spreadsheet_id: str, sheet_name: str, col_idx: int) -> None:
+    """Puts the Yes / No / Maybe dropdown on every data row of the Decision column."""
+    meta = service.spreadsheets().get(spreadsheetId=spreadsheet_id, fields="sheets.properties").execute()
+    tab_id = next(s["properties"]["sheetId"] for s in meta["sheets"] if s["properties"]["title"] == sheet_name)
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={"requests": [{
+            "setDataValidation": {
+                "range": {"sheetId": tab_id, "startRowIndex": 1, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
+                "rule": {
+                    "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": o} for o in DECISION_OPTIONS]},
+                    "showCustomUi": True,
+                    "strict": True,
+                },
+            }
+        }]},
+    ).execute()
 
 
 def append_idea(
@@ -250,7 +294,7 @@ def export_ideas_to_sheet(
     # Best Formats dropdown; INSERT_ROWS would add fresh rows without it.
     append_result = service.spreadsheets().values().append(
         spreadsheetId=sheet_id,
-        range=f"{sheet_name}!A:E",
+        range=f"{sheet_name}!A:{column_letter(len(headers) - 1)}",
         valueInputOption="USER_ENTERED",
         insertDataOption="OVERWRITE",
         body={"values": rows_to_append},
