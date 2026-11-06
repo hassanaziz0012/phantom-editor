@@ -8,6 +8,10 @@ logged-in Chrome.
 
 The functions here turn that JSON into the same fields the scrapers used to read off the rendered page,
 written the way the page showed them (e.g. "u/name" links, "7h" ages, "[Image: ...]" bodies).
+
+Reddit sometimes blocks every .json URL for a connection with a "blocked by network security" 403,
+even in the logged-in browser, while its HTML pages still load. is_blocked_page() spots that, and
+html_url() gives the old.reddit.com page with the same data, which serve.py reads instead.
 """
 
 import json
@@ -17,7 +21,7 @@ import time
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Any, Awaitable, Callable, Dict, Iterator, List, Optional
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 # Tags that start a new block of text, like a paragraph does on the page
 BLOCK_TAGS = {"p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote", "ul", "ol", "table", "tr", "div", "hr"}
@@ -259,8 +263,34 @@ def info_item_fields(post: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# The 403 page Reddit shows a blocked connection; it has no JSON reason to read
+BLOCK_PAGE_TEXT = "blocked by network security"
+
+
+def is_blocked_page(status: int, text: str) -> bool:
+    """True if Reddit answered with its "blocked by network security" page rather than a normal error."""
+    return status == 403 and BLOCK_PAGE_TEXT in text
+
+
+def html_url(url: str) -> str:
+    """
+    The old.reddit.com page holding the same data as a .json URL from json_url() or info_url(). An
+    /api/info lookup becomes /by_id/, which lists the same posts.
+    """
+    parts = urlsplit(url)
+    path = parts.path.removesuffix(".json").rstrip("/")
+    query = {k: v for k, v in parse_qsl(parts.query) if k != "raw_json"}
+    if path == "/api/info":
+        # /by_id/ shows 25 posts a page unless asked for more
+        path = f"/by_id/{query.pop('id')}"
+        query["limit"] = str(MAX_INFO_IDS)
+    return f"https://old.reddit.com{path}/" + (f"?{urlencode(query)}" if query else "")
+
+
 def error_detail(text: str) -> str:
     """Reddit's reason for an error response, e.g. 'Not Found' or 'banned', or the start of the body."""
+    if BLOCK_PAGE_TEXT in text:
+        return "blocked by Reddit's network security"
     match = re.search(r'"reason":\s*"([^"]+)"', text) or re.search(r'"message":\s*"([^"]+)"', text)
     return match.group(1) if match else text.strip()[:120]
 
