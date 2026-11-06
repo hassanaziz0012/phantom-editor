@@ -25,7 +25,17 @@ Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a 
 
 The description is built from `DESCRIPTION_TEMPLATE` in [`config.py`](../config.py). Its RESOURCES section lists `metadata.json`'s `resources` (from `phantom metadata resources`) as `key: url` lines, and is left out when there are none. The upload stops before starting if any resource still has a blank `url`.
 
-* **Usage**: `python youtube_api/upload_video.py /path/to/video.mp4` or via `phantom yt upload <video_path>`
+* **Usage**: `python youtube_api/upload_video.py /path/to/video.mp4` or via `phantom yt upload <video_path> [--playlist <playlist_id_or_name>]`
+* **Playlist**: `--playlist` adds the uploaded video to a playlist (see [addtoplaylist.py](#addtoplaylistpy)). The playlist is looked up before the upload starts, so an unknown ID or an ambiguous title stops the upload. If adding fails after the upload, it only warns and prints the `phantom yt addtoplaylist` command to retry.
+* **Auth**: The OAuth token needs both the `youtube.upload` and `youtube` scopes. A saved `tokens/token.json` missing either one triggers the browser sign-in again.
+
+### [addtoplaylist.py](../youtube_api/addtoplaylist.py)
+Adds a video to one of your channel's playlists.
+
+* **Usage**: `phantom yt addtoplaylist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]`. `<video>` is a video ID or any YouTube URL.
+* **Playlist lookup**: A playlist ID or a URL with `list=` must be one of your playlists. Anything else is treated as a title and matched against your playlists (case-insensitive). If no playlist has that title, a new one is created with `--privacy` (default `public`). If several playlists share the title, it stops and lists their IDs.
+* **Duplicates**: Skips the add if the video is already in the playlist.
+* **Reuse**: `from youtube_api.addtoplaylist import add_to_playlist, find_playlist, create_playlist, add_video_to_playlist`.
 
 ### [video_info.py](../youtube_api/video_info.py)
 Shows quick details about any YouTube video: a direct thumbnail URL, views/likes/comments, and an outlier score — the video's views divided by the median views of the channel's recent uploads of the same format (Shorts vs long-form). Baseline videos younger than 14 days are excluded, and a note is shown if the video itself is that new.

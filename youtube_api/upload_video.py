@@ -33,7 +33,11 @@ from tqdm import tqdm
 # Config
 # ---------------------------------------------------------------------------
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+# "youtube" covers playlist management (phantom yt addtoplaylist, yt upload --playlist).
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube",
+]
 CLIENT_SECRETS_FILE = Path(__file__).parent / "tokens/client_secret.json"
 TOKEN_FILE = Path(__file__).parent / "tokens/token.json"
 YOUTUBE_API_SERVICE = "youtube"
@@ -52,9 +56,14 @@ def get_authenticated_service():
 
     if TOKEN_FILE.exists():
         try:
-            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+            # Load with the token's own scopes so has_scopes() reflects what was actually granted.
+            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE))
         except Exception as e:
             print(f"⚠️ Error reading token file {TOKEN_FILE}: {e}. Re-authenticating...")
+
+    if creds and not creds.has_scopes(SCOPES):
+        print("⚠️ Saved YouTube token is missing required permissions. Re-authenticating...")
+        creds = None
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -343,6 +352,10 @@ def main():
     parser.add_argument("video_path", help="Path to the .mp4 file to upload.")
     parser.add_argument("--skip-socials", action="store_true", help="Skip sharing the video on social platforms.")
     parser.add_argument("--skip-email", action="store_true", help="Skip sending the email broadcast.")
+    parser.add_argument(
+        "--playlist",
+        help="Add the video to this playlist (ID, URL, or title; a new title creates a public playlist).",
+    )
     args = parser.parse_args()
 
     video_path = Path(args.video_path).resolve()
@@ -387,6 +400,21 @@ def main():
     print("🔐 Authenticating with YouTube…")
     youtube = get_authenticated_service()
 
+    # Resolve the playlist before uploading so a bad ID or ambiguous title stops us early
+    playlist = None
+    if args.playlist:
+        # Imported here: addtoplaylist imports this module
+        from youtube_api.addtoplaylist import find_playlist
+        try:
+            playlist = find_playlist(youtube, args.playlist)
+        except ValueError as e:
+            print(f"\n❌ Error: {e}\n", file=sys.stderr)
+            sys.exit(1)
+        if playlist:
+            print(f"✅ Will add the video to playlist '{playlist['snippet']['title']}'.")
+        else:
+            print(f"✅ Will create playlist '{args.playlist.strip()}' and add the video to it.")
+
     # Upload video
     video_id = upload_video(
         youtube,
@@ -399,6 +427,19 @@ def main():
 
     # Set thumbnail
     set_thumbnail(youtube, video_id, thumbnail_file)
+
+    # Add to playlist. The video is already up, so a failure here only warns.
+    if args.playlist:
+        from youtube_api.addtoplaylist import add_video_to_playlist, create_playlist
+        try:
+            if playlist is None:
+                playlist = create_playlist(youtube, args.playlist)
+                add_video_to_playlist(youtube, video_id, playlist, check_existing=False)
+            else:
+                add_video_to_playlist(youtube, video_id, playlist)
+        except Exception as e:
+            print(f"⚠️  Failed to add the video to the playlist: {e}")
+            print(f"   Retry with: phantom yt addtoplaylist {video_id} \"{args.playlist}\"")
 
     # Get share URL
     share_url = get_share_url(video_id)
