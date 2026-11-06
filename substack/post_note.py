@@ -503,9 +503,13 @@ Examples:
     elif args.text_flag:
         content = args.text_flag.strip()
     elif args.text:
-        pos_path = Path(args.text)
-        if pos_path.is_file():
-            content = pos_path.read_text(encoding="utf-8").strip()
+        # Long note text exceeds the filename limit and makes stat() raise ENAMETOOLONG
+        try:
+            is_file = Path(args.text).is_file()
+        except OSError:
+            is_file = False
+        if is_file:
+            content = Path(args.text).read_text(encoding="utf-8").strip()
         else:
             content = args.text.strip()
     elif not sys.stdin.isatty():
