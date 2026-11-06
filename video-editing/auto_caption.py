@@ -6,7 +6,7 @@ import sys
 import textwrap
 import uuid
 from dataclasses import dataclass
-from transcribe import transcribe_video
+from transcribe_cloud import transcribe_video_cloud
 from utils import get_video_info, resolve_output_path, create_preview_clip
 
 DEFAULT_FONT = "Google Sans"
@@ -175,7 +175,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             f.write(line + '\n')
 
 
-def generate_captions(video_path, model_path_or_size="medium", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, vad_filter=True, width=20, font_name="Google Sans", animated=False, captions_path=None):
+def generate_captions(video_path, model_name="whisper-large-v3", max_words=None, output_video_path=None, uppercase=False, font_size=16, preview=False, bottom_margin=10, width=20, font_name="Google Sans", animated=False, captions_path=None):
     # Verify font availability and prompt user if fallback will be used
     is_available, fallback = verify_font(font_name)
     if not is_available and font_name not in _WARNED_FONTS:
@@ -212,15 +212,13 @@ def generate_captions(video_path, model_path_or_size="medium", max_words=None, o
         if os.path.exists(output_srt_path):
             print(f"Captions file '{output_srt_path}' already exists. Skipping transcription model run.")
         else:
-            # Generate the subtitles using the imported transcribe_video function
-            transcribe_video(
-                video_path=video_path,
-                model_path_or_size=model_path_or_size,
+            transcribe_video_cloud(
+                input_path=video_path,
+                model_name=model_name,
                 output_srt_path=output_srt_path,
                 max_words=max_words,
                 uppercase=uppercase,
                 preview=False,  # Cropping is already handled above if in preview mode
-                vad_filter=vad_filter
             )
 
         print(f"Burning captions into video and saving to: {output_video_path}")
@@ -294,9 +292,11 @@ if __name__ == "__main__":
     parser.add_argument("video_path", help="Path to the input video file (e.g. mp4).")
     parser.add_argument(
         "--model", "-m",
-        choices=["small", "medium", "large"],
-        default="medium",
-        help="Whisper model size to use locally: small, medium, or large (default: medium)."
+        # small/medium/large were the local Whisper sizes; still accepted so old
+        # callers keep working, and mapped to the default Groq model.
+        choices=["whisper-large-v3", "whisper-large-v3-turbo", "small", "medium", "large"],
+        default="whisper-large-v3",
+        help="Whisper model to use on Groq Cloud: whisper-large-v3 or whisper-large-v3-turbo (default: whisper-large-v3)."
     )
 
     parser.add_argument(
@@ -331,13 +331,13 @@ if __name__ == "__main__":
         "--vad-filter",
         action="store_true",
         default=None,
-        help="Use VAD (Voice Activity Detection) filter to ignore silences (default: True)."
+        help=argparse.SUPPRESS  # local Whisper only; accepted and ignored
     )
     parser.add_argument(
         "--no-vad-filter",
         dest="vad_filter",
         action="store_false",
-        help="Disable VAD (Voice Activity Detection) filter."
+        help=argparse.SUPPRESS  # local Whisper only; accepted and ignored
     )
     parser.add_argument(
         "--font-size", "-f",
@@ -397,7 +397,6 @@ if __name__ == "__main__":
     font_size = args.font_size
     bottom_margin = args.bottom_margin
     uppercase = args.uppercase
-    vad_filter = args.vad_filter
     width = args.width
     font_name = args.font_name
     animated = args.animated
@@ -422,8 +421,7 @@ if __name__ == "__main__":
     if uppercase is None:
         uppercase = False
 
-    if vad_filter is None:
-        vad_filter = True
+    model_name = "whisper-large-v3" if args.model in ("small", "medium", "large") else args.model
 
     if animated is None:
         animated = False
@@ -480,14 +478,13 @@ if __name__ == "__main__":
             try:
                 generate_captions(
                     video_file,
-                    model_path_or_size=args.model,
+                    model_name=model_name,
                     max_words=max_words,
                     output_video_path=output_video_path,
                     uppercase=uppercase,
                     font_size=font_size,
                     preview=args.preview,
                     bottom_margin=bottom_margin,
-                    vad_filter=vad_filter,
                     width=width,
                     font_name=font_name,
                     animated=animated
@@ -497,14 +494,13 @@ if __name__ == "__main__":
     else:
         generate_captions(
             args.video_path,
-            model_path_or_size=args.model,
+            model_name=model_name,
             max_words=max_words,
             output_video_path=args.output_video,
             uppercase=uppercase,
             font_size=font_size,
             preview=args.preview,
             bottom_margin=bottom_margin,
-            vad_filter=vad_filter,
             width=width,
             font_name=font_name,
             animated=animated,

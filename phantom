@@ -17,25 +17,21 @@ show_usage() {
     echo "Commands:"
     echo "  projects:"
     echo "    status [arguments]"
-    echo "    process <webcam_video> [screen_video] [--raw <raw_video>] [arguments]"
+    echo "    process <raw_video> [arguments]"
     echo "    newvideo <project_name>"
     echo "    cleanup [<project_path>] [--full]"
     echo ""
-    echo "  audio:"
-    echo "    process [-R|--recursive] <path>"
-    echo ""
     echo "  edit:"
-    echo "    add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
-    echo "    attach-webcam-mask --screen <screen_video> --webcam <webcam_video> [arguments]"
-    echo "    auto-attach-webcam --screen <screen_video> --webcam <webcam_video> [arguments]"
+    echo "    add-bgm <path_to_video> <bgm_track> [--volume <percentage>]"
+    echo "    process-audio [-R|--recursive] <path>"
+    echo "    inspect-video <video_path> [arguments]"
+    echo "    review-audio <video_or_audio_path> [arguments]"
     echo "    caption <video_path> [arguments]"
     echo "    downscale <video_path> [arguments]"
-    echo "    transcribe <video_path> [arguments]"
     echo "    transcribe-cloud <video_path> [arguments]"
     echo "    trim-silences <video_path> [arguments]"
-    echo "    trim-silences-whisper <video_path> [arguments] (deprecated)"
     echo ""
-    echo "  metadata:"
+    echo "  meta:"
     echo "    create [<project_path>] [arguments]"
     echo "    desc [<project_path>] [arguments]"
     echo "    tweet [<project_path>] [arguments]"
@@ -47,62 +43,40 @@ show_usage() {
     echo "    recommend [<project_path>] [arguments]"
     echo "    prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]"
     echo ""
-    echo "  emails:"
-    echo "    broadcast --title <title> --description <desc> --url <url> [arguments]"
+    echo "  publish:"
+    echo "    yt <video_path> [--playlist <playlist_id_or_name>]"
+    echo "    x [--image] [--substack] <tweet_content>"
+    echo "    substack [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
+    echo "    linkedin [<text>] [-f <file>] [-i <images>...] [--url <url>]"
+    echo "    devto <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
+    echo "    email --title <title> --description <desc> --url <url> [arguments]"
+    echo "    yap --platform <linkedin|substack>"
     echo ""
-    echo "  reddit:"
-    echo "    analyze-post <url> [--headless] [--json]"
-    echo "    scrape <url> [--headless] [--max-comments <int>] [--json]"
-    echo "    scrapesub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
-    echo "    scrapesearch <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
-    echo "    profile <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
-    echo "    serve [--port <int>] [--headless]   (answers post/feed scrape requests as JSON lines on stdin)"
-    echo ""
-    echo "  skool:"
-    echo "    scrape <url> [--max-comments <int>] [--headless] [--json]"
-    echo "    scrapecommunity <url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
-    echo ""
-    echo "  tweet:"
-    echo "    [--image] [--substack] [--threads] <tweet_content>"
+    echo "  research:"
+    echo "    reddit post <url> [--headless] [--max-comments <int>] [--json]"
+    echo "    reddit analyze <url> [--headless] [--json]"
+    echo "    reddit sub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
+    echo "    reddit search <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
+    echo "    reddit profile <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
+    echo "    reddit serve [--port <int>] [--headless]   (answers post/feed scrape requests as JSON lines on stdin)"
+    echo "    skool post <url> [--max-comments <int>] [--headless] [--json]"
+    echo "    skool community <url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
     echo ""
     echo "  ideas:"
-    echo "    generate-from-comments <video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
-    echo "    generate-from-outlier <video> [--no-export] [--fresh-summary] [--json]"
+    echo "    from-comments <video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
+    echo "    from-outlier <video> [--no-export] [--fresh-summary] [--json]"
     echo "    export [--file <path> | --idea <text>] [arguments]"
     echo "    archive [--dry-run]"
     echo ""
     echo "  yt:"
-    echo "    upload <video_path> [--playlist <playlist_id_or_name>]"
-    echo "    addtoplaylist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]"
+    echo "    add-to-playlist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]"
     echo "    count-uploads [<channel>] [--fresh]"
-    echo "    print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
+    echo "    titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
     echo "    summarize <video> [--model <model>] [--json]"
     echo "    comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
     echo "    info <video> [--fresh] [--json] [--days <int>]"
     echo "    channel-stats [--fresh] [--json] [--history]"
     echo "    endscreen <video>... [--template <name>] [--dry-run]"
-    echo ""
-    echo "  shorts:"
-    echo "    metadata create <folder_path> [arguments]"
-    echo "    metadata clean"
-    echo "    upload --platform <youtube|instagram|tiktok|all> <video_path>"
-    echo "    add-thumbnail [arguments] <video_path>"
-    echo "    trim [arguments]"
-    echo ""
-    echo "  content:"
-    echo "    yap --platform <linkedin|substack>"
-    echo ""
-    echo "  substack:"
-    echo "    note [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
-    echo ""
-    echo "  threads:"
-    echo "    post [<text>] [--posts <file...>] [-i <images>...] [--headless]"
-    echo ""
-    echo "  linkedin:"
-    echo "    post [<text>] [-f <file>] [-i <images>...] [--url <url>]"
-    echo ""
-    echo "  devto:"
-    echo "    post <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
     echo ""
     echo "  broll:"
     echo "    list [<template>]"
@@ -110,12 +84,95 @@ show_usage() {
     echo "    render <cue_file.json> [--srt <word_srt>] [--only <file>...] [--dry-run] [--force]"
     echo "    clip <template> -o <output.mp4> [--cue <phrase>] [--until <phrase>] [--var key=value...] [arguments]"
     echo ""
-    echo "  review:"
-    echo "    inspect <video_path> [arguments]"
-    echo "    audio <video_or_audio_path> [arguments]"
-    echo ""
     echo "  docs:"
     echo "    open"
+}
+
+# Old command names (reddit/skool groups, scrapesub, add_bgm, addtoplaylist,
+# generate-from-*, tweet, yt upload, yt print-titles, audio process, metadata,
+# review, emails/content/substack/linkedin/devto groups, ...) are still
+# dispatched below but left out of the help: other projects call them. Keep
+# them until those callers are migrated.
+
+removed_command() {
+    echo "phantom $1 was removed." >&2
+    exit 1
+}
+
+run_reddit() {
+    local SUBCOMMAND="$1"
+    shift
+    if [ "$SUBCOMMAND" = "post" ] || [ "$SUBCOMMAND" = "scrape" ] || [ "$SUBCOMMAND" = "scrape-post" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_reddit_post.py" "$@"
+    elif [ "$SUBCOMMAND" = "analyze" ] || [ "$SUBCOMMAND" = "analyze-post" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/analyze_post.py" "$@"
+    elif [ "$SUBCOMMAND" = "sub" ] || [ "$SUBCOMMAND" = "scrapesub" ] || [ "$SUBCOMMAND" = "scrape-sub" ] || [ "$SUBCOMMAND" = "scrape-subreddit" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_subreddit.py" "$@"
+    elif [ "$SUBCOMMAND" = "search" ] || [ "$SUBCOMMAND" = "scrapesearch" ] || [ "$SUBCOMMAND" = "scrape-search" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_search.py" "$@"
+    elif [ "$SUBCOMMAND" = "profile" ] || [ "$SUBCOMMAND" = "scrape-profile" ] || [ "$SUBCOMMAND" = "user" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_profile.py" "$@"
+    elif [ "$SUBCOMMAND" = "serve" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/serve.py" "$@"
+    else
+        echo "Unknown reddit subcommand: $SUBCOMMAND"
+        echo "Usage: phantom research reddit post <url> [--headless] [--max-comments <int>] [--json]"
+        echo "       phantom research reddit analyze <url> [--headless] [--json]"
+        echo "       phantom research reddit sub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
+        echo "       phantom research reddit search <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
+        echo "       phantom research reddit profile <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
+        echo "       phantom research reddit serve [--port <int>] [--headless]"
+        exit 1
+    fi
+}
+
+run_skool() {
+    local SUBCOMMAND="$1"
+    shift
+    if [ "$SUBCOMMAND" = "post" ] || [ "$SUBCOMMAND" = "scrape" ] || [ "$SUBCOMMAND" = "scrape-post" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/skool/scrape_post.py" "$@"
+    elif [ "$SUBCOMMAND" = "community" ] || [ "$SUBCOMMAND" = "scrapecommunity" ] || [ "$SUBCOMMAND" = "scrape-community" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/skool/scrape_community.py" "$@"
+    else
+        echo "Unknown skool subcommand: $SUBCOMMAND"
+        echo "Usage: phantom research skool post <url> [--max-comments <int>] [--headless] [--json]"
+        echo "       phantom research skool community <url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
+        exit 1
+    fi
+}
+
+run_publish() {
+    local TARGET="$1"
+    shift
+    if [ "$TARGET" = "yt" ] || [ "$TARGET" = "youtube" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/upload_video.py" "$@"
+    elif [ "$TARGET" = "x" ] || [ "$TARGET" = "tweet" ] || [ "$TARGET" = "twitter" ]; then
+        if [ $# -eq 0 ]; then
+            echo "Usage: phantom publish x [--image] [--substack] <tweet_content>"
+            exit 1
+        fi
+        "$BASE_DIR/twitter/tweet.sh" "$@"
+    elif [ "$TARGET" = "substack" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/substack/post_note.py" "$@"
+    elif [ "$TARGET" = "linkedin" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/linkedin/new_post.py" "$@"
+    elif [ "$TARGET" = "devto" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/devto/post.py" "$@"
+    elif [ "$TARGET" = "email" ] || [ "$TARGET" = "emails" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/emails/resend_broadcast.py" "$@"
+    elif [ "$TARGET" = "yap" ]; then
+        uv run --project "$BASE_DIR" python "$BASE_DIR/content/yap_to_post.py" "$@"
+    else
+        echo "Unknown publish target: $TARGET"
+        echo "Usage: phantom publish yt <video_path> [--playlist <playlist_id_or_name>]"
+        echo "       phantom publish x [--image] [--substack] <tweet_content>"
+        echo "       phantom publish substack [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
+        echo "       phantom publish linkedin [<text>] [-f <file>] [-i <images>...] [--url <url>]"
+        echo "       phantom publish devto <markdown_file> [arguments]"
+        echo "       phantom publish email --title <title> --description <desc> --url <url> [arguments]"
+        echo "       phantom publish yap --platform <linkedin|substack>"
+        exit 1
+    fi
 }
 
 if [ $# -eq 0 ]; then
@@ -134,8 +191,7 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/projects/current_pipeline.py" "$@"
         elif [ "$SUBCOMMAND" = "process" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom projects process <webcam_video> [screen_video] [arguments]"
-                echo "       phantom projects process --raw <raw_video> [arguments]"
+                echo "Usage: phantom projects process <raw_video> [arguments]"
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/projects/process_video.py" "$@"
@@ -150,8 +206,7 @@ case "$COMMAND" in
         else
             echo "Unknown projects subcommand: $SUBCOMMAND"
             echo "Usage: phantom projects status [arguments]"
-            echo "       phantom projects process <webcam_video> [screen_video] [arguments]"
-            echo "       phantom projects process --raw <raw_video> [arguments]"
+            echo "       phantom projects process <raw_video> [arguments]"
             echo "       phantom projects newvideo <project_name>"
             echo "       phantom projects cleanup [<project_path>] [--full]"
             exit 1
@@ -161,34 +216,39 @@ case "$COMMAND" in
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "process" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom audio process [-R|--recursive] <path>"
-                exit 1
-            fi
-            "$BASE_DIR/audio-processing/process_audio.sh" "$@"
+            exec "$0" edit process-audio "$@"
         else
             echo "Unknown audio subcommand: $SUBCOMMAND"
-            echo "Usage: phantom audio process [-R|--recursive] <path>"
+            echo "Usage: phantom edit process-audio [-R|--recursive] <path>"
             exit 1
         fi
         ;;
     edit)
         SUBCOMMAND="$1"
         shift
-        if [ "$SUBCOMMAND" = "add_bgm" ]; then
+        if [ "$SUBCOMMAND" = "add-bgm" ] || [ "$SUBCOMMAND" = "add_bgm" ]; then
             "$BASE_DIR/video-editing/add_bgm_to_video.sh" "$@"
-        elif [ "$SUBCOMMAND" = "attach-webcam-mask" ]; then
+        elif [ "$SUBCOMMAND" = "process-audio" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit attach-webcam-mask --screen <screen_video> --webcam <webcam_video> [arguments]"
+                echo "Usage: phantom edit process-audio [-R|--recursive] <path>"
                 exit 1
             fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/attach_webcam_mask.py" "$@"
-        elif [ "$SUBCOMMAND" = "auto-attach-webcam" ]; then
+            "$BASE_DIR/audio-processing/process_audio.sh" "$@"
+        elif [ "$SUBCOMMAND" = "inspect-video" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit auto-attach-webcam --screen <screen_video> --webcam <webcam_video> [arguments]"
+                echo "Usage: phantom edit inspect-video <video_path> [arguments]"
                 exit 1
             fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/auto_attach_webcam_mask.py" "$@"
+            uv run --project "$BASE_DIR" python "$BASE_DIR/review/video_inspector.py" "$@"
+        elif [ "$SUBCOMMAND" = "review-audio" ]; then
+            if [ $# -eq 0 ]; then
+                echo "Usage: phantom edit review-audio <video_or_audio_path> [arguments]"
+                exit 1
+            fi
+            uv run --project "$BASE_DIR" python "$BASE_DIR/review/audio_review.py" "$@"
+        elif [ "$SUBCOMMAND" = "attach-webcam-mask" ] || [ "$SUBCOMMAND" = "auto-attach-webcam" ] \
+            || [ "$SUBCOMMAND" = "transcribe" ] || [ "$SUBCOMMAND" = "trim-silences-whisper" ]; then
+            removed_command "edit $SUBCOMMAND"
         elif [ "$SUBCOMMAND" = "caption" ]; then
             if [ $# -eq 0 ]; then
                 echo "Usage: phantom edit caption <video_path> [arguments]"
@@ -201,12 +261,6 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/downscale.py" "$@"
-        elif [ "$SUBCOMMAND" = "transcribe" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit transcribe <video_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/transcribe.py" "$@"
         elif [ "$SUBCOMMAND" = "transcribe-cloud" ]; then
             if [ $# -eq 0 ]; then
                 echo "Usage: phantom edit transcribe-cloud <video_path> [arguments]"
@@ -219,27 +273,20 @@ case "$COMMAND" in
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/trim_silences.py" "$@"
-        elif [ "$SUBCOMMAND" = "trim-silences-whisper" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit trim-silences-whisper <video_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/trim_silences_whisper.py" "$@"
         else
             echo "Unknown edit subcommand: $SUBCOMMAND"
-            echo "Usage: phantom edit add_bgm <path_to_video> <bgm_track> [--volume <percentage>]"
-            echo "       phantom edit attach-webcam-mask --screen <screen_video> --webcam <webcam_video> [arguments]"
-            echo "       phantom edit auto-attach-webcam --screen <screen_video> --webcam <webcam_video> [arguments]"
+            echo "Usage: phantom edit add-bgm <path_to_video> <bgm_track> [--volume <percentage>]"
+            echo "       phantom edit process-audio [-R|--recursive] <path>"
+            echo "       phantom edit inspect-video <video_path> [arguments]"
+            echo "       phantom edit review-audio <video_or_audio_path> [arguments]"
             echo "       phantom edit caption <video_path> [arguments]"
             echo "       phantom edit downscale <video_path> [arguments]"
-            echo "       phantom edit transcribe <video_path> [arguments]"
             echo "       phantom edit transcribe-cloud <video_path> [arguments]"
             echo "       phantom edit trim-silences <video_path> [arguments]"
-            echo "       phantom edit trim-silences-whisper <video_path> [arguments] (deprecated)"
             exit 1
         fi
         ;;
-    metadata)
+    meta|metadata)
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "create" ] || [ "$SUBCOMMAND" = "auto-create" ]; then
@@ -258,7 +305,7 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/read_metadata.py" "$@"
         elif [ "$SUBCOMMAND" = "manual" ] || [ "$SUBCOMMAND" = "interactive" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom metadata manual <video_path>"
+                echo "Usage: phantom meta manual <video_path>"
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/create_metadata.py" "$@"
@@ -267,17 +314,17 @@ case "$COMMAND" in
         elif [ "$SUBCOMMAND" = "prepare-recommendations" ] || [ "$SUBCOMMAND" = "prepare-yt-recommendations" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/recommendations/prepare_yt_recommendations.py" "$@"
         else
-            echo "Unknown metadata subcommand: $SUBCOMMAND"
-            echo "Usage: phantom metadata create [<project_path>] [arguments]"
-            echo "       phantom metadata desc [<project_path>] [arguments]"
-            echo "       phantom metadata tweet [<project_path>] [arguments]"
-            echo "       phantom metadata timestamps [<captions_srt_path>] [arguments]"
-            echo "       phantom metadata titles [<project_path>] [arguments]"
-            echo "       phantom metadata resources [<project_path>] [arguments]"
-            echo "       phantom metadata read [<project_or_video_path>] [--json]"
-            echo "       phantom metadata manual <video_path>"
-            echo "       phantom metadata recommend [<project_path>] [arguments]"
-            echo "       phantom metadata prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]"
+            echo "Unknown meta subcommand: $SUBCOMMAND"
+            echo "Usage: phantom meta create [<project_path>] [arguments]"
+            echo "       phantom meta desc [<project_path>] [arguments]"
+            echo "       phantom meta tweet [<project_path>] [arguments]"
+            echo "       phantom meta timestamps [<captions_srt_path>] [arguments]"
+            echo "       phantom meta titles [<project_path>] [arguments]"
+            echo "       phantom meta resources [<project_path>] [arguments]"
+            echo "       phantom meta read [<project_or_video_path>] [--json]"
+            echo "       phantom meta manual <video_path>"
+            echo "       phantom meta recommend [<project_path>] [arguments]"
+            echo "       phantom meta prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]"
             exit 1
         fi
         ;;
@@ -285,72 +332,51 @@ case "$COMMAND" in
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "broadcast" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/emails/resend_broadcast.py" "$@"
+            run_publish email "$@"
         else
             echo "Unknown emails subcommand: $SUBCOMMAND"
-            echo "Usage: phantom emails broadcast [arguments]"
+            echo "Usage: phantom publish email [arguments]"
+            exit 1
+        fi
+        ;;
+    research)
+        SOURCE="$1"
+        shift
+        if [ "$SOURCE" = "reddit" ]; then
+            run_reddit "$@"
+        elif [ "$SOURCE" = "skool" ]; then
+            run_skool "$@"
+        else
+            echo "Unknown research source: $SOURCE"
+            echo "Usage: phantom research reddit <post|analyze|sub|search|profile|serve> [arguments]"
+            echo "       phantom research skool <post|community> [arguments]"
             exit 1
         fi
         ;;
     reddit)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "analyze-post" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/analyze_post.py" "$@"
-        elif [ "$SUBCOMMAND" = "scrape" ] || [ "$SUBCOMMAND" = "scrape-post" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_reddit_post.py" "$@"
-        elif [ "$SUBCOMMAND" = "scrapesub" ] || [ "$SUBCOMMAND" = "scrape-sub" ] || [ "$SUBCOMMAND" = "scrape-subreddit" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_subreddit.py" "$@"
-        elif [ "$SUBCOMMAND" = "scrapesearch" ] || [ "$SUBCOMMAND" = "scrape-search" ] || [ "$SUBCOMMAND" = "search" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_search.py" "$@"
-        elif [ "$SUBCOMMAND" = "profile" ] || [ "$SUBCOMMAND" = "scrape-profile" ] || [ "$SUBCOMMAND" = "user" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_profile.py" "$@"
-        elif [ "$SUBCOMMAND" = "serve" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/serve.py" "$@"
-        else
-            echo "Unknown reddit subcommand: $SUBCOMMAND"
-            echo "Usage: phantom reddit analyze-post <url> [--headless] [--json]"
-            echo "       phantom reddit scrape <url> [--headless] [--max-comments <int>] [--json]"
-            echo "       phantom reddit scrapesub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
-            echo "       phantom reddit scrapesearch <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
-            echo "       phantom reddit profile <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
-            echo "       phantom reddit serve [--port <int>] [--headless]"
-            exit 1
-        fi
+        run_reddit "$@"
         ;;
     skool)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "scrape" ] || [ "$SUBCOMMAND" = "scrape-post" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/skool/scrape_post.py" "$@"
-        elif [ "$SUBCOMMAND" = "scrapecommunity" ] || [ "$SUBCOMMAND" = "scrape-community" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/skool/scrape_community.py" "$@"
-        else
-            echo "Unknown skool subcommand: $SUBCOMMAND"
-            echo "Usage: phantom skool scrape <url> [--max-comments <int>] [--headless] [--json]"
-            echo "       phantom skool scrapecommunity <url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
-            exit 1
-        fi
+        run_skool "$@"
+        ;;
+    publish)
+        run_publish "$@"
         ;;
     tweet)
-        if [ $# -eq 0 ]; then
-            echo "Usage: phantom tweet [--image] [--substack] [--threads] <tweet_content>"
-            exit 1
-        fi
-        "$BASE_DIR/twitter/tweet.sh" "$@"
+        run_publish x "$@"
         ;;
     ideas)
         SUBCOMMAND="$1"
         shift
-        if [ "$SUBCOMMAND" = "generate-from-comments" ] || [ "$SUBCOMMAND" = "from-comments" ]; then
+        if [ "$SUBCOMMAND" = "from-comments" ] || [ "$SUBCOMMAND" = "generate-from-comments" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom ideas generate-from-comments <video> [arguments]"
+                echo "Usage: phantom ideas from-comments <video> [arguments]"
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/comments/generate_ideas.py" "$@"
-        elif [ "$SUBCOMMAND" = "generate-from-outlier" ] || [ "$SUBCOMMAND" = "from-outlier" ]; then
+        elif [ "$SUBCOMMAND" = "from-outlier" ] || [ "$SUBCOMMAND" = "generate-from-outlier" ]; then
             if [ $# -eq 0 ]; then
-                echo "Usage: phantom ideas generate-from-outlier <video> [arguments]"
+                echo "Usage: phantom ideas from-outlier <video> [arguments]"
                 exit 1
             fi
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/generate_from_outlier.py" "$@"
@@ -360,8 +386,8 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/archive_reviewed_ideas.py" "$@"
         else
             echo "Unknown ideas subcommand: $SUBCOMMAND"
-            echo "Usage: phantom ideas generate-from-comments <video> [arguments]"
-            echo "       phantom ideas generate-from-outlier <video> [arguments]"
+            echo "Usage: phantom ideas from-comments <video> [arguments]"
+            echo "       phantom ideas from-outlier <video> [arguments]"
             echo "       phantom ideas export [--file <path> | --idea <text>] [arguments]"
             echo "       phantom ideas archive [--dry-run]"
             exit 1
@@ -371,12 +397,12 @@ case "$COMMAND" in
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "upload" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/upload_video.py" "$@"
-        elif [ "$SUBCOMMAND" = "addtoplaylist" ]; then
+            run_publish yt "$@"
+        elif [ "$SUBCOMMAND" = "add-to-playlist" ] || [ "$SUBCOMMAND" = "addtoplaylist" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/addtoplaylist.py" "$@"
         elif [ "$SUBCOMMAND" = "count-uploads" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/count_youtube_uploads.py" "$@"
-        elif [ "$SUBCOMMAND" = "print-titles" ]; then
+        elif [ "$SUBCOMMAND" = "titles" ] || [ "$SUBCOMMAND" = "print-titles" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/print_titles.py" "$@"
         elif [ "$SUBCOMMAND" = "summarize" ]; then
             uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/summarize_video.py" "$@"
@@ -390,10 +416,9 @@ case "$COMMAND" in
             uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/add_endscreen.py" "$@"
         else
             echo "Unknown yt subcommand: $SUBCOMMAND"
-            echo "Usage: phantom yt upload <video_path> [--playlist <playlist_id_or_name>]"
-            echo "       phantom yt addtoplaylist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]"
+            echo "Usage: phantom yt add-to-playlist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]"
             echo "       phantom yt count-uploads [<channel>] [--fresh]"
-            echo "       phantom yt print-titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
+            echo "       phantom yt titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
             echo "       phantom yt summarize <video> [--model <model>] [--json]"
             echo "       phantom yt comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
             echo "       phantom yt info <video> [--fresh] [--json] [--days <int>]"
@@ -402,41 +427,8 @@ case "$COMMAND" in
             exit 1
         fi
         ;;
-    shorts)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "metadata" ]; then
-            METADATA_CMD="$1"
-            shift
-            if [ "$METADATA_CMD" = "create" ]; then
-                if [ $# -eq 0 ]; then
-                    echo "Usage: phantom shorts metadata create <folder_path> [arguments]"
-                    exit 1
-                fi
-                uv run --project "$BASE_DIR" python "$BASE_DIR/shorts/create_bulk_metadata.py" "$@"
-            elif [ "$METADATA_CMD" = "clean" ]; then
-                uv run --project "$BASE_DIR" python "$BASE_DIR/shorts/clean_metadata.py" "$@"
-            else
-                echo "Unknown shorts metadata subcommand: $METADATA_CMD"
-                echo "Usage: phantom shorts metadata create <folder_path> [arguments]"
-                echo "       phantom shorts metadata clean"
-                exit 1
-            fi
-        elif [ "$SUBCOMMAND" = "upload" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/shorts/upload.py" "$@"
-        elif [ "$SUBCOMMAND" = "add-thumbnail" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/shorts/add_thumbnail.py" "$@"
-        elif [ "$SUBCOMMAND" = "trim" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/shorts/auto_trim_shorts.py" "$@"
-        else
-            echo "Unknown shorts subcommand: $SUBCOMMAND"
-            echo "Usage: phantom shorts metadata create <folder_path> [arguments]"
-            echo "       phantom shorts metadata clean"
-            echo "       phantom shorts upload --platform <youtube|instagram|tiktok|all> <video_path>"
-            echo "       phantom shorts add-thumbnail [arguments] <video_path>"
-            echo "       phantom shorts trim [arguments]"
-            exit 1
-        fi
+    shorts|threads)
+        removed_command "$COMMAND"
         ;;
     docs)
         SUBCOMMAND="$1"
@@ -487,21 +479,13 @@ case "$COMMAND" in
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "inspect" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom review inspect <video_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/review/video_inspector.py" "$@"
+            exec "$0" edit inspect-video "$@"
         elif [ "$SUBCOMMAND" = "audio" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom review audio <video_or_audio_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/review/audio_review.py" "$@"
+            exec "$0" edit review-audio "$@"
         else
             echo "Unknown review subcommand: $SUBCOMMAND"
-            echo "Usage: phantom review inspect <video_path> [arguments]"
-            echo "       phantom review audio <video_or_audio_path> [arguments]"
+            echo "Usage: phantom edit inspect-video <video_path> [arguments]"
+            echo "       phantom edit review-audio <video_or_audio_path> [arguments]"
             exit 1
         fi
         ;;
@@ -509,10 +493,10 @@ case "$COMMAND" in
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "yap" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/content/yap_to_post.py" "$@"
+            run_publish yap "$@"
         else
             echo "Unknown content subcommand: $SUBCOMMAND"
-            echo "Usage: phantom content yap --platform <linkedin|substack>"
+            echo "Usage: phantom publish yap --platform <linkedin|substack>"
             exit 1
         fi
         ;;
@@ -520,21 +504,10 @@ case "$COMMAND" in
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "note" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/substack/post_note.py" "$@"
+            run_publish substack "$@"
         else
             echo "Unknown substack subcommand: $SUBCOMMAND"
-            echo "Usage: phantom substack note [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
-            exit 1
-        fi
-        ;;
-    threads)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "post" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/threads/post_thread.py" "$@"
-        else
-            echo "Unknown threads subcommand: $SUBCOMMAND"
-            echo "Usage: phantom threads post [<text>] [--posts <file...>] [-i <images>...] [--headless]"
+            echo "Usage: phantom publish substack [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
             exit 1
         fi
         ;;
@@ -542,10 +515,10 @@ case "$COMMAND" in
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "post" ] || [ "$SUBCOMMAND" = "new-post" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/linkedin/new_post.py" "$@"
+            run_publish linkedin "$@"
         else
             echo "Unknown linkedin subcommand: $SUBCOMMAND"
-            echo "Usage: phantom linkedin post [<text>] [-f <file>] [-i <images>...] [--url <url>]"
+            echo "Usage: phantom publish linkedin [<text>] [-f <file>] [-i <images>...] [--url <url>]"
             exit 1
         fi
         ;;
@@ -553,10 +526,10 @@ case "$COMMAND" in
         SUBCOMMAND="$1"
         shift
         if [ "$SUBCOMMAND" = "post" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/devto/post.py" "$@"
+            run_publish devto "$@"
         else
             echo "Unknown devto subcommand: $SUBCOMMAND"
-            echo "Usage: phantom devto post <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
+            echo "Usage: phantom publish devto <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
             exit 1
         fi
         ;;

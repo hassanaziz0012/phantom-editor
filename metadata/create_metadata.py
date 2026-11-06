@@ -4,7 +4,7 @@ Create YouTube video metadata interactively.
 
 Usage:
     python metadata/create_metadata.py /path/to/video.mp4
-    phantom metadata manual <video_path>
+    phantom meta manual <video_path>
 """
 
 from __future__ import annotations

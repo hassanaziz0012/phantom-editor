@@ -2,7 +2,7 @@
 """
 Add a YouTube video to one of your channel's playlists.
 
-Usage: phantom yt addtoplaylist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]
+Usage: phantom yt add-to-playlist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]
 
 <video> is a video ID or any YouTube URL. <playlist_id_or_name> is a playlist ID,
 a playlist URL, or the exact title of one of your playlists (case-insensitive).

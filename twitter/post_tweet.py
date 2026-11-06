@@ -10,7 +10,6 @@ from playwright.async_api import async_playwright
 # Setup import path for sibling modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from substack.post_note import post_substack_note, get_cdp_browser_context, get_clean_page
-from threads.post_thread import post_thread
 
 PROFILE_DIR = Path.home() / "Desktop" / "browser-profiles" / "p9222"
 CDP_PORT = 9222
@@ -103,20 +102,18 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {{
                 except Exception:
                     pass
 
-async def post_tweet(content: str, use_image: bool = False, substack: bool = False, threads: bool = False):
+async def post_tweet(content: str, use_image: bool = False, substack: bool = False):
     await _run_post_tweet(content, use_image)
 
     if substack:
         await post_substack_note(text=content)
 
-    if threads:
-        await post_thread(posts_text=[content])
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Post a tweet via Playwright.")
     parser.add_argument('--image', action='store_true', help="Attach an image from the clipboard")
     parser.add_argument('--substack', action='store_true', help="Also post to Substack")
-    parser.add_argument('--threads', action='store_true', help="Also post to Threads")
+    # Threads posting was removed; the flag is still accepted so old callers keep working.
+    parser.add_argument('--threads', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('text', nargs='+', help="The tweet text content")
     
     args = parser.parse_args()
@@ -126,4 +123,7 @@ if __name__ == "__main__":
         print("Error: Tweet is longer than 280 characters.", file=sys.stderr)
         sys.exit(1)
         
-    asyncio.run(post_tweet(tweet_content, use_image=args.image, substack=args.substack, threads=args.threads))
+    if args.threads:
+        print("Warning: --threads is no longer supported; skipping Threads.", file=sys.stderr)
+
+    asyncio.run(post_tweet(tweet_content, use_image=args.image, substack=args.substack))

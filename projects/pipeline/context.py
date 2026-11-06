@@ -19,21 +19,20 @@ class Outputs:
     srt_1word: Path
     # Captions of final.mp4 (silences and cuts removed), for the metadata step.
     trimmed_srt: Path
-    # Raw mode: raw-audio.wav (trimmed speech audio).
-    # Webcam mode: after-trim-silences.mp4 (masked + trimmed video).
+    # raw-audio.wav (trimmed speech audio).
     step2: Path
     processed_audio: Path
     final: Path
     metadata: Path
 
     @classmethod
-    def for_project(cls, main_video: Path, video_dir: Path, raw_mode: bool) -> "Outputs":
+    def for_project(cls, main_video: Path, video_dir: Path) -> "Outputs":
         stem = main_video.stem
         return cls(
             srt=video_dir / f"{stem}.srt",
             srt_1word=video_dir / f"{stem}-1word.srt",
             trimmed_srt=video_dir / "trimmed.srt",
-            step2=video_dir / ("raw-audio.wav" if raw_mode else "after-trim-silences.mp4"),
+            step2=video_dir / "raw-audio.wav",
             processed_audio=video_dir / "processed-audio.wav",
             final=video_dir / f"final{main_video.suffix or '.mp4'}",
             metadata=video_dir / "metadata.json",
@@ -70,9 +69,7 @@ class Scripts:
 @dataclass
 class PipelineContext:
     args: argparse.Namespace
-    raw_mode: bool
     main_video: Path
-    screen_video: Path | None  # webcam mode only; defaults to main_video
     video_dir: Path
     video_info: VideoInfo
     outputs: Outputs
@@ -81,9 +78,9 @@ class PipelineContext:
     # Set once a step really runs: every later step must then re-run too,
     # because its inputs changed. Seeded from --force.
     force: bool = False
-    # Raw mode: speech intervals detected in Step 2, reused by the Step 4 encode.
+    # Speech intervals detected in Step 2, reused by the Step 4 encode.
     speech_intervals: list[tuple[float, float]] | None = None
-    # Raw mode: the project's cuts.txt (if any) and the ranges it removes.
+    # The project's cuts.txt (if any) and the ranges it removes.
     cuts_file: Path | None = None
     cuts: list[tuple[float, float]] = field(default_factory=list)
 

@@ -10,7 +10,7 @@ to the Google Sheets Content Calendar.
 
 Usage:
     python -m ideas.generate_from_outlier <video_url_or_id> [options]
-    phantom ideas generate-from-outlier <video_url_or_id> [options]
+    phantom ideas from-outlier <video_url_or_id> [options]
 """
 
 from __future__ import annotations

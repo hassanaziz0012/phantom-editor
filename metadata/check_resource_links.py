@@ -7,7 +7,7 @@ to find every resource the video promises to link ("link in the description", "l
 below", ...). Saves them to the `resources` list in `metadata.json` as
 `{"key", "url", "timestamp", "quote"}` objects with blank URLs for you to fill in.
 
-`phantom projects status` flags resources whose URL is still blank, and `phantom yt upload`
+`phantom projects status` flags resources whose URL is still blank, and `phantom publish yt`
 lists them under RESOURCES in the description (and refuses to upload while any URL is blank).
 
 Re-running keeps URLs you've already filled in: a resource whose key matches an existing

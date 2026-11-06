@@ -19,45 +19,22 @@ RULE = "=" * 60
 
 
 def get_main_input(args: argparse.Namespace) -> str | None:
-    """Resolve the primary input path from ``--raw <path>``, ``--webcam`` or the positionals."""
+    """Resolve the input path from ``--raw <path>`` or the positional."""
     if isinstance(args.raw, str):
         return args.raw
-    return args.webcam_flag or args.webcam
+    return args.video
 
 
 def parse_cli_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Full video processing pipeline: Groq cloud transcription, silence trimming, "
-                    "audio processing, BGM addition, review and metadata generation. "
-                    "Supports pre-composed raw recordings (--raw) or dual webcam + screen recording."
+        description="Full video processing pipeline for a pre-composed recording (e.g. OBS): "
+                    "Groq cloud transcription, silence trimming, audio processing, BGM addition, "
+                    "review and metadata generation."
     )
-    parser.add_argument(
-        "webcam", nargs="?", default=None,
-        help="Path to webcam / main video file (or raw OBS video file if --raw is passed).",
-    )
-    parser.add_argument(
-        "screen", nargs="?", default=None,
-        help="Path to screen recording video file (optional; ignored if --raw is passed).",
-    )
-    parser.add_argument(
-        "--raw", "-r", dest="raw", nargs="?", const=True, default=None,
-        help="Process a single pre-composed raw video file (e.g. OBS recording with scene switches). "
-             "Skips webcam overlay attachment and proceeds directly with silence trimming.",
-    )
-    parser.add_argument("--webcam", "-w_file", dest="webcam_flag", default=None,
-                        help="Explicit path to webcam video file.")
-    parser.add_argument("--screen", "-s_file", dest="screen_flag", default=None,
-                        help="Explicit path to screen recording video file.")
-    parser.add_argument(
-        "--preset", choices=["portrait", "landscape"], default="portrait",
-        help="Preset orientation for webcam overlay: 'portrait' (default) or 'landscape'.",
-    )
-    parser.add_argument(
-        "--width", "-w", type=int, default=None,
-        help="Width of webcam overlay in pixels (default: 400 for portrait, 550 for landscape).",
-    )
-    parser.add_argument("--all", "-a", action="store_true",
-                        help="Attach webcam mask throughout the entire video, skipping word command detection.")
+    parser.add_argument("video", nargs="?", default=None, help="Path to the raw video file.")
+    # Raw is the only mode now. --raw is still accepted (as a flag or with the
+    # path) because older callers always pass it.
+    parser.add_argument("--raw", "-r", dest="raw", nargs="?", const=True, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--bgm", "--bgm-track", dest="bgm", default=None,
                         help="BGM track file path or track name in BGM directory.")
     parser.add_argument("--title", "-t", default=None,
@@ -69,47 +46,32 @@ def parse_cli_args() -> argparse.Namespace:
     parser.add_argument("--skip-review", action="store_true", help="Skip audio and video inspection review step.")
     parser.add_argument(
         "--clean-intermediates", action="store_true",
-        help="Delete intermediate files (raw-audio.wav or after-trim-silences.mp4) after final.mp4 is verified.",
+        help="Delete the intermediate raw-audio.wav after final.mp4 is verified.",
     )
 
     args = parser.parse_args()
     if not get_main_input(args):
-        if args.raw is not None:
-            print_error("Error: Input raw video file is required when using --raw.")
-        else:
-            print_error("Error: Input video file (webcam video) is required.")
+        print_error("Error: Input raw video file is required.")
         parser.print_help()
         sys.exit(1)
     return args
 
 
-def resolve_inputs(args: argparse.Namespace) -> tuple[Path, Path | None, bool]:
-    """Return (main_video, screen_video, raw_mode), checking the files exist."""
+def resolve_input(args: argparse.Namespace) -> Path:
+    """Return the raw video path, checking the file exists."""
     main_video = Path(get_main_input(args)).resolve()
-    raw_mode = args.raw is not None
     if not main_video.is_file():
-        kind = "Raw" if raw_mode else "Webcam"
-        raise PipelineError(f"{kind} video file not found at '{main_video}'")
-    if raw_mode:
-        return main_video, None, True
-
-    screen_input = args.screen_flag or args.screen
-    if not screen_input:
-        return main_video, main_video, False
-    screen_video = Path(screen_input).resolve()
-    if not screen_video.is_file():
-        raise PipelineError(f"Screen video file not found at '{screen_video}'")
-    return main_video, screen_video, False
+        raise PipelineError(f"Raw video file not found at '{main_video}'")
+    return main_video
 
 
 def build_context(args: argparse.Namespace) -> PipelineContext:
-    main_video, screen_video, raw_mode = resolve_inputs(args)
+    main_video = resolve_input(args)
     video_dir = main_video.parent
     video_info = get_video_info(main_video)
     summary = RunSummary(
         project_title=args.title or video_dir.name,
         raw_input_filename=main_video.name,
-        mode="raw pre-composed" if raw_mode else "webcam overlay",
         bgm_track=args.bgm,
         resolution=f"{video_info.width}x{video_info.height}",
         fps=video_info.fps,
@@ -117,19 +79,14 @@ def build_context(args: argparse.Namespace) -> PipelineContext:
     cuts_file = video_dir / CUTS_FILENAME
     if not cuts_file.is_file():
         cuts_file = None
-    elif not raw_mode:
-        print_warning(f"{CUTS_FILENAME} found, but manual cuts only apply in raw mode (--raw). Ignoring it.")
-        cuts_file = None
-    if cuts_file is not None:
+    else:
         summary.cuts = load_cuts(cuts_file, video_info.duration)
     return PipelineContext(
         args=args,
-        raw_mode=raw_mode,
         main_video=main_video,
-        screen_video=screen_video,
         video_dir=video_dir,
         video_info=video_info,
-        outputs=Outputs.for_project(main_video, video_dir, raw_mode),
+        outputs=Outputs.for_project(main_video, video_dir),
         scripts=Scripts.locate(),
         summary=summary,
         force=args.force,

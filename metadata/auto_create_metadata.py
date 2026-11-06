@@ -266,7 +266,7 @@ def auto_create_metadata(
         else:
             print("\n⚠️  No phrase-level .srt captions file found in project folder.")
             print("   Skipping AI generation of description, tweet template, recommendations, timestamps, titles, and resources.")
-            print("   Run `phantom edit transcribe <video>` to generate captions first if needed.")
+            print("   Run `phantom edit transcribe-cloud <video>` to generate captions first if needed.")
 
     formatted_json = save_metadata(metadata_path, metadata)
 

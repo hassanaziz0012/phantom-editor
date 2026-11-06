@@ -57,12 +57,11 @@ class VideoFlag:
 class RunSummary:
     project_title: str
     raw_input_filename: str
-    mode: str  # "raw pre-composed" or "webcam overlay"
     bgm_track: str | None
     resolution: str  # e.g. "1920x1080"
     fps: float
     final_duration: float = 0.0
-    # Raw mode: ranges removed via cuts.txt.
+    # Ranges removed via cuts.txt.
     cuts: list[tuple[float, float]] = field(default_factory=list)
     # Keyed by step number so the report keeps pipeline order even though the
     # background steps finish out of order.
@@ -157,7 +156,7 @@ def write_summary(summary: RunSummary, review_step_index: int, output_dir: Path)
         cuts_line = f"Cuts (cuts.txt): {', '.join(format_cut(c) for c in summary.cuts)}\n"
 
     md = f"""# phantom pipeline: {summary.project_title}
-Mode: {summary.mode}, {summary.bgm_track or "no BGM"}
+BGM: {summary.bgm_track or "none"}
 Input: {summary.raw_input_filename} ({summary.resolution}, {fps_str}fps) -> final.mp4 ({format_timestamp(summary.final_duration)})
 {cuts_line}{steps_line}
 

@@ -25,6 +25,7 @@ Normalizes audio loudness to standard targets using FFmpeg's `loudnorm` filter (
 ### [process_audio.sh](../audio-processing/process_audio.sh)
 Runs the entire audio processing pipeline (extraction, noise filtering, normalization, and track replacement) for video projects.
 
+* **CLI Command**: `phantom edit process-audio [-R|--recursive] <path>`
 * **Usage**: 
   - **Single file mode**: `./process_audio.sh <path_to_mp4>`
     - *Workflow*: Creates a `temp/` folder inside the input file's directory, extracts/processes audio, saves final WAV to `processed-audio.wav`, and saves the combined MP4 to `after-audio-processing.mp4` within that directory.

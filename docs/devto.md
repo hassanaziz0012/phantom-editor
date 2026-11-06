@@ -18,25 +18,25 @@ Creates a new dev.to post from a Markdown file, with title, up to 4 tags, and an
 * **CLI Command**:
   ```bash
   # Publish with a title and tags:
-  phantom devto post post.md --title "My Post" --tags python webdev
+  phantom publish devto post.md --title "My Post" --tags python webdev
 
   # Title taken from the file's first "# Heading" (removed from the body):
-  phantom devto post post.md --tags "python, ai"
+  phantom publish devto post.md --tags "python, ai"
 
   # With a cover image:
-  phantom devto post post.md --tags python --cover ./cover.png
+  phantom publish devto post.md --tags python --cover ./cover.png
 
   # Cross-post with a canonical URL:
-  phantom devto post post.md --canonical-url https://blog.example.com/my-post
+  phantom publish devto post.md --canonical-url https://blog.example.com/my-post
 
   # Add to a series (created if it doesn't exist yet):
-  phantom devto post post.md --series "Automation Diaries"
+  phantom publish devto post.md --series "Automation Diaries"
 
   # Schedule for later (browser's local timezone):
-  phantom devto post post.md --schedule "2026-11-01 09:00"
+  phantom publish devto post.md --schedule "2026-11-01 09:00"
 
   # Save as a draft instead of publishing:
-  phantom devto post post.md --draft
+  phantom publish devto post.md --draft
   ```
 
 * **Direct Python Usage**:

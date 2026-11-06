@@ -16,4 +16,5 @@ Handles the 3-legged OAuth 2.0 flow to acquire a 60-day access token and retriev
 ### [new_post.py](../linkedin/new_post.py)
 Publishes text commentary to LinkedIn. Supports attaching multiple images or a rich link card (with custom thumbnail).
 
+* **CLI Command**: `phantom publish linkedin [<text>] [-f <file>] [-i <images>...] [--url <url>]`
 * **Usage**: `python linkedin/new_post.py` (runs demonstration post examples)

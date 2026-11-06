@@ -1,6 +1,6 @@
 # 🤖 Reddit Automation & Outreach
 
-Automation tools for scraping Reddit posts and subreddit feeds via Playwright and Chrome DevTools Protocol (CDP), analyzing post sentiment with Groq LLM, and executing automated YouTube promotion outreach against semantic video embeddings.
+Automation tools for scraping Reddit posts and subreddit feeds via Playwright and Chrome DevTools Protocol (CDP), and analyzing post sentiment with Groq LLM.
 
 ---
 
@@ -10,7 +10,7 @@ All Reddit scraping workflows attach to a persistent native Google Chrome instan
 * **CDP Port**: `9222` (default).
 * **Browser Profile**: `~/Desktop/browser-profiles/cdp` (preserves active sessions, logins, and cookies).
 * **Anti-Bot Stealth**: Injects stealth scripts to mask `navigator.webdriver`, authenticates `window.chrome`, and strips automation signatures.
-* **CLI Wrapper**: Main subcommands are integrated directly into the `phantom reddit` CLI.
+* **CLI Wrapper**: Main subcommands are integrated directly into the `phantom research reddit` CLI.
 
 ---
 
@@ -23,13 +23,13 @@ Scrapes engagement metrics (upvote count, upvote ratio, view count, total commen
 * **CLI Usage**:
   ```bash
   # Scrape post and print formatted summary
-  phantom reddit scrape "https://www.reddit.com/r/webdev/comments/..."
+  phantom research reddit post "https://www.reddit.com/r/webdev/comments/..."
 
   # Output as JSON
-  phantom reddit scrape "https://www.reddit.com/r/webdev/comments/..." --json
+  phantom research reddit post "https://www.reddit.com/r/webdev/comments/..." --json
 
   # Limit comments or run headless
-  phantom reddit scrape "https://www.reddit.com/r/..." --max-comments 15 --headless
+  phantom research reddit post "https://www.reddit.com/r/..." --max-comments 15 --headless
   ```
 
 * **Direct Python**:
@@ -52,15 +52,15 @@ Scrapes posts from any subreddit feed (`best`, `hot`, `new`, `rising`, or `top` 
 * **CLI Usage**:
   ```bash
   # Scrape default feed ('best')
-  phantom reddit scrapesub webdev
+  phantom research reddit sub webdev
 
   # Scrape 'hot' or 'new' feeds
-  phantom reddit scrapesub webdev --hot --limit 25
-  phantom reddit scrapesub r/automation --new
+  phantom research reddit sub webdev --hot --limit 25
+  phantom research reddit sub r/automation --new
 
   # Scrape 'top' feeds
-  phantom reddit scrapesub webdev --top-weekly
-  phantom reddit scrapesub webdev --top-daily --json
+  phantom research reddit sub webdev --top-weekly
+  phantom research reddit sub webdev --top-daily --json
   ```
 
 * **Direct Python**:
@@ -86,14 +86,14 @@ Scrapes post results from a Reddit search (`https://www.reddit.com/search/?q=...
 * **CLI Usage**:
   ```bash
   # Search posts (relevance, all time)
-  phantom reddit scrapesearch "automate video editing"
+  phantom research reddit search "automate video editing"
 
   # Unquoted multi-word queries also work
-  phantom reddit scrapesearch automate video editing --limit 40
+  phantom research reddit search automate video editing --limit 40
 
   # Sort and time window
-  phantom reddit scrapesearch "automate video editing" --sort top --time month
-  phantom reddit scrapesearch "automate video editing" --sort new --json
+  phantom research reddit search "automate video editing" --sort top --time month
+  phantom research reddit search "automate video editing" --sort new --json
   ```
 
 * **Direct Python**:
@@ -124,14 +124,14 @@ Scrapes a Reddit user's profile (`https://www.reddit.com/user/<name>/`) from a u
 * **CLI Usage**:
   ```bash
   # Username, u/name, or full profile URL
-  phantom reddit profile spez
-  phantom reddit profile "https://www.reddit.com/user/spez/" --posts 50 --comments 50
+  phantom research reddit profile spez
+  phantom research reddit profile "https://www.reddit.com/user/spez/" --posts 50 --comments 50
 
   # Top posts and comments of the past year, as JSON
-  phantom reddit profile u/spez --sort top --time year --json
+  phantom research reddit profile u/spez --sort top --time year --json
 
   # Skip the per-item insights requests on your own profile
-  phantom reddit profile No_Nefariousness2052 --no-views
+  phantom research reddit profile No_Nefariousness2052 --no-views
   ```
 
 * **Direct Python**:
@@ -160,10 +160,10 @@ Scrapes a Reddit post via `scrape_reddit_post.py` and runs sentiment and communi
 * **CLI Usage**:
   ```bash
   # Run sentiment analysis on a post
-  phantom reddit analyze-post "https://www.reddit.com/r/..."
+  phantom research reddit analyze "https://www.reddit.com/r/..."
 
   # Run headless with JSON output
-  phantom reddit analyze-post "https://www.reddit.com/r/..." --headless --json
+  phantom research reddit analyze "https://www.reddit.com/r/..." --headless --json
   ```
 
 * **Direct Python**:
@@ -177,36 +177,3 @@ Scrapes a Reddit post via `scrape_reddit_post.py` and runs sentiment and communi
   - **Verdict & Summary**: Synthesized analysis of upvotes, views, and comment sentiment.
   - **Key Comment Themes**: Recurring talking points, feedback, and humor.
   - **Positive & Critical Points**: Specific arguments, praise, counterarguments, and skepticism.
-
----
-
-### 6. [promote_videos.py](../reddit/promote_videos.py)
-
-Outreach engine that identifies authentic video promotion opportunities across targeted subreddits:
-
-1. **Subreddit Ingestion**: Reads target subreddits from `reddit/subreddits_for_yt_promotion.txt`.
-2. **Deduplication**: Checks Google Sheet (`GOOGLE_OUTREACH_TRACKER_SHEET_ID`, tab `Reddit YT promotion`) to skip already evaluated posts.
-3. **Semantic Matching**: Computes cosine similarity between post text and channel video embeddings (`metadata/recommendations/my_videos_embeddings.npy`).
-4. **LLM Grading**: Evaluates top candidate videos using Groq structured outputs (`grade_post_for_video_promotion.md`) to score fit (1–10) and generate a natural reply angle.
-5. **Google Sheets Logging**: Appends genuine matches, scores, explanations, and reply angles to the outreach tracking sheet.
-
-* **Usage**:
-  ```bash
-  # Run standard outreach evaluation
-  uv run python reddit/promote_videos.py
-
-  # Custom limit and feed
-  uv run python reddit/promote_videos.py --limit 15 --feed hot
-
-  # Dry run (evaluates without writing to Google Sheets)
-  uv run python reddit/promote_videos.py --dry-run
-  ```
-
-* **Options**:
-  - `-f, --subreddits-file`: Path to subreddits list file (default: `reddit/subreddits_for_yt_promotion.txt`).
-  - `-l, --limit`: Maximum posts to scrape per subreddit (default: `25`).
-  - `--feed`: Subreddit feed (`new`, `hot`, `best`, `rising`, `top-daily`, `top-weekly`; default: `new`).
-  - `--sheet-id`: Target Google Sheet ID (defaults to `GOOGLE_OUTREACH_TRACKER_SHEET_ID` from `.env`).
-  - `--sheet-name`: Target worksheet tab (default: `Reddit YT promotion`).
-  - `--headless`: Run Chrome in headless mode.
-  - `--dry-run`: Evaluate posts without modifying Google Sheets.

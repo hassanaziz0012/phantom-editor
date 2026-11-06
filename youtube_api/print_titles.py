@@ -6,7 +6,7 @@ Fetches and prints all video titles for a given YouTube channel (or your channel
 
 Usage:
     python -m youtube_api.print_titles [@channel_or_id] [--fresh] [--limit N] [--json]
-    phantom yt print-titles [@channel_or_id] [--fresh]
+    phantom yt titles [@channel_or_id] [--fresh]
 """
 
 import argparse

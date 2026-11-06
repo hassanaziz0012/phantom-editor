@@ -23,7 +23,6 @@ auth.json
 reddit/.reddit_user
 tokens
 linkedin_tokens.json
-instagram_session.json
 
 # NextJS
 node_modules
@@ -31,18 +30,15 @@ node_modules
 
 # cache / data
 cache
-shorts/shorts.json
 metadata/recommendations/my_videos.json
 metadata/recommendations/my_videos_embeddings.npy
 *.npy
 
 # AI models
 Kokoro-82M
-video-editing/models/
 
 # Temp files
 *.ass
 temp_*
 site/
-shorts/shorts.json.bak
 reddit/example_analysis_output.txt

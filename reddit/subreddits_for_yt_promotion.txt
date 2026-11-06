@@ -1,3 +1,0 @@
-r/automation
-r/aiagents
-r/aiautomation

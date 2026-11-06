@@ -1,7 +1,7 @@
 """
 Reddit scrape server: one long-running process that answers post and feed scrape requests.
 
-`phantom reddit scrape` and `phantom reddit scrapesub` start a new uv -> Python -> Playwright chain
+`phantom research reddit post` and `phantom research reddit sub` start a new uv -> Python -> Playwright chain
 and a new Chrome tab for every call, and that startup now costs more CPU than the scrape itself.
 This server starts once, keeps one tab open on reddit.com, and gets each post's or feed's .json
 with fetch() inside that tab, so requests share the browser's login and run side by side.
@@ -11,7 +11,7 @@ Requests can run concurrently, so replies may come back in a different order.
     {"id": 1, "cmd": "post", "url": "https://www.reddit.com/r/.../comments/...", "max_comments": 10}
     {"id": 2, "cmd": "feed", "subreddit": "forhire", "feed": "new", "limit": 25}
     {"id": 3, "cmd": "info", "ids": ["1x6dqiz", "t3_1x5j7dl", ...]}
-    -> {"id": 1, "result": {...same JSON as `phantom reddit scrape --json`...}}
+    -> {"id": 1, "result": {...same JSON as `phantom research reddit post --json`...}}
     -> {"id": 2, "error": "Reddit returned HTTP 404 for ...: Not Found"}
     -> {"id": 3, "result": {"posts": [{"id", "url", "title", "author", "body", "removed_by_category"}, ...]}}
 Post URLs must be full /comments/ permalinks; share links aren't followed.

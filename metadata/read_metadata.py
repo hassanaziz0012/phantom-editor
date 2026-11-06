@@ -19,7 +19,7 @@ Usage as a Python module:
 
 Usage as a CLI script:
     python metadata/read_metadata.py /path/to/project/or/video.mp4
-    phantom metadata read /path/to/project
+    phantom meta read /path/to/project
 """
 
 from __future__ import annotations

@@ -19,25 +19,25 @@ Automates publishing short-form Substack Notes with optional image or video atta
 * **CLI Command**:
   ```bash
   # Compose note interactively in default $EDITOR:
-  phantom substack note
+  phantom publish substack
 
   # Note from a file:
-  phantom substack note -f ./note.txt
+  phantom publish substack -f ./note.txt
 
   # Text-only note directly:
-  phantom substack note "Just launched our new automation pipeline!"
+  phantom publish substack "Just launched our new automation pipeline!"
 
   # Note with an image:
-  phantom substack note "Check out our architecture diagram:" -i ./diagram.png
+  phantom publish substack "Check out our architecture diagram:" -i ./diagram.png
 
   # Note with multiple images:
-  phantom substack note "Visual updates:" -i ./img1.png ./img2.png
+  phantom publish substack "Visual updates:" -i ./img1.png ./img2.png
 
   # Note with video:
-  phantom substack note "Demo video below:" -v ./demo.mp4
+  phantom publish substack "Demo video below:" -v ./demo.mp4
 
   # Headless mode:
-  phantom substack note "Automated announcement" --headless
+  phantom publish substack "Automated announcement" --headless
   ```
 
 * **Direct Python Usage**:

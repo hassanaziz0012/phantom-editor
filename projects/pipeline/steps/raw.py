@@ -1,4 +1,4 @@
-"""Raw-mode Steps 2 and 4: a single pre-composed recording (e.g. OBS).
+"""Steps 2 and 4: cut a single pre-composed recording (e.g. OBS).
 
 Step 2 extracts only the speech audio, so Step 3 can clean it before any video
 is encoded. Step 4 then encodes the video straight from the source through the

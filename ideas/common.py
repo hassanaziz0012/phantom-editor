@@ -1,6 +1,6 @@
 """
-Helpers shared by the idea generators (`phantom ideas generate-from-comments`
-and `phantom ideas generate-from-outlier`).
+Helpers shared by the idea generators (`phantom ideas from-comments`
+and `phantom ideas from-outlier`).
 """
 
 from __future__ import annotations

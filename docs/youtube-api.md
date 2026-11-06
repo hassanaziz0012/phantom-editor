@@ -21,18 +21,18 @@ Core retrieval module that handles fetching all videos for a channel and caching
 Defines shared dataclasses (`Video`, `VideoSeed`, `RankedVideo`, `VideoMetadata`) for storing video metadata, stats, and recommendation rankings.
 
 ### [upload_video.py](../youtube_api/upload_video.py)
-Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a custom `thumbnail.png`, shares the link on Twitter (X), Substack Notes, and Threads, and sends an email broadcast to subscribers via Resend.
+Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a custom `thumbnail.png`, shares the link on Twitter (X) and Substack Notes, and sends an email broadcast to subscribers via Resend.
 
-The description is built from `DESCRIPTION_TEMPLATE` in [`config.py`](../config.py). Its RESOURCES section lists `metadata.json`'s `resources` (from `phantom metadata resources`) as `key: url` lines, and is left out when there are none. The upload stops before starting if any resource still has a blank `url`.
+The description is built from `DESCRIPTION_TEMPLATE` in [`config.py`](../config.py). Its RESOURCES section lists `metadata.json`'s `resources` (from `phantom meta resources`) as `key: url` lines, and is left out when there are none. The upload stops before starting if any resource still has a blank `url`.
 
-* **Usage**: `python youtube_api/upload_video.py /path/to/video.mp4` or via `phantom yt upload <video_path> [--playlist <playlist_id_or_name>]`
-* **Playlist**: `--playlist` adds the uploaded video to a playlist (see [addtoplaylist.py](#addtoplaylistpy)). The playlist is looked up before the upload starts, so an unknown ID or an ambiguous title stops the upload. If adding fails after the upload, it only warns and prints the `phantom yt addtoplaylist` command to retry.
+* **Usage**: `python youtube_api/upload_video.py /path/to/video.mp4` or via `phantom publish yt <video_path> [--playlist <playlist_id_or_name>]`
+* **Playlist**: `--playlist` adds the uploaded video to a playlist (see [addtoplaylist.py](#addtoplaylistpy)). The playlist is looked up before the upload starts, so an unknown ID or an ambiguous title stops the upload. If adding fails after the upload, it only warns and prints the `phantom yt add-to-playlist` command to retry.
 * **Auth**: The OAuth token needs both the `youtube.upload` and `youtube` scopes. A saved `tokens/token.json` missing either one triggers the browser sign-in again.
 
 ### [addtoplaylist.py](../youtube_api/addtoplaylist.py)
 Adds a video to one of your channel's playlists.
 
-* **Usage**: `phantom yt addtoplaylist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]`. `<video>` is a video ID or any YouTube URL.
+* **Usage**: `phantom yt add-to-playlist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]`. `<video>` is a video ID or any YouTube URL.
 * **Playlist lookup**: A playlist ID or a URL with `list=` must be one of your playlists. Anything else is treated as a title and matched against your playlists (case-insensitive). If no playlist has that title, a new one is created with `--privacy` (default `public`). If several playlists share the title, it stops and lists their IDs.
 * **Duplicates**: Skips the add if the video is already in the playlist.
 * **Reuse**: `from youtube_api.addtoplaylist import add_to_playlist, find_playlist, create_playlist, add_video_to_playlist`.
@@ -57,15 +57,3 @@ Your channel's long-form performance over the last 28 days, read live from YouTu
 
 ### [utils.py](../youtube_api/utils.py)
 Utility functions containing API authentication, channel ID resolution, Jaccard text similarity helpers, and logarithmic scoring algorithms.
-
-### [upload_short.py](../youtube_api/upload_short.py)
-Uploads a vertical Short video to YouTube. Under the hood, it reuses the authentication and upload helpers from `upload_video.py`.
-
-* **Usage**: `python youtube_api/upload_short.py /path/to/short_video.mp4` or via `phantom shorts upload --platform youtube <video_path>`
-* **Metadata Lookup**:
-  - Automatically queries the unified database `shorts/shorts.json` to find matching metadata (matching by exact path, filename, or stem).
-  - Fetches the title, description, and custom thumbnail path.
-* **Key Features**:
-  - Checks the video's posted status first; if it's already marked as posted to YouTube in `shorts.json`, it skips the upload to avoid duplicates.
-  - Updates the `posted.youtube` boolean to `True` in `shorts/shorts.json` upon a successful upload.
-

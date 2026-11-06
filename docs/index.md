@@ -46,15 +46,11 @@ Inspect final videos for aspect ratio, resolution, and glitchy frames (black scr
 Automatic publishing and uploading scripts to distribute finalized content across platforms:
 
 * 🎥 **[YouTube API](youtube-api.md)**: Upload videos, configure metadata, and manage YouTube uploads.
-* 📸 **[Instagram](instagram.md)**: Automatic Reel and post uploads via custom instagrapi workflows.
-* 🎵 **[TikTok](tiktok.md)**: CLI-based automated TikTok video publishing.
 * 🐦 **[Twitter / X](twitter.md)**: Post scheduling and media tweeting workflows.
 * 💼 **[LinkedIn](linkedin.md)**: Share posts and updates automatically.
-* 🧵 **[Threads](threads.md)**: Publish single posts and multi-part threads with image attachments.
 * 📝 **[Substack](substack.md)**: Post Substack Notes with optional images and video.
 * 👩‍💻 **[DEV Community](devto.md)**: Publish, schedule or draft dev.to posts from Markdown files.
-* 🤖 **[Reddit](reddit.md)**: Scrape posts/feeds, analyze community sentiment with Groq, and automate YouTube video promotion outreach.
-* 📱 **[Shorts Workflow](shorts.md)**: Multi-platform short-form video uploader and tracker.
+* 🤖 **[Reddit](reddit.md)**: Scrape posts/feeds and analyze community sentiment with Groq.
 
 ---
 

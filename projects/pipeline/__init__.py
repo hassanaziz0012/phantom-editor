@@ -1,7 +1,8 @@
 """Full video processing pipeline (``phantom projects process``).
 
-Chains transcription, silence trimming / webcam masking, audio processing,
-final encode (with optional BGM), verification, review and metadata generation.
+Chains transcription, silence trimming, audio processing, final encode (with
+optional BGM), verification, review and metadata generation for a single
+pre-composed recording (e.g. OBS).
 Entry point: ``projects/process_video.py`` -> :func:`pipeline.cli.main`.
 """
 
@@ -12,7 +13,7 @@ PIPELINE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PIPELINE_DIR.parent.parent
 VIDEO_EDITING_DIR = REPO_ROOT / "video-editing"
 
-# The shared helpers (utils, trim_silences, auto_attach_webcam_mask) live in
+# The shared helpers (utils, trim_silences) live in
 # video-editing/, which is not a package, so it has to be on sys.path before
 # any pipeline module imports them.
 if str(VIDEO_EDITING_DIR) not in sys.path:

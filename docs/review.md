@@ -9,7 +9,7 @@ The **Review** module provides quality control (QC) tools to inspect video files
 Run the quality check on a video file:
 
 ```bash
-phantom review inspect /path/to/video.mp4
+phantom edit inspect-video /path/to/video.mp4
 ```
 
 ---
@@ -43,14 +43,14 @@ The `inspect` subcommand accepts several options to customize filter thresholds:
 ### Example custom run:
 
 ```bash
-phantom review inspect my_video.mp4 -bd 0.5 -fd 1.0 -tfd 3.0 -fn 0.005
+phantom edit inspect-video my_video.mp4 -bd 0.5 -fd 1.0 -tfd 3.0 -fn 0.005
 ```
 
 ---
 
 ## 📊 Sample Report Output
 
-When you run `phantom review inspect video.mp4`, you will receive a terminal report matching the following style:
+When you run `phantom edit inspect-video video.mp4`, you will receive a terminal report matching the following style:
 
 ```text
 ================================================================================

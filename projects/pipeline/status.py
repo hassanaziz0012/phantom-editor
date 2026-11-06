@@ -7,7 +7,6 @@ from utils import COLOR_BLUE, COLOR_GREEN, COLOR_RESET, COLOR_YELLOW, print_erro
 from pipeline.context import PipelineContext
 from pipeline.cuts import format_cut
 from pipeline.runner import Step
-from pipeline.steps.webcam import overlay_width
 
 RULE = "=" * 60
 
@@ -26,16 +25,9 @@ def print_overview(ctx: PipelineContext, steps: list[Step], plan: dict[int, str 
     print_info(RULE)
     print_info("            FULL VIDEO PROCESSING PIPELINE")
     print_info(RULE)
-    if ctx.raw_mode:
-        print(f" Raw video:        {ctx.main_video}")
-        print(" Pipeline mode:    Raw Pre-Composed Video (Skip Webcam Overlay)")
-        if ctx.cuts:
-            print_warning(f" Manual cuts:      {', '.join(format_cut(c) for c in ctx.cuts)} (from {ctx.cuts_file.name})")
-    else:
-        print(f" Web camera video: {ctx.main_video}")
-        print(f" Screen video:     {ctx.screen_video}")
-        print(f" Overlay width:    {overlay_width(args)}px")
-        print(f" Overlay mode:     {'Continuous (--all)' if args.all else 'Dynamic voice commands'}")
+    print(f" Raw video:        {ctx.main_video}")
+    if ctx.cuts:
+        print_warning(f" Manual cuts:      {', '.join(format_cut(c) for c in ctx.cuts)} (from {ctx.cuts_file.name})")
 
     print(f" Output directory: {ctx.video_dir}")
     print(f" Project title:    {ctx.summary.project_title}")
@@ -43,7 +35,7 @@ def print_overview(ctx: PipelineContext, steps: list[Step], plan: dict[int, str 
         print(f" BGM track:        {args.bgm} (Volume: {args.volume}%)")
     else:
         print_warning(" BGM track:        None specified")
-    if ctx.raw_mode and ctx.needs_downscale:
+    if ctx.needs_downscale:
         print_warning(" Resolution check: >1080p, downscaled to 1080p during the final encode")
     else:
         print_info(f" Resolution:       {ctx.summary.resolution}")

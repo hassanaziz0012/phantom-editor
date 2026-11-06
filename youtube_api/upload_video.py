@@ -33,7 +33,7 @@ from tqdm import tqdm
 # Config
 # ---------------------------------------------------------------------------
 
-# "youtube" covers playlist management (phantom yt addtoplaylist, yt upload --playlist).
+# "youtube" covers playlist management (phantom yt add-to-playlist, yt upload --playlist).
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",
@@ -196,7 +196,7 @@ def validate_metadata_for_upload(
         raise ValueError(
             "Missing or empty 'description' in metadata.json.\n"
             "   A video description is required before uploading to YouTube.\n"
-            "   Please run `phantom metadata desc <target>` or `phantom metadata auto <target>` to generate it."
+            "   Please run `phantom meta desc <target>` or `phantom meta create <target>` to generate it."
         )
 
     raw_timestamps = metadata.get("timestamps")
@@ -206,7 +206,7 @@ def validate_metadata_for_upload(
         raise ValueError(
             "Missing or empty 'timestamps' in metadata.json.\n"
             "   Timestamps/chapters are required before uploading to YouTube.\n"
-            "   Please run `phantom metadata timestamps <target>` or `phantom metadata auto <target>` to generate them."
+            "   Please run `phantom meta timestamps <target>` or `phantom meta create <target>` to generate them."
         )
 
     raw_recommendations = metadata.get("recommendations")
@@ -216,7 +216,7 @@ def validate_metadata_for_upload(
         raise ValueError(
             "Missing or empty 'recommendations' in metadata.json.\n"
             "   Video recommendations are required before uploading to YouTube.\n"
-            "   Please run `phantom metadata recommend <target>` or `phantom metadata auto <target>` to generate them."
+            "   Please run `phantom meta recommend <target>` or `phantom meta create <target>` to generate them."
         )
 
     raw_resources = metadata.get("resources")
@@ -389,7 +389,7 @@ def main():
             res_count = len(formatted_resources.strip().splitlines()) - 1
             print(f"✅ Found {res_count} resource links for 'RESOURCES'.")
         elif "resources" not in metadata:
-            print("⚠️  No 'resources' in metadata.json. Run `phantom metadata resources` to check for promised links.")
+            print("⚠️  No 'resources' in metadata.json. Run `phantom meta resources` to check for promised links.")
     except ValueError as e:
         print(f"\n❌ Error: {e}\n", file=sys.stderr)
         sys.exit(1)
@@ -439,7 +439,7 @@ def main():
                 add_video_to_playlist(youtube, video_id, playlist)
         except Exception as e:
             print(f"⚠️  Failed to add the video to the playlist: {e}")
-            print(f"   Retry with: phantom yt addtoplaylist {video_id} \"{args.playlist}\"")
+            print(f"   Retry with: phantom yt add-to-playlist {video_id} \"{args.playlist}\"")
 
     # Get share URL
     share_url = get_share_url(video_id)

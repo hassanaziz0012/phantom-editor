@@ -94,7 +94,7 @@ OUTLINE_SECTIONS = ("Hook", "Outline")
 OUTLINE_CTA_MARKER = "[LIKE / SUBSCRIBE]"
 OUTLINE_CTA_PATTERN = re.compile(r"\[\s*LIKE\s*/\s*SUBSCRIBE\s*\]", re.IGNORECASE)
 # Keys metadata.json must contain for the metadata step to count as done.
-# "resources" is written by `phantom metadata resources`; each entry's "url" must also be filled in.
+# "resources" is written by `phantom meta resources`; each entry's "url" must also be filled in.
 REQUIRED_METADATA_KEYS = ("title", "titles", "description", "tweetTemplate", "recommendations", "timestamps", "resources")
 
 
@@ -532,14 +532,14 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.stage_num = 9
         project.stage_name = "Scheduled"
         date_info = f" ({project.scheduled_date})" if project.scheduled_date else ""
-        project.next_step = f"Upload video to YouTube{date_info}! 🚀 (`phantom yt upload` or add URL to metadata.json)"
+        project.next_step = f"Upload video to YouTube{date_info}! 🚀 (`phantom publish yt` or add URL to metadata.json)"
         project.status_color = COLOR_YELLOW
 
     # Stage 8: Ready to Schedule (final.mp4 + metadata.json + thumbnail(s))
     elif project.final_file and project.has_metadata and project.thumbnail_files:
         project.stage_num = 8
         project.stage_name = "Ready to Schedule"
-        project.next_step = "Upload video to YouTube (`phantom yt upload`) or set publishDate in metadata.json"
+        project.next_step = "Upload video to YouTube (`phantom publish yt`) or set publishDate in metadata.json"
         project.status_color = COLOR_CYAN
 
     # Stage 7: Added Thumbnail (final.mp4 + thumbnail, missing or incomplete metadata)
