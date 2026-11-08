@@ -2,24 +2,31 @@
 """
 YouTube Video Uploader
 Usage: phantom publish yt /path/to/video.mp4
-Expects metadata.json and thumbnail.png (optional) in the same folder as the video.
+Expects metadata.json and a thumbnail (optional, e.g. thumbnail.png) in the same folder as the video.
+
+With a publishDate in metadata.json the video is uploaded privately and set to go public on that
+date; the tweet, Substack note and email are then left for you to send on the day.
 """
 
 import argparse
-from datetime import datetime
+import io
+import mimetypes
+import shlex
 import subprocess
 import sys
+from datetime import datetime, time, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
 from shared.commands import python_module
 import config
-from metadata.read_metadata import read_metadata, VideoMetadata
+from metadata.read_metadata import DEFAULT_CATEGORY_ID, DEFAULT_TWEET_TEMPLATE, read_metadata, VideoMetadata
 from metadata.check_resource_links import blank_resources
+from projects.current_pipeline import is_thumbnail_file
 
 
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -40,6 +47,14 @@ TOKEN_FILE = Path(__file__).parent / "tokens/token.json"
 YOUTUBE_API_SERVICE = "youtube"
 YOUTUBE_API_VERSION = "v3"
 CHUNK_SIZE = 25 * 1024 * 1024  # 25 MB — balances throughput with progress granularity
+
+# When a publishDate has no time of day, the video goes public at this local time
+DEFAULT_PUBLISH_TIME = time(22, 30)
+
+# Thumbnail types the YouTube API takes as they are; other image types Pillow can read are sent as PNG
+THUMBNAIL_MIME_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+# Preferred when a project has several thumbnails (the rest are usually alternatives)
+DEFAULT_THUMBNAIL_NAMES = ("thumbnail.png", "thumbnail.jpg", "thumbnail.jpeg")
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +100,46 @@ def get_authenticated_service():
             f.write(creds.to_json())
 
     return build(YOUTUBE_API_SERVICE, YOUTUBE_API_VERSION, credentials=creds)
+
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+
+def parse_publish_date(value: str) -> datetime:
+    """The moment a metadata.json publishDate goes public, as an aware datetime.
+
+    Takes "2026-11-12" (DEFAULT_PUBLISH_TIME), "2026-11-12T17:00" or "2026-11-12 17:00"; a time
+    without a UTC offset is local time.
+    """
+    text = value.strip()
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        raise ValueError(
+            f"publishDate '{value}' in metadata.json isn't a date. "
+            "Use YYYY-MM-DD, or YYYY-MM-DDTHH:MM for a specific time."
+        ) from None
+    if len(text) <= 10:
+        moment = datetime.combine(moment.date(), DEFAULT_PUBLISH_TIME)
+    return moment if moment.tzinfo else moment.astimezone()
+
+
+def scheduled_publish_time(metadata: Union[VideoMetadata, dict]) -> Optional[datetime]:
+    """When the video should go public, or None to publish it right away.
+
+    Raises ValueError for a publishDate that can't be read or has already passed.
+    """
+    value = metadata.get("publishDate")
+    if not value:
+        return None
+    publish_at = parse_publish_date(str(value))
+    if publish_at <= datetime.now(timezone.utc):
+        raise ValueError(
+            f"publishDate {publish_at:%Y-%m-%d %H:%M %Z} in metadata.json has already passed.\n"
+            "   Set a future date to schedule the video, or remove publishDate to publish it now."
+        )
+    return publish_at
 
 
 # ---------------------------------------------------------------------------
@@ -252,25 +307,33 @@ def upload_video(
     video_path: Path,
     metadata: Union[VideoMetadata, dict],
     full_description: str,
+    publish_at: Optional[datetime] = None,
 ) -> str:
-    """Upload the video with ``full_description`` (see build_description) and return its YouTube video ID."""
+    """Upload the video with ``full_description`` (see build_description) and return its YouTube video ID.
+
+    With ``publish_at`` the video is uploaded private and YouTube makes it public at that moment.
+    """
 
     body = {
         "snippet": {
             "title":       metadata.get("title", video_path.stem),
             "description": full_description,
             "tags":        metadata.get("tags", []),
-            "categoryId":  str(metadata.get("categoryId", "22")),  # 22 = People & Blogs
+            "categoryId":  str(metadata.get("categoryId", DEFAULT_CATEGORY_ID)),
         },
         "status": {
             "privacyStatus":           metadata.get("privacyStatus", "public"),
             "selfDeclaredMadeForKids": metadata.get("madeForKids", False),
         },
     }
+    if publish_at:
+        # YouTube only honours publishAt on private videos
+        body["status"]["privacyStatus"] = "private"
+        body["status"]["publishAt"] = publish_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     media = MediaFileUpload(
         str(video_path),
-        mimetype="video/mp4",
+        mimetype=mimetypes.guess_type(video_path.name)[0] or "application/octet-stream",
         chunksize=CHUNK_SIZE,
         resumable=True,
     )
@@ -303,22 +366,59 @@ def upload_video(
     return video_id
 
 
+def is_uploadable_thumbnail(path: Path) -> bool:
+    """Whether the thumbnail can be sent to YouTube, as it is or converted to PNG (not .svg)."""
+    return path.suffix.lower() in THUMBNAIL_MIME_TYPES or path.suffix.lower() in {".webp", ".gif", ".bmp"}
+
+
 def find_thumbnail(video_path: Path) -> Optional[Path]:
-    """The project's thumbnail.png, or None once the user agrees to go without one.
+    """The project's thumbnail (the same thumbnail*.png/.jpg/.jpeg/.webp files `phantom projects
+    status` counts), or None once the user agrees to go without one.
 
-    Asked before uploading: aborting after the upload would leave a public video
-    whose URL never made it into metadata.json.
+    With several, thumbnail.png (or .jpg) wins; otherwise the user picks one. Asked before
+    uploading: aborting after the upload would leave a video whose URL never made it into
+    metadata.json.
     """
-    thumbnail_file = video_path.parent / "thumbnail.png"
-    if thumbnail_file.exists():
-        return thumbnail_file
+    candidates = sorted(
+        f for f in video_path.parent.iterdir()
+        if f.is_file() and is_thumbnail_file(f) and is_uploadable_thumbnail(f)
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    for name in DEFAULT_THUMBNAIL_NAMES:
+        match = next((f for f in candidates if f.name.lower() == name), None)
+        if match:
+            return match
+    if candidates:
+        print("🖼  Several thumbnails found:")
+        for idx, f in enumerate(candidates, 1):
+            print(f"   {idx}. {f.name}")
+        while True:
+            answer = input(f"   Which one should YouTube use? [1-{len(candidates)}] ").strip()
+            if answer.isdigit() and 1 <= int(answer) <= len(candidates):
+                return candidates[int(answer) - 1]
 
-    print("⚠️  thumbnail.png not found in the video folder.")
+    print("⚠️  No thumbnail (thumbnail*.png, .jpg, .jpeg or .webp) found in the video folder.")
     answer = input("   Proceed without a custom thumbnail? YouTube will auto-select one. [y/N] ").strip().lower()
     if answer != "y":
-        print("❌ Aborted. Re-run the script once you've added thumbnail.png.")
+        print("❌ Aborted. Re-run the script once you've added a thumbnail (e.g. thumbnail.png).")
         sys.exit(1)
     return None
+
+
+def thumbnail_media(thumbnail_file: Path):
+    """The thumbnail as an upload body: PNG/JPEG as they are, other formats converted to PNG."""
+    mimetype = THUMBNAIL_MIME_TYPES.get(thumbnail_file.suffix.lower())
+    if mimetype:
+        return MediaFileUpload(str(thumbnail_file), mimetype=mimetype)
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    with Image.open(thumbnail_file) as image:
+        image.convert("RGB").save(buffer, format="PNG")
+    buffer.seek(0)
+    return MediaIoBaseUpload(buffer, mimetype="image/png")
 
 
 def set_thumbnail(youtube, video_id: str, thumbnail_file: Optional[Path]):
@@ -326,16 +426,24 @@ def set_thumbnail(youtube, video_id: str, thumbnail_file: Optional[Path]):
         print("⏭  Skipping thumbnail — YouTube will pick one automatically.")
         return
 
-    print("🖼  Setting thumbnail…")
+    print(f"🖼  Setting thumbnail ({thumbnail_file.name})…")
     youtube.thumbnails().set(
         videoId=video_id,
-        media_body=MediaFileUpload(str(thumbnail_file), mimetype="image/png"),
+        media_body=thumbnail_media(thumbnail_file),
     ).execute()
     print("✅ Thumbnail set.")
 
 
 def get_share_url(video_id: str) -> str:
     return f"https://youtu.be/{video_id}"
+
+
+def render_tweet(template: str, url: str, title: str) -> str:
+    """Fill a tweetTemplate's {url} and {title}; other braces are kept as they are."""
+    try:
+        return template.format(url=url, title=title)
+    except (KeyError, IndexError, ValueError):
+        return template.replace("{url}", url).replace("{title}", title)
 
 
 # ---------------------------------------------------------------------------
@@ -384,6 +492,14 @@ def main():
         print(f"\n❌ Error: {e}\n", file=sys.stderr)
         sys.exit(1)
 
+    try:
+        publish_at = scheduled_publish_time(metadata)
+    except ValueError as e:
+        print(f"\n❌ Error: {e}\n", file=sys.stderr)
+        sys.exit(1)
+    if publish_at:
+        print(f"📅 Will upload privately and go public on {publish_at:%a %b %d %Y, %H:%M %Z}.")
+
     thumbnail_file = find_thumbnail(video_path)
 
     # Authenticate
@@ -409,7 +525,7 @@ def main():
     full_description = build_description(
         raw_description, formatted_timestamps, formatted_recommendations, formatted_resources
     )
-    video_id = upload_video(youtube, video_path, metadata, full_description)
+    video_id = upload_video(youtube, video_path, metadata, full_description, publish_at)
 
     # Set thumbnail
     set_thumbnail(youtube, video_id, thumbnail_file)
@@ -440,52 +556,38 @@ def main():
     except Exception as e:
         print(f"⚠️  Failed to save metadata to metadata.json: {e}")
 
+    title = metadata.get("title", video_path.stem)
+    post_content = render_tweet(metadata.get("tweetTemplate", DEFAULT_TWEET_TEMPLATE), share_url, title)
+    steps = []
     if not args.skip_socials:
-        # Post tweet
-        tweet_template = metadata.get(
-            "tweetTemplate",
-            "🎬 New video just dropped! {url}"
-        )
-        tweet_content = tweet_template.format(
-            url=share_url,
-            title=metadata.get("title", ""),
-        )
-        print(f"\n🐦 Posting tweet:\n   {tweet_content}")
-        try:
-            subprocess.run(["phantom", "publish", "x", tweet_content], check=True)
-            print("✅ Tweet posted!")
-        except Exception as e:
-            print(f"⚠️  Tweet step failed or browser closed: {e}")
-            print("⏭  Moving on gracefully...")
-
-        # Post Substack note
-        print(f"\n📝 Posting Substack note:\n   {tweet_content}")
-        try:
-            subprocess.run(["phantom", "publish", "substack", tweet_content], check=True)
-            print("✅ Substack note posted!")
-        except Exception as e:
-            print(f"⚠️  Substack note step failed or browser closed: {e}")
-            print("⏭  Moving on gracefully...")
-
+        steps += [
+            ("🐦 Posting tweet", "Tweet posted", ["twitter.post_tweet", post_content],
+             ["phantom", "publish", "x", post_content]),
+            ("📝 Posting Substack note", "Substack note posted", ["substack.post_note", post_content],
+             ["phantom", "publish", "substack", post_content]),
+        ]
     if not args.skip_email:
-        # Send email broadcast
-        title = metadata.get("title", video_path.stem)
-        description = metadata.get("description", "")
-
-        print(f"\n📧 Sending email broadcast for '{title}'...")
-        subprocess.run(
-            python_module(
-                "emails.resend_broadcast",
-                "--title",
-                title,
-                "--description",
-                description,
-                "--url",
-                share_url,
-            ),
-            check=True,
+        email_args = ["--title", title, "--description", metadata.get("description", ""), "--url", share_url]
+        steps.append(
+            (f"📧 Sending email broadcast for '{title}'", "Email broadcast sent", ["emails.resend_broadcast", *email_args],
+             ["phantom", "publish", "email", *email_args])
         )
-        print("✅ Email broadcast sent!")
+
+    if publish_at and steps:
+        # The video isn't public yet, so posting now would share a link that doesn't work
+        print(f"\n⏸  The video goes public on {publish_at:%b %d at %H:%M}. Send these then:")
+        for _, _, _, command in steps:
+            print(f"   {shlex.join(command)}")
+    else:
+        # The video is already up, so a failing step only warns and the rest still run
+        for heading, done, module_args, command in steps:
+            print(f"\n{heading}...")
+            try:
+                subprocess.run(python_module(*module_args), check=True)
+                print(f"✅ {done}!")
+            except Exception as e:
+                print(f"⚠️  Step failed: {e}")
+                print(f"   Retry with: {shlex.join(command)}")
 
     print("\n🎉 All done!")
 

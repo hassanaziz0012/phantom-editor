@@ -21,7 +21,12 @@ Core retrieval module that handles fetching all videos for a channel and caching
 Defines shared dataclasses (`Video`, `VideoSeed`, `RankedVideo`, `VideoMetadata`) for storing video metadata, stats, and recommendation rankings.
 
 ### [upload_video.py](../youtube_api/upload_video.py)
-Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a custom `thumbnail.png`, shares the link on Twitter (X) and Substack Notes, and sends an email broadcast to subscribers via Resend.
+Uploads a video, attaches metadata from a local `metadata.json`, uploads a custom thumbnail, shares the link on Twitter (X) and Substack Notes, and sends an email broadcast to subscribers via Resend.
+
+* **Thumbnail**: any `thumbnail*.png`, `.jpg`, `.jpeg` or `.webp` in the video's folder (`.webp` is sent as PNG). With several, `thumbnail.png`/`.jpg` wins, otherwise it asks which one.
+* **Scheduling**: with a future `publishDate` in `metadata.json` (`2026-11-12`, or `2026-11-12T17:00` for a specific time; a plain date goes public at 22:30 local time), the video is uploaded private and set to go public then. The tweet, Substack note and email are skipped, and the commands to send them on the day are printed. A `publishDate` that has passed stops the upload.
+* **After the upload**: the tweet, Substack note and email each only warn on failure and print the command to retry, so one failing doesn't skip the others.
+* **Category**: `categoryId` defaults to `28` (Science & Technology).
 
 The description is built from `DESCRIPTION_TEMPLATE` in [`config.py`](../config.py). Its RESOURCES section lists `metadata.json`'s `resources` (from `phantom meta resources`) as `key: url` lines, and is left out when there are none. The upload stops before starting if any resource still has a blank `url`.
 
@@ -39,6 +44,8 @@ Adds a video to one of your channel's playlists.
 
 ### [video_info.py](../youtube_api/video_info.py)
 Shows quick details about any YouTube video: a direct thumbnail URL, views/likes/comments, and an outlier score — the video's views divided by the median views of the channel's recent uploads of the same format (Shorts vs long-form). Baseline videos younger than 14 days are excluded, and a note is shown if the video itself is that new.
+
+A video counts as a Short only if YouTube serves it at `youtube.com/shorts/<id>` (a regular upload redirects to `/watch`); only videos of 3 minutes or less are checked, and answers are cached in `youtube_api/cache/shorts.json`.
 
 * **Usage**: `phantom yt info <video_url_or_id> [--fresh] [--json]`
 * **Caching**: The channel's last 50 uploads are cached in `youtube_api/cache/baselines.json` for 24 hours. A cold lookup costs 3 quota units; a cached one costs 1. `--fresh` forces a refetch.
