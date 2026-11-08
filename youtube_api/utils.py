@@ -5,11 +5,14 @@ Contains shared helper functions for credential verification, channel resolution
 terminal color validation, text tokenization/similarity, and algorithm scoring.
 """
 
+import http.client
+import json
 import math
 import os
 import re
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Optional
 
 from googleapiclient.discovery import build
@@ -151,11 +154,62 @@ def parse_iso8601_duration(value: Optional[str]) -> Optional[int]:
 
 # YouTube Shorts can be up to 3 minutes long
 SHORTS_MAX_SECONDS = 180
+# video ID -> whether it's a Short, as YouTube answered. A video never changes format, so it's kept for good.
+SHORTS_CACHE_FILE = Path(__file__).resolve().parent / "cache" / "shorts.json"
+_shorts_cache: Optional[dict[str, bool]] = None
 
 
-def is_short(duration_seconds: Optional[int]) -> bool:
-    """Whether a video of this length (in seconds) counts as a Short."""
-    return duration_seconds is not None and duration_seconds <= SHORTS_MAX_SECONDS
+def is_short(duration_seconds: Optional[int], video_id: Optional[str] = None) -> bool:
+    """
+    Whether a video is a Short. Nothing over 3 minutes is. For a shorter video with a
+    ``video_id`` YouTube is asked (see ask_youtube_is_short), since a short regular upload
+    isn't a Short; without one, or when YouTube can't be reached, the length decides.
+    """
+    if duration_seconds is None or duration_seconds > SHORTS_MAX_SECONDS:
+        return False
+    if not video_id:
+        return True
+
+    global _shorts_cache
+    if _shorts_cache is None:
+        try:
+            _shorts_cache = json.loads(SHORTS_CACHE_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _shorts_cache = {}
+    if video_id not in _shorts_cache:
+        answer = ask_youtube_is_short(video_id)
+        if answer is None:
+            return True
+        _shorts_cache[video_id] = answer
+        # Cache failures shouldn't break the command; the next run just asks again.
+        try:
+            SHORTS_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp_file = SHORTS_CACHE_FILE.with_suffix(".json.tmp")
+            tmp_file.write_text(json.dumps(_shorts_cache), encoding="utf-8")
+            os.replace(tmp_file, SHORTS_CACHE_FILE)
+        except OSError:
+            pass
+    return _shorts_cache[video_id]
+
+
+def ask_youtube_is_short(video_id: str) -> Optional[bool]:
+    """
+    youtube.com/shorts/<id> serves a Short and redirects any other video to /watch, so a HEAD
+    request tells them apart (the API has no Shorts flag). None if YouTube couldn't be reached.
+    """
+    conn = http.client.HTTPSConnection("www.youtube.com", timeout=5)
+    try:
+        conn.request("HEAD", f"/shorts/{video_id}")
+        status = conn.getresponse().status
+    except (OSError, http.client.HTTPException):
+        return None
+    finally:
+        conn.close()
+    if status == 200:
+        return True
+    if 300 <= status < 400:
+        return False
+    return None
 
 
 def duration_similarity(left_seconds: Optional[int], right_seconds: Optional[int]) -> float:

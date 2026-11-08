@@ -91,7 +91,7 @@ def check_videos(video_ids: list[str]) -> dict[str, dict]:
         video = videos.get(video_id)
         if video is None:
             results[video_id] = {"status": "error", "reason": "Video not found on YouTube (private or not yet public)."}
-        elif _is_short(parse_iso8601_duration(video.duration)):
+        elif _is_short(parse_iso8601_duration(video.duration), video_id):
             results[video_id] = {"status": "error", "reason": "Shorts aren't checked; the channel stats cover long-form videos."}
         elif now - video.published_at < CHECK_AFTER:
             results[video_id] = {"status": "waiting", "ready_at": (video.published_at + CHECK_AFTER).isoformat()}

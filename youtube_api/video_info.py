@@ -175,7 +175,7 @@ def compute_outlier(video: Video, samples: list[dict]) -> dict:
     of the same format (Shorts vs long-form), excluding the video itself, videos
     younger than MIN_VIDEO_AGE, and live/upcoming streams.
     """
-    is_short = _is_short(parse_iso8601_duration(video.duration))
+    is_short = _is_short(parse_iso8601_duration(video.duration), video.video_id)
     now = datetime.now(UTC)
     result = {
         "score": None,
@@ -196,7 +196,7 @@ def compute_outlier(video: Video, samples: list[dict]) -> dict:
         if s["video_id"] != video.video_id
         and s["view_count"] is not None
         and s.get("live_broadcast") in (None, "none")
-        and _is_short(s["duration_seconds"]) == is_short
+        and _is_short(s["duration_seconds"], s["video_id"]) == is_short
         and now - datetime.fromisoformat(s["published_at"]) >= MIN_VIDEO_AGE
     ]
     result["sample_size"] = len(baseline_views)
@@ -230,7 +230,7 @@ def build_payload(video: Video, outlier: dict, baseline_cached: Optional[bool], 
         "channel_title": video.channel_title,
         "published_at": video.published_at.isoformat(),
         "duration_seconds": duration_seconds,
-        "is_short": _is_short(duration_seconds),
+        "is_short": _is_short(duration_seconds, video.video_id),
         "thumbnail_url": video.thumbnail_url,
         "view_count": video.view_count,
         "like_count": video.like_count,
@@ -242,7 +242,7 @@ def build_payload(video: Video, outlier: dict, baseline_cached: Optional[bool], 
 
 def print_human(video: Video, outlier: dict, owner: dict, daily_rows: int) -> None:
     duration_seconds = parse_iso8601_duration(video.duration)
-    kind = "Short" if _is_short(duration_seconds) else format_duration(duration_seconds)
+    kind = "Short" if _is_short(duration_seconds, video.video_id) else format_duration(duration_seconds)
 
     def row(label: str, value: str) -> None:
         print(f"  {DIM}{label:<11}{RESET}{value}")

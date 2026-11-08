@@ -111,7 +111,7 @@ def main() -> None:
         if diff_days < 0:
             # Skip videos published in the future
             continue
-        kind = "shorts" if is_short(parse_iso8601_duration(v.duration)) else "videos"
+        kind = "shorts" if is_short(parse_iso8601_duration(v.duration), v.video_id) else "videos"
         for _, days in periods:
             if diff_days < days:
                 counts[days][kind] += 1
