@@ -79,7 +79,7 @@ Reads `trimmed.srt` and sends the timestamped transcript to Claude via BrowserLL
 ---
 
 ### [check_resource_links.py](../metadata/check_resource_links.py)
-Reads `trimmed.srt` and sends the timestamped transcript to Claude via BrowserLLM with the [`check_resource_links.md`](../agentic/prompts/check_resource_links.md) prompt, which finds every resource the video promises to link ("I'll link it in the description", "linked below"). They're saved to the `resources` list in `metadata.json`:
+Reads `trimmed.srt` and sends the timestamped transcript to Claude via BrowserLLM with the [`check_resource_links.md`](../agentic/prompts/check_resource_links.md) prompt, which finds every resource the video promises to link ("I'll link it in the description", "linked below"). Booking-a-call mentions are deliberately ignored, since the booking link already sits at the top of every description. They're saved to the `resources` list in `metadata.json`:
 
 ```json
 "resources": [

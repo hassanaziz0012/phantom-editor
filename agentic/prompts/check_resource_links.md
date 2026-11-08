@@ -9,9 +9,10 @@ Include a resource when the creator says, or clearly implies, that the viewer wi
 - Tools, apps, websites, products, or services
 - GitHub repos, code, templates, prompts, downloads, or files
 - Articles, docs, blog posts, courses, or newsletters
-- Their own offers (booking a call, a community, a book) when they say they'll link them
+- Their own offers (a community, a book, a course) when they say they'll link them
 
 Do NOT include:
+- Anything about booking a call, scheduling a meeting, or getting in touch with the creator or their business ("book a free call with me", "link below to book a call", "reach out and we can talk about your business", "hire me", "work with me"). The creator already has a booking link at the very top of every video description, so listing it again in the resources section is redundant. Skip it even if the creator explicitly says it is linked below, and even if it is the only link promised (in that case return an empty list)
 - Tools or sites that are only mentioned in passing, with no promise of a link
 - Generic calls to action like "like and subscribe"
 - The same resource twice. If it is mentioned several times, list it once, using the clearest mention
