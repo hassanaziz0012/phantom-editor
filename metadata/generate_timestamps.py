@@ -10,15 +10,14 @@ and saves them to the project's metadata.json.
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-from shared.commands import python_module
-
 import metadata.utils as utils
+from metadata.read_metadata import write_metadata_json
+from shared.commands import python_module
 
 
 def format_timestamps(data: Any) -> list[dict[str, str]]:
@@ -96,10 +95,7 @@ def generate_timestamps_for_project(
     metadata = utils.load_metadata_json(save_meta_path)
 
     metadata["timestamps"] = timestamps
-    save_meta_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(save_meta_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=4, ensure_ascii=False)
-        f.write("\n")
+    write_metadata_json(save_meta_path, metadata)
 
     return timestamps
 

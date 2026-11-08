@@ -30,6 +30,7 @@ from metadata.recommendations.recommend import recommend_videos_for_project
 from metadata.generate_timestamps import generate_timestamps_for_project
 from metadata.generate_titles import generate_titles_for_project
 from metadata.check_resource_links import blank_resources, check_resource_links_for_project
+from metadata.read_metadata import write_metadata_json
 
 
 T = TypeVar("T")
@@ -81,10 +82,8 @@ def ensure_browserllm_ready(profile: str | None = None) -> bool:
 
 def save_metadata(metadata_path: Path, metadata: dict[str, Any]) -> str:
     """Write metadata.json and return the JSON written."""
-    metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    formatted_json = json.dumps(metadata, indent=4, ensure_ascii=False)
-    metadata_path.write_text(formatted_json + "\n", encoding="utf-8")
-    return formatted_json
+    write_metadata_json(metadata_path, metadata)
+    return json.dumps(metadata, indent=4, ensure_ascii=False)
 
 
 def auto_create_metadata(

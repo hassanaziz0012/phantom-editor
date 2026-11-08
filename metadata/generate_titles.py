@@ -16,9 +16,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 import metadata.utils as utils
-
+from metadata.read_metadata import write_metadata_json
 
 TRAFFIC_GOALS = ("search", "browse", "both")
 CHANNEL_SIZES = ("small", "mid", "large")
@@ -107,10 +106,7 @@ def generate_titles_for_project(
     metadata = utils.load_metadata_json(save_meta_path)
 
     metadata["titles"] = titles
-    save_meta_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(save_meta_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=4, ensure_ascii=False)
-        f.write("\n")
+    write_metadata_json(save_meta_path, metadata)
 
     return titles
 

@@ -10,12 +10,11 @@ to metadata.json.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-
 import metadata.utils as utils
+from metadata.read_metadata import write_metadata_json
 
 
 def generate_description_for_project(
@@ -52,10 +51,7 @@ def generate_description_for_project(
     metadata = utils.load_metadata_json(save_meta_path)
 
     metadata["description"] = description
-    save_meta_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(save_meta_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=4, ensure_ascii=False)
-        f.write("\n")
+    write_metadata_json(save_meta_path, metadata)
 
     return description
 

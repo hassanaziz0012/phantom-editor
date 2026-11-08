@@ -26,11 +26,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
-
 
 if TYPE_CHECKING:
     from youtube_api.models import VideoSeed
@@ -84,6 +85,30 @@ def find_metadata_file(target: Optional[Union[str, Path]] = None) -> Path:
     )
 
 
+def write_metadata_json(path: Union[str, Path], data: dict[str, Any]) -> Path:
+    """Write ``data`` to a metadata.json atomically and return the path written.
+
+    The JSON goes to a temp file in the same folder that then replaces the original, so a
+    crash or full disk mid-write leaves the old file intact instead of a truncated one.
+    """
+    path = Path(path).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        # mkstemp makes the file owner-only; keep the original's mode instead
+        os.chmod(tmp, path.stat().st_mode & 0o777 if path.exists() else 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+    return path
+
+
 # ---------------------------------------------------------------------------
 # Field table
 # ---------------------------------------------------------------------------
@@ -134,8 +159,8 @@ KEY_TO_FIELD: dict[str, tuple[str, Callable[[Any], Any]]] = {
     **{field_name: (field_name, coerce) for field_name, coerce in FIELDS.values()},
 }
 
-# Keys to_dict() always writes; the rest only when they have a value
-ALWAYS_WRITTEN = ("title", "description", "tags", "categoryId", "privacyStatus", "madeForKids", "tweetTemplate")
+DEFAULT_CATEGORY_ID = "28"  # Science & Technology
+DEFAULT_TWEET_TEMPLATE = "🎬 New video just dropped! {url}"
 
 
 # ---------------------------------------------------------------------------
@@ -152,10 +177,10 @@ class VideoMetadata:
     title: str = ""
     description: str = ""
     tags: list[str] = field(default_factory=list)
-    category_id: str = "28"
+    category_id: str = DEFAULT_CATEGORY_ID
     privacy_status: str = "public"
     made_for_kids: bool = False
-    tweet_template: str = "🎬 New video just dropped! {url}"
+    tweet_template: str = DEFAULT_TWEET_TEMPLATE
     timestamps: list[Any] = field(default_factory=list)
     recommendations: list[dict[str, Any]] = field(default_factory=list)
     url: Optional[str] = None
@@ -163,6 +188,9 @@ class VideoMetadata:
     uploaded_date: Optional[str] = None
     file_path: Optional[Path] = None
     raw_data: dict[str, Any] = field(default_factory=dict)
+    # metadata.json keys the file had or that were set through item access; to_dict() writes
+    # these even at their default value, and leaves out other fields still at their default
+    present_keys: set[str] = field(default_factory=set)
 
     @property
     def video_id(self) -> Optional[str]:
@@ -185,6 +213,7 @@ class VideoMetadata:
         if key in KEY_TO_FIELD:
             field_name, coerce = KEY_TO_FIELD[key]
             setattr(self, field_name, coerce(value))
+            self.present_keys.add(_camel_key(field_name))
         else:
             self.raw_data[key] = value
 
@@ -210,11 +239,17 @@ class VideoMetadata:
     # ── Conversions & Serialization ───────────────────────────────────────────
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to a clean dictionary matching YouTube upload schema."""
+        """Convert to a clean dictionary matching YouTube upload schema.
+
+        A field still at its default is only written if the file had that key, so a save
+        never adds placeholder values (an empty description, the default tweet template)
+        that would make an unfinished metadata.json look complete.
+        """
+        defaults = VideoMetadata()
         out: dict[str, Any] = {}
         for key, (field_name, _) in FIELDS.items():
             value = getattr(self, field_name)
-            if key in ALWAYS_WRITTEN or value:
+            if key in self.present_keys or value != getattr(defaults, field_name):
                 out[key] = value
 
         # Include any extra keys originally present
@@ -248,13 +283,7 @@ class VideoMetadata:
         if not target:
             raise ValueError("No destination path specified and file_path is None.")
 
-        save_path = Path(target).expanduser().resolve()
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, indent=4, ensure_ascii=False)
-            f.write("\n")
-
+        save_path = write_metadata_json(target, self.to_dict())
         self.file_path = save_path
         return save_path
 
@@ -269,6 +298,11 @@ class VideoMetadata:
 # Parsing & Loading Functions
 # ---------------------------------------------------------------------------
 
+def _camel_key(field_name: str) -> str:
+    """The metadata.json key for a VideoMetadata field name."""
+    return next(key for key, (name, _) in FIELDS.items() if name == field_name)
+
+
 def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) -> VideoMetadata:
     """Parse a dictionary (from JSON) into a structured VideoMetadata instance."""
     metadata = VideoMetadata(
@@ -280,6 +314,8 @@ def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) 
         # Missing or empty values keep the dataclass default
         if value is not None and value != "":
             metadata[key] = value
+    # Only the keys actually in the file; setting values above marked every one as present
+    metadata.present_keys = {key for key, (field_name, _) in FIELDS.items() if key in data or field_name in data}
     return metadata
 
 

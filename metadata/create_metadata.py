@@ -14,7 +14,7 @@ import json
 import sys
 from pathlib import Path
 
-
+from metadata.read_metadata import write_metadata_json
 from shared.terminal import edit_text, highlight_json
 
 # Enable GNU readline for interactive terminal editing (fixes arrow key escape sequences like ^[[D)
@@ -232,8 +232,7 @@ def main():
 
     confirm = input(f"Write to {metadata_path}? [Y/n]: ").strip().lower()
     if confirm in ['', 'y', 'yes']:
-        with open(metadata_path, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=4, ensure_ascii=False)
+        write_metadata_json(metadata_path, metadata)
         print(f"\n✅ Created {metadata_path} successfully!")
     else:
         print("\n❌ Aborted. No file was written.")
