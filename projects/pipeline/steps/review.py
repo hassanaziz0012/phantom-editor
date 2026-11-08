@@ -3,18 +3,17 @@
 import json
 import os
 import subprocess
-import sys
 import tempfile
-from pathlib import Path
 
-from utils import print_info, print_success
+from shared.commands import python_module
+from video_editing.utils import print_info, print_success
 
-from pipeline.common import PipelineError, remove_quietly, require_output
-from pipeline.context import PipelineContext
-from pipeline.summary import AudioFlag, VideoFlag
+from projects.pipeline.common import PipelineError, remove_quietly, require_output
+from projects.pipeline.context import PipelineContext
+from projects.pipeline.summary import AudioFlag, VideoFlag
 
 
-def run_review_script(script: Path, script_args: list[str]) -> object:
+def run_review_script(module: str, script_args: list[str]) -> object:
     """Run a review script that writes its findings to ``--json-out`` and parse them.
 
     Returns None when the script wrote no readable JSON, so a malformed report
@@ -23,12 +22,12 @@ def run_review_script(script: Path, script_args: list[str]) -> object:
     fd, json_path = tempfile.mkstemp(suffix=".json")
     os.close(fd)
     try:
-        cmd = [sys.executable, str(script), *script_args, "--json-out", json_path]
+        cmd = python_module(module, *script_args, "--json-out", json_path)
         print(f"Executing: {' '.join(cmd)}")
         try:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
-            raise PipelineError(f"{script.name} exited with code {e.returncode}", e.returncode) from e
+            raise PipelineError(f"{module} exited with code {e.returncode}", e.returncode) from e
         try:
             with open(json_path) as f:
                 return json.load(f)

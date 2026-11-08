@@ -2,9 +2,9 @@
 Generates twitter/data/auth.json directly using exported auth_token and ct0 cookie values from your regular browser.
 
 usage: 
-  uv run twitter/save_cookies.py <auth_token_value> <ct0_value>
+  uv run python -m shared.launch twitter.save_cookies <auth_token_value> <ct0_value>
 OR interactive mode:
-  uv run twitter/save_cookies.py
+  uv run python -m shared.launch twitter.save_cookies
 """
 
 import json

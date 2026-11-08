@@ -34,7 +34,7 @@ Scrapes engagement metrics (upvote count, upvote ratio, view count, total commen
 
 * **Direct Python**:
   ```bash
-  uv run python reddit/scrape_reddit_post.py <url> [--headless] [--max-comments <int>] [--json] [--port <int>]
+  phantom research reddit post <url> [--headless] [--max-comments <int>] [--json] [--port <int>]
   ```
 
 * **Key Options**:
@@ -65,7 +65,7 @@ Scrapes posts from any subreddit feed (`best`, `hot`, `new`, `rising`, or `top` 
 
 * **Direct Python**:
   ```bash
-  uv run python reddit/scrape_subreddit.py <subreddit> [feed_flag] [--limit <int>] [--headless] [--json]
+  phantom research reddit sub <subreddit> [feed_flag] [--limit <int>] [--headless] [--json]
   ```
 
 * **Feed Flags**:
@@ -98,7 +98,7 @@ Scrapes post results from a Reddit search (`https://www.reddit.com/search/?q=...
 
 * **Direct Python**:
   ```bash
-  uv run python reddit/scrape_search.py <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]
+  phantom research reddit search <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]
   ```
 
 * **Key Options**:
@@ -136,7 +136,7 @@ Scrapes a Reddit user's profile (`https://www.reddit.com/user/<name>/`) from a u
 
 * **Direct Python**:
   ```bash
-  uv run python reddit/scrape_profile.py <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--no-views] [--no-removal-reasons] [--headless] [--port <int>] [--json]
+  phantom research reddit profile <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--no-views] [--no-removal-reasons] [--headless] [--port <int>] [--json]
   ```
 
 * **Key Options**:
@@ -168,7 +168,7 @@ Scrapes a Reddit post via `scrape_reddit_post.py` and runs sentiment and communi
 
 * **Direct Python**:
   ```bash
-  uv run python reddit/analyze_post.py <url> [--headless] [--json]
+  phantom research reddit analyze <url> [--headless] [--json]
   ```
 
 * **Output Analysis**:

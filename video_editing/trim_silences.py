@@ -6,9 +6,6 @@ import tempfile
 import gc
 import numpy as np
 
-# Ensure the directory containing this script is in sys.path to resolve local imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from utils import parse_timestamp
 
 def load_audio_with_ffmpeg(file_path, sampling_rate=16000):
     """

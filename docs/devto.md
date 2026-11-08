@@ -41,7 +41,7 @@ Creates a new dev.to post from a Markdown file, with title, up to 4 tags, and an
 
 * **Direct Python Usage**:
   ```bash
-  uv run python devto/post.py <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule "YYYY-MM-DD HH:MM"] [--draft] [--headless]
+  phantom publish devto <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule "YYYY-MM-DD HH:MM"] [--draft] [--headless]
   ```
 
 * **Options**:

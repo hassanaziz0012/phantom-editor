@@ -12,17 +12,16 @@ as defaults and CLI flags override them. Without any title, the file's first
 "# Heading" becomes the title and is removed from the body.
 
 Usage:
-    uv run python devto/post.py post.md --title "My Post" --tags python webdev
-    uv run python devto/post.py post.md --tags "python, ai" --cover ./cover.png
-    uv run python devto/post.py post.md --canonical-url https://blog.example.com/my-post
-    uv run python devto/post.py post.md --series "Automation Diaries"
-    uv run python devto/post.py post.md --schedule "2026-11-01 09:00"
-    uv run python devto/post.py post.md --draft
+    phantom publish devto post.md --title "My Post" --tags python webdev
+    phantom publish devto post.md --tags "python, ai" --cover ./cover.png
+    phantom publish devto post.md --canonical-url https://blog.example.com/my-post
+    phantom publish devto post.md --series "Automation Diaries"
+    phantom publish devto post.md --schedule "2026-11-01 09:00"
+    phantom publish devto post.md --draft
 """
 
 import argparse
 import asyncio
-import os
 import re
 import sys
 from datetime import datetime
@@ -32,16 +31,12 @@ from typing import Dict, List, Optional, Tuple
 from playwright.async_api import Page, async_playwright
 
 # Ensure repo root is in python path
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
-from browser.cdp import CDP_PORT, get_cdp_browser_context, get_clean_page
+from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 
 # ==============================================================================
 # Configuration & Constants
 # ==============================================================================
-PROFILE_DIR = Path.home() / "Desktop" / "browser-profiles" / "p9222"
 NEW_POST_URL = "https://dev.to/new"
 # localStorage key the editor autosaves the unsaved /new form under
 DRAFT_STORAGE_KEY = "editor-v2-https://dev.to/new"
@@ -300,11 +295,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python devto/post.py post.md --title "My Post" --tags python webdev
-  python devto/post.py post.md --tags "python, ai" --cover ./cover.png
-  python devto/post.py post.md --canonical-url https://blog.example.com/my-post
-  python devto/post.py post.md --series "Automation Diaries" --schedule "2026-11-01 09:00"
-  python devto/post.py post.md --draft
+  phantom publish devto post.md --title "My Post" --tags python webdev
+  phantom publish devto post.md --tags "python, ai" --cover ./cover.png
+  phantom publish devto post.md --canonical-url https://blog.example.com/my-post
+  phantom publish devto post.md --series "Automation Diaries" --schedule "2026-11-01 09:00"
+  phantom publish devto post.md --draft
         """,
     )
     parser.add_argument("markdown_file", help="Path to the Markdown file with the post body.")

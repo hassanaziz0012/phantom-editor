@@ -4,13 +4,13 @@ Reusable HyperFrames B-roll clips (numbered cards, big stats, terminal commands,
 
 ## Architecture
 
-- `broll-templates/<name>/` is one HyperFrames project per template. Its `index.html` declares the variables it accepts (`data-composition-variables`). See [broll-templates/README.md](../broll-templates/README.md) for each template's variables.
+- `broll_templates/<name>/` is one HyperFrames project per template. Its `index.html` declares the variables it accepts (`data-composition-variables`). See [broll_templates/README.md](../broll_templates/README.md) for each template's variables.
 - Variables can't change a composition's length, so the wrapper copies the template to a temp folder, sets `data-duration` on the root (and on any element marked `data-broll-span`), and renders the copy with `npx hyperframes render --variables-file … --strict-variables`. Templates read their length at runtime, so the animation stretches to fit.
 - Timing comes from the project's word-level captions (`trimmed-1word.srt`, found next to the cue file or one or two folders up). Phrases are fuzzy-matched (hyphens, punctuation and case are ignored, small typos are fine).
 
 ## Scripts
 
-### [broll.py](../broll-templates/broll.py)
+### [broll.py](../broll_templates/broll.py)
 
 * **CLI Command**:
   ```bash
@@ -52,7 +52,7 @@ A list of clips, or an object with shared `defaults` and an optional `srt` path.
 
 | Key | Meaning |
 | --- | --- |
-| `template` | Folder name in `broll-templates/` |
+| `template` | Folder name in `broll_templates/` |
 | `file` | Output MP4 |
 | `variables` | Template variables, checked against the template's declared types before rendering |
 | `cue` / `at` | Start: the first word of the `cue` phrase, or a timestamp (`101.7`, `1:41.68`, `00:01:41,680`) |
@@ -65,7 +65,7 @@ Templates: `step-card` (numbered point), `big-stat` (a number that counts up, wi
 `terminal` (a command typed into a terminal, with optional output and warning flag), `flow`
 (2–6 boxes joined by arrows that light up in turn, optional loop-back) and `checklist` (items
 that get a tick or a cross on their beats). Their
-variables are in [broll-templates/README.md](../broll-templates/README.md), or run
+variables are in [broll_templates/README.md](../broll_templates/README.md), or run
 `phantom broll list <template>`. Mixing templates in one cue file:
 
 ```json

@@ -11,36 +11,32 @@ Adheres to:
 
 Usage:
     # Open default $EDITOR to compose note
-    python substack/post_note.py
+    phantom publish substack
 
     # Note from a file
-    python substack/post_note.py -f ./note.txt
+    phantom publish substack -f ./note.txt
 
     # Text-only note
-    python substack/post_note.py "Just launched our new automation pipeline!"
+    phantom publish substack "Just launched our new automation pipeline!"
 
     # Note with image(s)
-    python substack/post_note.py "Check out our architecture diagram:" -i ./diagram.png
+    phantom publish substack "Check out our architecture diagram:" -i ./diagram.png
 
     # Note with multiple images
-    python substack/post_note.py "Visual updates:" -i ./img1.png ./img2.png
+    phantom publish substack "Visual updates:" -i ./img1.png ./img2.png
 
     # Note with video
-    python substack/post_note.py "Demo video below:" -v ./demo.mp4
+    phantom publish substack "Demo video below:" -v ./demo.mp4
 """
 
 import argparse
 import asyncio
-import os
 import sys
 import time
 from pathlib import Path
 from typing import List, Optional, Union
-from playwright.async_api import async_playwright, Page
+from playwright.async_api import Error as PlaywrightError, Page, async_playwright
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from browser.cdp import get_cdp_browser_context, get_clean_page
 from shared.terminal import edit_text
@@ -103,8 +99,8 @@ async def post_substack_note(
         # Grant clipboard permissions on substack.com origin
         try:
             await context.grant_permissions(["clipboard-read", "clipboard-write"], origin="https://substack.com")
-        except Exception:
-            pass
+        except PlaywrightError as e:
+            print(f"Note: could not grant clipboard permissions ({e}); pasting media may not work.")
 
         print(f"Navigating to {SUBSTACK_URL}...")
         await page.goto(SUBSTACK_URL, wait_until="domcontentloaded")
@@ -264,12 +260,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python substack/post_note.py
-  python substack/post_note.py -f ./note.txt
-  python substack/post_note.py "Hello Substack Notes!"
-  python substack/post_note.py "Screenshot from our newest release" -i ./screenshot.png
-  python substack/post_note.py "Gallery of images" -i ./img1.png ./img2.png
-  python substack/post_note.py "Quick product demo" -v ./demo.mp4
+  phantom publish substack
+  phantom publish substack -f ./note.txt
+  phantom publish substack "Hello Substack Notes!"
+  phantom publish substack "Screenshot from our newest release" -i ./screenshot.png
+  phantom publish substack "Gallery of images" -i ./img1.png ./img2.png
+  phantom publish substack "Quick product demo" -v ./demo.mp4
         """,
     )
     parser.add_argument("text", nargs="?", default="", help="Text content of the Substack note, or path to a text file.")

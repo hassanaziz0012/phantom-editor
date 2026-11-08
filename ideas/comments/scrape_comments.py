@@ -17,12 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Add project root to sys.path
-repo_root = Path(__file__).resolve().parent.parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
+from shared.paths import REPO_ROOT
 
-from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -30,7 +26,6 @@ from googleapiclient.errors import HttpError
 
 from youtube_api.utils import extract_video_id
 
-load_dotenv()
 
 # Logging setup
 logging.basicConfig(
@@ -40,7 +35,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("phantom.ideas.comments")
 
-DEFAULT_TOKEN_FILE = repo_root / "youtube_api" / "tokens" / "token.json"
+DEFAULT_TOKEN_FILE = REPO_ROOT / "youtube_api" / "tokens" / "token.json"
 
 
 # ── Terminal Styling / Colors ──────────────────────────────────────────────────
@@ -85,7 +80,7 @@ def format_relative_time(iso_str: str) -> str:
             return f"{months}mo ago"
         years = days // 365
         return f"{years}y ago"
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         return iso_str
 
 
@@ -120,8 +115,8 @@ def get_youtube_service(
                         try:
                             with open(token_file, "w", encoding="utf-8") as f:
                                 f.write(creds.to_json())
-                        except Exception:
-                            pass
+                        except OSError as e:
+                            logger.warning("Could not save the refreshed token to %s: %s", token_file, e)
                     if creds.valid:
                         return build("youtube", "v3", credentials=creds)
         except Exception as e:

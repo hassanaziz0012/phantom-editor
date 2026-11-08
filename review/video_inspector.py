@@ -7,7 +7,7 @@ import math
 import argparse
 import subprocess
 
-from utils import Colors, colorize, format_time, parse_time_to_seconds
+from review.utils import Colors, colorize, format_time, parse_time_to_seconds
 
 def compute_aspect_ratio(width: int, height: int) -> str:
     """Computes simplified aspect ratio from width and height."""
@@ -37,8 +37,8 @@ def probe_video_stream(video_path: str) -> dict:
                 except ValueError:
                     pass
             return stream
-    except Exception as e:
-        # Fallback to check format details if stream attributes are missing
+    except (subprocess.CalledProcessError, ValueError):
+        # Fall back to the format-level duration below
         pass
 
     # Try format-level duration if stream duration wasn't found
@@ -53,7 +53,7 @@ def probe_video_stream(video_path: str) -> dict:
         data = json.loads(result.stdout)
         if 'format' in data and 'duration' in data['format']:
             return {'duration': float(data['format']['duration'])}
-    except:
+    except (subprocess.CalledProcessError, ValueError):
         pass
 
     return {}

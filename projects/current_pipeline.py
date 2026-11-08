@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Current Content Pipeline Summary Tool.
-Scans ~/Videos/YT Projects (or a custom directory) and displays a summary of
+Scans the YT Projects folder (shared.paths.YT_PROJECTS_DIR, or a custom directory) and displays a summary of
 video projects, their current stage in the content pipeline, and the next step required.
 
 Stages:
@@ -30,58 +30,23 @@ its metadata.json under "performanceCheck" (see youtube_api/performance_check.py
 once per video; later runs use the stored result.
 """
 
-import os
-import sys
+import argparse
 import json
 import re
-import argparse
+import sys
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
-
-pipeline_dir = Path(__file__).resolve().parent
-repo_root = pipeline_dir.parent
-video_editing_dir = repo_root / "video-editing"
-
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
-
-if str(video_editing_dir) not in sys.path:
-    sys.path.append(str(video_editing_dir))
-
-from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-
-try:
-    from metadata.read_metadata import parse_metadata_dict, read_metadata
-    from metadata.check_resource_links import blank_resources
-except ImportError:
-    from read_metadata import parse_metadata_dict, read_metadata
-    from check_resource_links import blank_resources
-
+from metadata.check_resource_links import blank_resources
+from metadata.read_metadata import parse_metadata_dict, read_metadata
+from projects.google_sheet_utils import sync_projects_to_sheet
+from shared.paths import YT_PROJECTS_DIR
+from video_editing.utils import COLOR_BLUE, COLOR_BOLD, COLOR_GREEN, COLOR_RED, COLOR_RESET, COLOR_YELLOW
 from youtube_api.video_id import extract_video_id, is_valid_yt_url
 
 PERFORMANCE_CHECK_KEY = "performanceCheck"
-
-try:
-    from projects.google_sheet_utils import sync_projects_to_sheet
-except ImportError:
-    try:
-        from google_sheet_utils import sync_projects_to_sheet
-    except ImportError:
-        sync_projects_to_sheet = None
-
-try:
-    from utils import (
-        COLOR_GREEN, COLOR_RED, COLOR_YELLOW, COLOR_BLUE, COLOR_RESET, COLOR_BOLD
-    )
-except ImportError:
-    COLOR_GREEN = "\033[92m"
-    COLOR_RED = "\033[91m"
-    COLOR_YELLOW = "\033[93m"
-    COLOR_BLUE = "\033[94m"
-    COLOR_RESET = "\033[0m"
-    COLOR_BOLD = "\033[1m"
 
 COLOR_CYAN = "\033[96m"
 COLOR_MAGENTA = "\033[95m"
@@ -118,6 +83,8 @@ class VideoProject:
     metadata_missing_keys: List[str] = field(default_factory=list)
     # Keys of metadata.json "resources" entries whose "url" is still blank
     metadata_blank_resources: List[str] = field(default_factory=list)
+    # Why metadata.json couldn't be read or parsed, if it couldn't
+    metadata_error: Optional[str] = None
     thumbnail_files: List[Path] = field(default_factory=list)
     yt_url: Optional[str] = None
     title: Optional[str] = None
@@ -137,6 +104,7 @@ class VideoProject:
     def has_metadata(self) -> bool:
         return (
             self.metadata_file is not None
+            and self.metadata_error is None
             and not self.metadata_missing_keys
             and not self.metadata_blank_resources
         )
@@ -164,6 +132,7 @@ class VideoProject:
             "has_metadata": self.has_metadata,
             "metadata_missing_keys": self.metadata_missing_keys,
             "metadata_blank_resources": self.metadata_blank_resources,
+            "metadata_error": self.metadata_error,
             "title": self.title,
             "thumbnails": [f.name for f in self.thumbnail_files],
             "yt_url": self.yt_url,
@@ -175,12 +144,7 @@ class VideoProject:
 
 def is_script_file(file_path: Path) -> bool:
     """Check if a file is an Excalidraw script / presentation file."""
-    if file_path.suffix.lower() == ".excalidraw":
-        return True
-    name_lower = file_path.name.lower()
-    if name_lower.endswith(".excalidraw") or name_lower.endswith(".excalidraw.json") or name_lower.endswith(".excalidraw.svg"):
-        return True
-    return False
+    return file_path.name.lower().endswith((".excalidraw", ".excalidraw.json", ".excalidraw.svg"))
 
 
 def missing_outline_sections(outline_file: Path) -> List[str]:
@@ -223,6 +187,8 @@ def metadata_todo(project: VideoProject) -> str:
     """What's left to do for the project's metadata.json."""
     if project.metadata_file is None:
         return f"Create metadata.json file ({', '.join(REQUIRED_METADATA_KEYS)})"
+    if project.metadata_error:
+        return f"Fix metadata.json ({project.metadata_error})"
     todos = []
     if project.metadata_missing_keys:
         todos.append(f"Add the missing keys to metadata.json ({', '.join(project.metadata_missing_keys)})")
@@ -246,8 +212,7 @@ def is_thumbnail_file(file_path: Path) -> bool:
     """Check if a file is a designed thumbnail image."""
     if file_path.suffix.lower() not in IMAGE_EXTENSIONS:
         return False
-    name_lower = file_path.stem.lower()
-    return name_lower.startswith("thumbnail") or name_lower.startswith("thumb")
+    return file_path.stem.lower().startswith("thumbnail")
 
 
 def describe_performance_check(check: dict) -> str:
@@ -445,23 +410,25 @@ def analyze_project(project_dir: Path) -> VideoProject:
             project.metadata_file = item
             try:
                 data = json.loads(item.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
+            except (OSError, ValueError) as e:
                 data = None
+                project.metadata_error = f"not valid JSON: {e}"
             project.metadata_missing_keys, project.metadata_blank_resources = check_metadata(data)
-            try:
-                meta = parse_metadata_dict(data, file_path=item)
-                if meta.title:
-                    project.title = meta.title
-                if meta.url and is_valid_yt_url(meta.url):
-                    project.yt_url = meta.url
-                if meta.publish_date:
-                    project.scheduled_date = meta.publish_date
-                if meta.uploaded_date:
-                    project.uploaded_date = meta.uploaded_date
-                if isinstance(meta.raw_data.get(PERFORMANCE_CHECK_KEY), dict):
-                    project.performance_check = meta.raw_data[PERFORMANCE_CHECK_KEY]
-            except Exception:
-                pass
+            if isinstance(data, dict):
+                try:
+                    meta = parse_metadata_dict(data, file_path=item)
+                except (TypeError, ValueError) as e:
+                    project.metadata_error = f"a value has the wrong type: {e}"
+                else:
+                    project.title = meta.title or None
+                    if meta.url and is_valid_yt_url(meta.url):
+                        project.yt_url = meta.url
+                    project.scheduled_date = meta.publish_date or None
+                    project.uploaded_date = meta.uploaded_date or None
+                    if isinstance(meta.raw_data.get(PERFORMANCE_CHECK_KEY), dict):
+                        project.performance_check = meta.raw_data[PERFORMANCE_CHECK_KEY]
+            elif data is not None:
+                project.metadata_error = "not a JSON object"
         elif item.name.lower() == OUTLINE_FILENAME:
             project.outline_file = item
             try:
@@ -511,8 +478,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
     elif has_scheduled_date:
         project.stage_num = 8
         project.stage_name = "Scheduled"
-        date_info = f" ({project.scheduled_date})" if project.scheduled_date else ""
-        project.next_step = f"Upload video to YouTube{date_info}! 🚀 (`phantom publish yt` or add URL to metadata.json)"
+        project.next_step = f"Upload video to YouTube ({project.scheduled_date})! 🚀 (`phantom publish yt` or add URL to metadata.json)"
         project.status_color = COLOR_YELLOW
 
     # Stage 7: Ready to Schedule (final.mp4 + metadata.json + thumbnail(s))
@@ -609,22 +575,11 @@ def sort_by_actionability(projects: List[VideoProject]) -> List[VideoProject]:
 
 def render_stage_bar(proj: VideoProject) -> str:
     """Render a visual step pipeline indicator checking actual completion of each step."""
-    steps = [
-        ("1", "New"),
-        ("2", "Script"),
-        ("3", "Thumb"),
-        ("4", "Rec"),
-        ("5", "Proc"),
-        ("6", "Rev"),
-        ("7", "Ready"),
-        ("8", "Sched"),
-        ("9", "Upload"),
-    ]
+    steps = ["New", "Script", "Thumb", "Rec", "Proc", "Rev", "Ready", "Sched", "Upload"]
     parts = []
-    for num_str, name in steps:
-        idx = int(num_str)
+    for idx, name in enumerate(steps, 1):
         if idx == proj.stage_num:
-            parts.append(f"{COLOR_BOLD}{COLOR_GREEN}[{num_str}:{name}]{COLOR_RESET}")
+            parts.append(f"{COLOR_BOLD}{COLOR_GREEN}[{idx}:{name}]{COLOR_RESET}")
         else:
             is_complete = False
             if idx == 1:
@@ -664,9 +619,9 @@ def render_stage_bar(proj: VideoProject) -> str:
                 is_complete = proj.stage_num == 9 or bool(proj.yt_url)
 
             if is_complete:
-                parts.append(f"{COLOR_GREEN}✓{num_str}{COLOR_RESET}")
+                parts.append(f"{COLOR_GREEN}✓{idx}{COLOR_RESET}")
             else:
-                parts.append(f"{COLOR_GRAY}{num_str}:{name}{COLOR_RESET}")
+                parts.append(f"{COLOR_GRAY}{idx}:{name}{COLOR_RESET}")
     if proj.stage_num == 10:
         parts.append(f"{COLOR_BOLD}{COLOR_RED}[10:Repack]{COLOR_RESET}")
     return " ➔ ".join(parts)
@@ -714,7 +669,9 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         to_rev_status = f"{COLOR_GREEN}✓ {proj.to_review_file.name}{COLOR_RESET}" if proj.to_review_file else f"{COLOR_GRAY}✗ to-review.mp4{COLOR_RESET}"
         final_status = f"{COLOR_GREEN}✓ {proj.final_file.name}{COLOR_RESET}" if proj.final_file else f"{COLOR_GRAY}✗ final.mp4{COLOR_RESET}"
         
-        if proj.metadata_file and (proj.metadata_missing_keys or proj.metadata_blank_resources):
+        if proj.metadata_error:
+            meta_status = f"{COLOR_RED}✗ metadata.json ({proj.metadata_error}){COLOR_RESET}"
+        elif proj.metadata_file and (proj.metadata_missing_keys or proj.metadata_blank_resources):
             problems = []
             if proj.metadata_missing_keys:
                 problems.append(f"missing: {', '.join(proj.metadata_missing_keys)}")
@@ -772,11 +729,8 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
     )
     print(stat_line)
 
-    action_needed = (
-        stage_counts[2] + stage_counts[3] + stage_counts[4] +
-        stage_counts[5] + stage_counts[6] + stage_counts[7] +
-        stage_counts[8] + stage_counts[10]
-    )
+    # Everything but Uploaded (9) still needs something from you
+    action_needed = len(projects) - stage_counts[9]
     ready_to_sched = stage_counts[7]
     scheduled_cnt = stage_counts[8]
     uploaded_cnt = stage_counts[9]
@@ -812,8 +766,8 @@ def main():
     )
     parser.add_argument(
         "--dir", "-d",
-        default=os.path.expanduser("~/Videos/YT Projects"),
-        help="Path to YouTube projects directory (default: ~/Videos/YT Projects)."
+        default=str(YT_PROJECTS_DIR),
+        help=f"Path to YouTube projects directory (default: {YT_PROJECTS_DIR})."
     )
     parser.add_argument(
         "--new",
@@ -905,12 +859,13 @@ def main():
         print_terminal_summary(projects, projects_dir, verbose=args.verbose)
 
     # Automatically synchronize project statuses with Google Sheets
-    if not args.no_sync and sync_projects_to_sheet is not None:
+    if not args.no_sync:
         if args.json:
+            # stdout is the JSON, so the outcome goes to stderr
             try:
                 sync_projects_to_sheet(all_projects)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Could not sync with Google Sheets: {e}", file=sys.stderr)
         else:
             try:
                 print(f"{COLOR_CYAN}🔄 Syncing video projects with Google Sheets...{COLOR_RESET}", end="", flush=True)

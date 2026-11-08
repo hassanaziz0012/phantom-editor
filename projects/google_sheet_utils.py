@@ -7,19 +7,13 @@ Handles authentication and synchronization with Google Sheets.
 
 import json
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
 
 # Ensure repo root is accessible
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
 
-load_dotenv(repo_root / ".env")
 
 # ---------------------------------------------------------------------------
 # Constants & Scopes

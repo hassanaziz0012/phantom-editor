@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 # Import BrowserLLM query and prompt utilities from the centralized agentic package
 from agentic.ask_browserllm import (
@@ -30,6 +31,23 @@ __all__ = [
     "find_captions_file",
     "highlight_json",
 ]
+
+
+def load_metadata_json(path: Path) -> dict[str, Any]:
+    """metadata.json as a dict, or {} when the file doesn't exist.
+
+    Raises ValueError when the file exists but can't be read as a JSON object, so a generator
+    that updates it and writes it back never replaces a damaged file with only its own keys.
+    """
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise ValueError(f"Could not read {path}: {e}. Fix or remove it, then retry.") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object. Fix or remove it, then retry.")
+    return data
 
 
 def resolve_project_paths(target: str | Path | None = None) -> tuple[Path, Path, Path | None, str]:
@@ -66,17 +84,7 @@ def resolve_project_paths(target: str | Path | None = None) -> tuple[Path, Path,
     if captions_path is None and project_dir.exists():
         captions_path = find_captions_file(project_dir)
 
-    # Determine title
-    title = ""
-    if metadata_path.is_file():
-        try:
-            data = json.loads(metadata_path.read_text(encoding="utf-8"))
-            title = data.get("title", "")
-        except Exception:
-            pass
-
-    if not title:
-        title = project_dir.name
+    title = load_metadata_json(metadata_path).get("title") or project_dir.name
 
     return project_dir, metadata_path, captions_path, title
 

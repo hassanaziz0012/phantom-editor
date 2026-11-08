@@ -6,10 +6,8 @@ Script to sync all contacts in Resend account into a target segment (defaults to
 import os
 import sys
 import argparse
-from dotenv import load_dotenv
 import resend
 
-load_dotenv()
 
 # ANSI escape codes
 GREEN = "\033[92m"

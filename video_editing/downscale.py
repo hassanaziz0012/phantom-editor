@@ -5,11 +5,8 @@ import argparse
 import subprocess
 from pathlib import Path
 
-video_editing_dir = Path(__file__).resolve().parent
-if str(video_editing_dir) not in sys.path:
-    sys.path.insert(0, str(video_editing_dir))
 
-from utils import resolve_output_path
+from video_editing.utils import resolve_output_path
 
 def downscale_video(
     input_path: Path,

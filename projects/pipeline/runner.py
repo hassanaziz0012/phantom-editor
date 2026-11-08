@@ -11,10 +11,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from utils import print_info, print_success, print_warning
+from video_editing.utils import print_info, print_success, print_warning
 
-from pipeline.common import PipelineError, is_valid_file
-from pipeline.context import Outputs, PipelineContext
+from projects.pipeline.common import PipelineError, is_valid_file
+from projects.pipeline.context import Outputs, PipelineContext
 
 
 @dataclass(frozen=True)
@@ -88,11 +88,9 @@ class BackgroundTask:
             self.elapsed = time.perf_counter() - start
 
 
-def _attribute(step: Step, exc: BaseException) -> BaseException:
+def _attribute(step: Step, exc: PipelineError) -> PipelineError:
     """Prefix a PipelineError with the step it came from."""
-    if isinstance(exc, PipelineError):
-        return PipelineError(f"Step {step.index} ({step.name}) failed: {exc}", exc.exit_code)
-    return exc
+    return PipelineError(f"Step {step.index} ({step.name}) failed: {exc}", exc.exit_code)
 
 
 class PipelineRunner:
@@ -153,7 +151,10 @@ class PipelineRunner:
         task.join()
         if task.error is not None:
             self._record(task.step, "failed", task.elapsed)
-            raise _attribute(task.step, task.error) from task.error
+            if isinstance(task.error, PipelineError):
+                raise _attribute(task.step, task.error) from task.error
+            # Anything else is re-raised as is (chaining it to itself would make it its own cause)
+            raise task.error
         self._record(task.step, "ran", task.elapsed)
         print_success(f"[DONE] Step {index} ({task.step.name}, background)")
 

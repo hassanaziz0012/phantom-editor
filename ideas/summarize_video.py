@@ -12,29 +12,21 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Add repository root and video-editing directory to sys.path
-repo_root = Path(__file__).resolve().parent.parent
-video_editing_dir = repo_root / "video-editing"
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
-if str(video_editing_dir) not in sys.path:
-    sys.path.insert(0, str(video_editing_dir))
+from shared.commands import python_module
+from shared.paths import REPO_ROOT
 
-from utils import parse_srt_to_text
-from dotenv import load_dotenv
+from video_editing.utils import parse_srt_to_text
 from pydantic import BaseModel, Field
 
 from agentic.ask_openrouter import ask_openrouter
 from youtube_api.utils import extract_video_id
 
-load_dotenv()
 
 # Logging setup
 logging.basicConfig(
@@ -45,7 +37,7 @@ logging.basicConfig(
 logger = logging.getLogger("phantom.ideas.summarizer")
 
 DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
-PROMPT_PATH = repo_root / "agentic" / "prompts" / "summarize_yt_video.md"
+PROMPT_PATH = REPO_ROOT / "agentic" / "prompts" / "summarize_yt_video.md"
 
 
 class VideoSummaryResponse(BaseModel):
@@ -117,40 +109,13 @@ def download_youtube_audio(video_url: str, output_dir: Path) -> Tuple[Path, Dict
 
 def run_transcription(audio_path: Path, output_srt_path: Path) -> Path:
     """
-    Invokes phantom transcribe-cloud (or transcribe_cloud.py directly) to transcribe the audio.
+    Transcribes the audio with video_editing.transcribe_cloud (`phantom edit transcribe-cloud`).
 
     Returns:
         Path to generated SRT subtitles file.
     """
     logger.info("Transcribing audio using Groq Cloud (transcribe_cloud)...")
-
-    transcribe_script = repo_root / "video-editing" / "transcribe_cloud.py"
-    phantom_bin = repo_root / "phantom"
-
-    # Prefer invoking through python running transcribe_cloud.py or phantom CLI
-    if transcribe_script.exists():
-        cmd = [
-            sys.executable,
-            str(transcribe_script),
-            str(audio_path),
-            "--output", str(output_srt_path),
-        ]
-    elif phantom_bin.exists() and os.access(phantom_bin, os.X_OK):
-        cmd = [
-            str(phantom_bin),
-            "edit",
-            "transcribe-cloud",
-            str(audio_path),
-            "--output", str(output_srt_path),
-        ]
-    else:
-        cmd = [
-            "phantom",
-            "edit",
-            "transcribe-cloud",
-            str(audio_path),
-            "--output", str(output_srt_path),
-        ]
+    cmd = python_module("video_editing.transcribe_cloud", str(audio_path), "--output", str(output_srt_path))
 
     try:
         subprocess.run(cmd, check=True)

@@ -25,19 +25,13 @@ they're compared by perceptual hash rather than by bytes.
 """
 
 import io
-import sys
 import urllib.request
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
 from PIL import Image
 
-# Add project root to sys.path to allow package imports
-root_dir = str(Path(__file__).resolve().parent.parent)
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
 
 from youtube_api import channel_stats, studio_analytics
 from youtube_api.fetch_videos import fetch_video_details

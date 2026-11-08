@@ -26,10 +26,10 @@ Writes <cue file stem>.resolved.json next to the cue file with each clip's at / 
 file, and skips clips whose template, variables and timing haven't changed since the last run.
 
 Usage:
-    uv run python broll-templates/broll.py list [template]
-    uv run python broll-templates/broll.py find "two-factor authentication" --srt trimmed-1word.srt
-    uv run python broll-templates/broll.py render broll/cues.json [--dry-run] [--only step-1.mp4] [--force]
-    uv run python broll-templates/broll.py clip step-card -o step-1.mp4 --srt trimmed-1word.srt \\
+    phantom broll list [template]
+    phantom broll find "two-factor authentication" --srt trimmed-1word.srt
+    phantom broll render broll/cues.json [--dry-run] [--only step-1.mp4] [--force]
+    phantom broll clip step-card -o step-1.mp4 --srt trimmed-1word.srt \\
         --cue "So number one" --until "repeat passwords" --var number=1 --var "title=Change weak passwords"
 """
 
@@ -48,13 +48,9 @@ from pathlib import Path
 
 from rapidfuzz import fuzz
 
+from video_editing.utils import parse_srt, parse_timestamp, print_error, print_info, print_success, print_warning
+
 TEMPLATES_DIR = Path(__file__).resolve().parent
-repo_root = TEMPLATES_DIR.parent
-if str(repo_root / "video-editing") not in sys.path:
-    sys.path.insert(0, str(repo_root / "video-editing"))
-
-from utils import parse_srt, parse_timestamp, print_error, print_info, print_success, print_warning  # noqa: E402
-
 FPS = 30
 MIN_DURATION = 1.0
 LONG_DURATION = 30.0

@@ -1,7 +1,7 @@
 """Step 3: clean up the speech audio (DeepFilterNet + loudness normalization)."""
 
-from pipeline.common import require_output, run_command
-from pipeline.context import PipelineContext
+from projects.pipeline.common import require_output, run_command
+from projects.pipeline.context import PipelineContext
 
 
 def process_audio(ctx: PipelineContext) -> None:

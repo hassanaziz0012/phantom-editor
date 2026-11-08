@@ -11,14 +11,12 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
-from dotenv import load_dotenv
 from groq import Groq
 from pydantic import BaseModel
 
 from agentic.schema_utils import build_messages, json_schema_response_format, parse_structured_response
 
 # Ensure environment variables are loaded
-load_dotenv()
 
 T = TypeVar("T", bound=BaseModel)
 

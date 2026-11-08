@@ -1,12 +1,8 @@
 #!/bin/bash
 
-# Base directory of the project codebase.
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-if [ -f "$SCRIPT_DIR/audio-processing/process_audio.sh" ]; then
-    BASE_DIR="$SCRIPT_DIR"
-else
-    BASE_DIR="/home/hassan/Desktop/programming/phantom-editor"
-fi
+# Base directory of the project codebase. install.sh links this script into ~/.local/bin,
+# so the link is followed back to the repo.
+BASE_DIR="$( cd "$( dirname "$( readlink -f "${BASH_SOURCE[0]}" )" )" &> /dev/null && pwd )"
 
 # Clean up external VIRTUAL_ENV so uv targets the project environment without warnings
 unset VIRTUAL_ENV
@@ -15,70 +11,70 @@ unset VIRTUAL_ENV
 #   group   "projects", or two words ("research reddit") for a nested group
 #   names   comma-separated; the first is shown in help, the rest are old aliases
 #   flags   r = needs at least one argument, k = pass the subcommand on to the target
-#   target  "py <file>" runs it with the project's Python, "run <file>" runs it directly,
-#           anything else is a function in this script
+#   target  "py <module>" runs a Python module with the project's Python (python -m),
+#           "run <file>" runs a script directly, anything else is a function in this script
 # Help, each group's usage and dispatch are all generated from this table.
 COMMANDS=(
-    "projects;status;;py projects/current_pipeline.py;[arguments]"
-    "projects;process;r;py projects/process_video.py;<raw_video> [arguments]"
-    "projects;newvideo;r;py projects/newvideo.py;<project_name>"
-    "projects;cleanup;;py projects/cleanup.py;[<project_path>] [--full]"
+    "projects;status;;py projects.current_pipeline;[arguments]"
+    "projects;process;r;py projects.process_video;<raw_video> [arguments]"
+    "projects;newvideo;r;py projects.newvideo;<project_name>"
+    "projects;cleanup;;py projects.cleanup;[<project_path>] [--full]"
 
-    "edit;add-bgm,add_bgm;;run video-editing/add_bgm_to_video.sh;<path_to_video> <bgm_track> [--volume <percentage>]"
-    "edit;process-audio;r;run audio-processing/process_audio.sh;[-R|--recursive] <path>"
-    "edit;inspect-video;r;py review/video_inspector.py;<video_path> [arguments]"
-    "edit;review-audio;r;py review/audio_review.py;<video_or_audio_path> [arguments]"
-    "edit;caption;r;py video-editing/auto_caption.py;<video_path> [arguments]"
-    "edit;downscale;r;py video-editing/downscale.py;<video_path> [arguments]"
-    "edit;transcribe-cloud;r;py video-editing/transcribe_cloud.py;<video_path> [arguments]"
-    "edit;trim-silences;r;py video-editing/trim_silences.py;<video_path> [arguments]"
+    "edit;add-bgm,add_bgm;;run video_editing/add_bgm_to_video.sh;<path_to_video> <bgm_track> [--volume <percentage>]"
+    "edit;process-audio;r;run audio_processing/process_audio.sh;[-R|--recursive] <path>"
+    "edit;inspect-video;r;py review.video_inspector;<video_path> [arguments]"
+    "edit;review-audio;r;py review.audio_review;<video_or_audio_path> [arguments]"
+    "edit;caption;r;py video_editing.auto_caption;<video_path> [arguments]"
+    "edit;downscale;r;py video_editing.downscale;<video_path> [arguments]"
+    "edit;transcribe-cloud;r;py video_editing.transcribe_cloud;<video_path> [arguments]"
+    "edit;trim-silences;r;py video_editing.trim_silences;<video_path> [arguments]"
 
-    "meta;create,auto-create;;py metadata/auto_create_metadata.py;[<project_path>] [arguments]"
-    "meta;desc,description,auto-desc;;py metadata/auto_gen_desc.py;[<project_path>] [arguments]"
-    "meta;tweet,auto-tweet;;py metadata/auto_gen_tweet.py;[<project_path>] [arguments]"
-    "meta;timestamps,generate-timestamps;;py metadata/generate_timestamps.py;[<captions_srt_path>] [arguments]"
-    "meta;titles,generate-titles;;py metadata/generate_titles.py;[<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>]"
-    "meta;resources,check-resource-links;;py metadata/check_resource_links.py;[<project_path>] [arguments]"
-    "meta;read;;py metadata/read_metadata.py;[<project_or_video_path>] [--json]"
-    "meta;manual,interactive;r;py metadata/create_metadata.py;<video_path>"
-    "meta;recommend,recommendations;;py metadata/recommendations/recommend.py;[<project_path>] [arguments]"
-    "meta;prepare-recommendations,prepare-yt-recommendations;;py metadata/recommendations/prepare_yt_recommendations.py;[<channel>] [--limit <int>] [--force] [--fresh] [--json]"
+    "meta;create,auto-create;;py metadata.auto_create_metadata;[<project_path>] [arguments]"
+    "meta;desc,description,auto-desc;;py metadata.auto_gen_desc;[<project_path>] [arguments]"
+    "meta;tweet,auto-tweet;;py metadata.auto_gen_tweet;[<project_path>] [arguments]"
+    "meta;timestamps,generate-timestamps;;py metadata.generate_timestamps;[<captions_srt_path>] [arguments]"
+    "meta;titles,generate-titles;;py metadata.generate_titles;[<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>]"
+    "meta;resources,check-resource-links;;py metadata.check_resource_links;[<project_path>] [arguments]"
+    "meta;read;;py metadata.read_metadata;[<project_or_video_path>] [--json]"
+    "meta;manual,interactive;r;py metadata.create_metadata;<video_path>"
+    "meta;recommend,recommendations;;py metadata.recommendations.recommend;[<project_path>] [arguments]"
+    "meta;prepare-recommendations,prepare-yt-recommendations;;py metadata.recommendations.prepare_yt_recommendations;[<channel>] [--limit <int>] [--force] [--fresh] [--json]"
 
-    "publish;yt,youtube;;py youtube_api/upload_video.py;<video_path> [--playlist <playlist_id_or_name>]"
-    "publish;x,tweet,twitter;r;run twitter/tweet.sh;[--image] [--substack] <tweet_content>"
-    "publish;substack;;py substack/post_note.py;[<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
-    "publish;linkedin;;py linkedin/new_post.py;[<text>] [-f <file>] [-i <images>...] [--url <url>]"
-    "publish;devto;;py devto/post.py;<markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
-    "publish;email,emails;;py emails/resend_broadcast.py;--title <title> --description <desc> --url <url> [arguments]"
-    "publish;yap;;py content/yap_to_post.py;--platform <linkedin|substack>"
+    "publish;yt,youtube;;py youtube_api.upload_video;<video_path> [--playlist <playlist_id_or_name>]"
+    "publish;x,tweet,twitter;r;py twitter.post_tweet;[--image] [--substack] <tweet_content>"
+    "publish;substack;;py substack.post_note;[<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
+    "publish;linkedin;;py linkedin.new_post;[<text>] [-f <file>] [-i <images>...] [--url <url>]"
+    "publish;devto;;py devto.post;<markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
+    "publish;email,emails;;py emails.resend_broadcast;--title <title> --description <desc> --url <url> [arguments]"
+    "publish;yap;;py content.yap_to_post;--platform <linkedin|substack>"
 
-    "research reddit;post,scrape,scrape-post;;py reddit/scrape_reddit_post.py;<url> [--headless] [--max-comments <int>] [--json]"
-    "research reddit;analyze,analyze-post;;py reddit/analyze_post.py;<url> [--headless] [--json]"
-    "research reddit;sub,scrapesub,scrape-sub,scrape-subreddit;;py reddit/scrape_subreddit.py;<subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
-    "research reddit;search,scrapesearch,scrape-search;;py reddit/scrape_search.py;<query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
-    "research reddit;profile,scrape-profile,user;;py reddit/scrape_profile.py;<username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
-    "research reddit;serve;;py reddit/serve.py;[--port <int>] [--headless]   (answers post/feed scrape requests as JSON lines on stdin)"
-    "research skool;post,scrape,scrape-post;;py skool/scrape_post.py;<url> [--max-comments <int>] [--headless] [--json]"
-    "research skool;community,scrapecommunity,scrape-community;;py skool/scrape_community.py;<url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
+    "research reddit;post,scrape,scrape-post;;py reddit.scrape_reddit_post;<url> [--headless] [--max-comments <int>] [--json]"
+    "research reddit;analyze,analyze-post;;py reddit.analyze_post;<url> [--headless] [--json]"
+    "research reddit;sub,scrapesub,scrape-sub,scrape-subreddit;;py reddit.scrape_subreddit;<subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
+    "research reddit;search,scrapesearch,scrape-search;;py reddit.scrape_search;<query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
+    "research reddit;profile,scrape-profile,user;;py reddit.scrape_profile;<username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
+    "research reddit;serve;;py reddit.serve;[--port <int>] [--headless]   (answers post/feed scrape requests as JSON lines on stdin)"
+    "research skool;post,scrape,scrape-post;;py skool.scrape_post;<url> [--max-comments <int>] [--headless] [--json]"
+    "research skool;community,scrapecommunity,scrape-community;;py skool.scrape_community;<url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
 
-    "ideas;from-comments,generate-from-comments;r;py ideas/comments/generate_ideas.py;<video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
-    "ideas;from-outlier,generate-from-outlier;r;py ideas/generate_from_outlier.py;<video> [--no-export] [--fresh-summary] [--json]"
-    "ideas;export;;py ideas/export_ideas_to_sheet.py;[--file <path> | --idea <text>] [arguments]"
-    "ideas;archive;;py ideas/archive_reviewed_ideas.py;[--dry-run]"
+    "ideas;from-comments,generate-from-comments;r;py ideas.comments.generate_ideas;<video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
+    "ideas;from-outlier,generate-from-outlier;r;py ideas.generate_from_outlier;<video> [--no-export] [--fresh-summary] [--json]"
+    "ideas;export;;py ideas.export_ideas_to_sheet;[--file <path> | --idea <text>] [arguments]"
+    "ideas;archive;;py ideas.archive_reviewed_ideas;[--dry-run]"
 
-    "yt;add-to-playlist,addtoplaylist;;py youtube_api/addtoplaylist.py;<video> <playlist_id_or_name> [--privacy <public|unlisted|private>]"
-    "yt;count-uploads;;py youtube_api/count_youtube_uploads.py;[<channel>] [--fresh]"
-    "yt;titles,print-titles;;py youtube_api/print_titles.py;[<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
-    "yt;summarize;;py ideas/summarize_video.py;<video> [--model <model>] [--json]"
-    "yt;comments,scrape-comments;;py ideas/comments/scrape_comments.py;<video> [--limit <int>] [--order <relevance|time>] [--json]"
-    "yt;info;;py youtube_api/video_info.py;<video> [--fresh] [--json] [--days <int>]"
-    "yt;channel-stats;;py youtube_api/channel_stats.py;[--fresh] [--json] [--history]"
-    "yt;endscreen;;py youtube_api/add_endscreen.py;<video>... [--template <name>] [--dry-run]"
+    "yt;add-to-playlist,addtoplaylist;;py youtube_api.addtoplaylist;<video> <playlist_id_or_name> [--privacy <public|unlisted|private>]"
+    "yt;count-uploads;;py youtube_api.count_youtube_uploads;[<channel>] [--fresh]"
+    "yt;titles,print-titles;;py youtube_api.print_titles;[<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
+    "yt;summarize;;py ideas.summarize_video;<video> [--model <model>] [--json]"
+    "yt;comments,scrape-comments;;py ideas.comments.scrape_comments;<video> [--limit <int>] [--order <relevance|time>] [--json]"
+    "yt;info;;py youtube_api.video_info;<video> [--fresh] [--json] [--days <int>]"
+    "yt;channel-stats;;py youtube_api.channel_stats;[--fresh] [--json] [--history]"
+    "yt;endscreen;;py youtube_api.add_endscreen;<video>... [--template <name>] [--dry-run]"
 
-    "broll;list;k;py broll-templates/broll.py;[<template>]"
-    "broll;find;k;py broll-templates/broll.py;<phrase> [--srt <word_srt>] [--after <timestamp>]"
-    "broll;render;k;py broll-templates/broll.py;<cue_file.json> [--srt <word_srt>] [--only <file>...] [--dry-run] [--force]"
-    "broll;clip;k;py broll-templates/broll.py;<template> -o <output.mp4> [--cue <phrase>] [--until <phrase>] [--var key=value...] [arguments]"
+    "broll;list;k;py broll_templates.broll;[<template>]"
+    "broll;find;k;py broll_templates.broll;<phrase> [--srt <word_srt>] [--after <timestamp>]"
+    "broll;render;k;py broll_templates.broll;<cue_file.json> [--srt <word_srt>] [--only <file>...] [--dry-run] [--force]"
+    "broll;clip;k;py broll_templates.broll;<template> -o <output.mp4> [--cue <phrase>] [--until <phrase>] [--var key=value...] [arguments]"
 
     "docs;open;;docs_open;"
 )
@@ -104,10 +100,10 @@ declare -A LEGACY=(
 
 REMOVED=("shorts" "threads" "edit attach-webcam-mask" "edit auto-attach-webcam" "edit transcribe" "edit trim-silences-whisper")
 
+# shared.launch loads .env once and runs the module. -P keeps the working directory off
+# sys.path, so files in a project folder can't shadow the repo's modules.
 py() {
-    local script="$1"
-    shift
-    uv run --project "$BASE_DIR" python "$BASE_DIR/$script" "$@"
+    uv run --project "$BASE_DIR" python -P -m shared.launch "$@"
 }
 
 run() {

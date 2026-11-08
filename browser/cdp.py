@@ -7,6 +7,7 @@ Chrome is left running afterwards; each scraper only closes its own tab.
 """
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -16,7 +17,8 @@ from typing import Any, Dict, Optional
 
 from playwright.async_api import BrowserContext, Page
 
-PROFILE_DIR = Path.home() / "Desktop" / "browser-profiles" / "cdp"
+# The logged-in Chrome profile every browser automation shares. PHANTOM_CDP_PROFILE overrides it.
+PROFILE_DIR = Path(os.environ.get("PHANTOM_CDP_PROFILE") or Path.home() / "Desktop" / "browser-profiles" / "p9222").expanduser()
 CDP_PORT = 9222
 
 # Tabs a scraper may take over instead of opening a new one (see get_clean_page)
@@ -125,7 +127,8 @@ def cdp_version_info(port: int = CDP_PORT, timeout: float = 1.0) -> Optional[Dic
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8")) if resp.status == 200 else None
-    except Exception:
+    except (OSError, ValueError):
+        # Nothing listening on the port (yet), or not a CDP endpoint
         return None
 
 
@@ -143,7 +146,7 @@ def cleanup_stale_locks(profile_path: Path) -> None:
                 target.unlink(missing_ok=True)
             elif target.is_dir():
                 shutil.rmtree(target, ignore_errors=True)
-        except Exception:
+        except OSError:
             pass
 
 

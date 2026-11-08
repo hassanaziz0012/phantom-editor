@@ -29,14 +29,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-# Ensure repository root is in sys.path
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
-
-from dotenv import load_dotenv
-
-load_dotenv(repo_root / ".env")
 
 from projects.google_sheet_utils import get_sheets_service, get_spreadsheet_id
 

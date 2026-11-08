@@ -3,7 +3,7 @@
 Create YouTube video metadata interactively.
 
 Usage:
-    python metadata/create_metadata.py /path/to/video.mp4
+    phantom meta manual /path/to/video.mp4
     phantom meta manual <video_path>
 """
 
@@ -14,10 +14,6 @@ import json
 import sys
 from pathlib import Path
 
-# Ensure repository root is in sys.path
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
 
 from shared.terminal import edit_text, highlight_json
 
@@ -166,9 +162,8 @@ def get_tweet_template(title: str = "") -> str:
 
         try:
             rendered = tweet_template.format(url=sample_url, title=title)
-        except KeyError:
-            rendered = tweet_template.replace("{url}", sample_url).replace("{title}", title)
-        except Exception:
+        except (KeyError, IndexError, ValueError):
+            # Unknown placeholders or stray braces: show the two known ones filled in
             rendered = tweet_template.replace("{url}", sample_url).replace("{title}", title)
 
         rendered_len = len(rendered)

@@ -11,14 +11,7 @@ import argparse
 import os
 import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 
-from dotenv import load_dotenv
-
-# Add project root to sys.path to allow package imports
-root_dir = str(Path(__file__).resolve().parent.parent)
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
 
 from youtube_api.fetch_videos import fetch_channel_videos
 from youtube_api.utils import (
@@ -60,7 +53,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     # 1. Initialize environment & determine color support
-    load_dotenv()
     args = parse_args()
     
     use_color = supports_color()

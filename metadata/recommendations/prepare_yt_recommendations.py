@@ -22,12 +22,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-# Add project root to sys.path
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from dotenv import load_dotenv
 
 from metadata.recommendations.embed_my_videos import (
     DEFAULT_BATCH_SIZE,
@@ -42,8 +36,6 @@ from metadata.recommendations.summarize_my_channel import (
     summarize_channel,
 )
 
-load_dotenv(REPO_ROOT / ".env")
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,7 +55,7 @@ class IssueCaptureHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = self.format(record)
-        except Exception:
+        except (TypeError, ValueError):
             msg = record.getMessage()
         if msg and msg not in self.issues:
             self.issues.append(msg)
@@ -85,23 +77,23 @@ def suppress_all_output():
         orig_stderr_fd = os.dup(2)
         os.dup2(null_fd, 1)
         os.dup2(null_fd, 2)
-    except Exception:
+    except OSError:
         if orig_stdout_fd is not None:
             try:
                 os.close(orig_stdout_fd)
-            except Exception:
+            except OSError:
                 pass
             orig_stdout_fd = None
         if orig_stderr_fd is not None:
             try:
                 os.close(orig_stderr_fd)
-            except Exception:
+            except OSError:
                 pass
             orig_stderr_fd = None
         if null_fd is not None:
             try:
                 os.close(null_fd)
-            except Exception:
+            except OSError:
                 pass
             null_fd = None
 
@@ -119,17 +111,17 @@ def suppress_all_output():
                 try:
                     os.dup2(orig_stdout_fd, 1)
                     os.close(orig_stdout_fd)
-                except Exception:
+                except OSError:
                     pass
             if orig_stderr_fd is not None:
                 try:
                     os.dup2(orig_stderr_fd, 2)
                     os.close(orig_stderr_fd)
-                except Exception:
+                except OSError:
                     pass
             try:
                 os.close(null_fd)
-            except Exception:
+            except OSError:
                 pass
 
 

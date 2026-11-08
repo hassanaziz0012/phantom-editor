@@ -2,11 +2,11 @@
 
 import sys
 
-from utils import COLOR_BLUE, COLOR_GREEN, COLOR_RESET, COLOR_YELLOW, print_error, print_info, print_warning
+from video_editing.utils import COLOR_BLUE, COLOR_GREEN, COLOR_RESET, COLOR_YELLOW, print_error, print_info, print_warning
 
-from pipeline.context import PipelineContext
-from pipeline.cuts import format_cut
-from pipeline.runner import Step
+from projects.pipeline.context import PipelineContext
+from projects.pipeline.cuts import format_cut
+from projects.pipeline.runner import Step
 
 RULE = "=" * 60
 

@@ -1,14 +1,15 @@
 """State shared by every step of one pipeline run."""
 
 import argparse
+import importlib.util
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from utils import VideoInfo
+from video_editing.utils import VideoInfo
 
-from pipeline import REPO_ROOT
-from pipeline.common import PipelineError
-from pipeline.summary import RunSummary
+from shared.paths import REPO_ROOT
+from projects.pipeline.common import PipelineError
+from projects.pipeline.summary import RunSummary
 
 
 @dataclass(frozen=True)
@@ -41,28 +42,29 @@ class Outputs:
 
 @dataclass(frozen=True)
 class Scripts:
-    """External scripts the steps shell out to."""
+    """External scripts the steps shell out to: shell scripts by path, Python by module name."""
 
-    transcribe_cloud: Path
+    transcribe_cloud: str
     process_audio: Path
     add_bgm: Path
-    auto_create_metadata: Path
-    audio_review: Path
-    video_inspector: Path
+    auto_create_metadata: str
+    audio_review: str
+    video_inspector: str
 
     @classmethod
     def locate(cls) -> "Scripts":
         scripts = cls(
-            transcribe_cloud=REPO_ROOT / "video-editing" / "transcribe_cloud.py",
-            process_audio=REPO_ROOT / "audio-processing" / "process_audio.sh",
-            add_bgm=REPO_ROOT / "video-editing" / "add_bgm_to_video.sh",
-            auto_create_metadata=REPO_ROOT / "metadata" / "auto_create_metadata.py",
-            audio_review=REPO_ROOT / "review" / "audio_review.py",
-            video_inspector=REPO_ROOT / "review" / "video_inspector.py",
+            transcribe_cloud="video_editing.transcribe_cloud",
+            process_audio=REPO_ROOT / "audio_processing" / "process_audio.sh",
+            add_bgm=REPO_ROOT / "video_editing" / "add_bgm_to_video.sh",
+            auto_create_metadata="metadata.auto_create_metadata",
+            audio_review="review.audio_review",
+            video_inspector="review.video_inspector",
         )
-        for path in vars(scripts).values():
-            if not path.is_file():
-                raise PipelineError(f"Required pipeline script not found at '{path}'")
+        for script in vars(scripts).values():
+            found = script.is_file() if isinstance(script, Path) else importlib.util.find_spec(script) is not None
+            if not found:
+                raise PipelineError(f"Required pipeline script not found: '{script}'")
         return scripts
 
 

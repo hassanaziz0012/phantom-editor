@@ -7,15 +7,14 @@ to a persistent native Google Chrome instance via CDP. The tab loads the post's 
 URL rather than the page, so Chrome doesn't have to run Reddit's web app (see reddit_json.py).
 
 Usage:
-    uv run python reddit/scrape_reddit_post.py "https://www.reddit.com/r/..."
-    uv run python reddit/scrape_reddit_post.py "https://reddit.com/..." --json
-    uv run python reddit/scrape_reddit_post.py "https://reddit.com/..." --headless --max-comments 15
+    phantom research reddit post "https://www.reddit.com/r/..."
+    phantom research reddit post "https://reddit.com/..." --json
+    phantom research reddit post "https://reddit.com/..." --headless --max-comments 15
 """
 
 import argparse
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -25,9 +24,6 @@ from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
 # Ensure repo root is in python path for module imports
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 from reddit.navigate import goto_with_retries

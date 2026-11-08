@@ -6,26 +6,23 @@ Uses Playwright (via `reddit.scrape_reddit_post`) to extract post engagement met
 sentiment and reception using Groq's openai/gpt-oss-120b model with structured outputs.
 
 Usage:
-    uv run python reddit/analyze_post.py "https://www.reddit.com/r/..."
-    uv run python reddit/analyze_post.py --url "https://reddit.com/..." --json
+    phantom research reddit analyze "https://www.reddit.com/r/..."
+    phantom research reddit analyze --url "https://reddit.com/..." --json
 """
 
 import argparse
 import asyncio
 import json
 import os
-import sys
-from typing import Any, Dict, List, Literal, Optional
+from typing import List, Literal
 
 from pydantic import BaseModel, Field
 
 # Ensure repo root is in python path for module imports
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
+from shared.paths import REPO_ROOT
 
 from agentic.ask_groq import ask_groq
-from reddit.scrape_reddit_post import CommentData, ScrapedPostData, scrape_reddit_post
+from reddit.scrape_reddit_post import ScrapedPostData, scrape_reddit_post
 
 PROMPT_PATH = os.path.join(REPO_ROOT, "agentic", "prompts", "analyse_reddit_post_sentiment.md")
 

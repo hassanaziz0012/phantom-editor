@@ -17,14 +17,9 @@ rather than having rows deleted, so its dropdowns stay on every row.
 from __future__ import annotations
 
 import argparse
-import sys
 from datetime import date
-from pathlib import Path
 from typing import List
 
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
 
 from ideas.export_ideas_to_sheet import IDEAS_SHEET_NAME, column_letter, ensure_ideas_sheet_headers
 from projects.google_sheet_utils import get_sheets_service, get_spreadsheet_id

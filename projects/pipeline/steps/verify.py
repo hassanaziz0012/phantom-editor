@@ -3,10 +3,10 @@
 import subprocess
 from pathlib import Path
 
-from utils import print_info, print_warning
+from video_editing.utils import print_info, print_warning
 
-from pipeline.common import probe_json, require_output, to_float
-from pipeline.context import PipelineContext
+from projects.pipeline.common import probe_json, require_output, to_float
+from projects.pipeline.context import PipelineContext
 
 
 def check_encode_integrity(video_path: Path) -> tuple[bool, str]:

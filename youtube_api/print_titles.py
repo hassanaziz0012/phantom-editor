@@ -13,14 +13,7 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 
-from dotenv import load_dotenv
-
-# Ensure project root is in sys.path
-root_dir = str(Path(__file__).resolve().parent.parent)
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
 
 from youtube_api.fetch_videos import fetch_channel_videos
 from youtube_api.utils import get_youtube_client, resolve_channel_id
@@ -76,7 +69,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    load_dotenv()
     args = parse_args()
 
     api_key = os.getenv("YOUTUBE_API_KEY")

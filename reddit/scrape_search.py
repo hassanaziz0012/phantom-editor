@@ -22,16 +22,15 @@ Extracts:
 - thumbnail url (if the result shows one)
 
 Usage:
-    uv run python reddit/scrape_search.py "automate video editing"
-    uv run python reddit/scrape_search.py "automate video editing" --limit 40
-    uv run python reddit/scrape_search.py "automate video editing" --sort top --time month
-    uv run python reddit/scrape_search.py "automate video editing" --json
+    phantom research reddit search "automate video editing"
+    phantom research reddit search "automate video editing" --limit 40
+    phantom research reddit search "automate video editing" --sort top --time month
+    phantom research reddit search "automate video editing" --json
 """
 
 import argparse
 import asyncio
 import json
-import os
 import sys
 import urllib.parse
 from datetime import datetime
@@ -42,9 +41,6 @@ from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
 # Ensure repo root is in python path for module imports
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 from reddit.navigate import goto_with_retries

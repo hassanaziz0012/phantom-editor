@@ -22,13 +22,12 @@ adds "undetectable_removals": ["reddit"], as those pages don't show posts remove
 Logs go to stderr. The server exits once stdin closes and the requests in flight are answered.
 
 Usage:
-    uv run python reddit/serve.py [--port 9222] [--headless]
+    phantom research reddit serve [--port 9222] [--headless]
 """
 
 import argparse
 import asyncio
 import json
-import os
 import sys
 import time
 from typing import Any, Dict, Optional, Set, Tuple
@@ -36,9 +35,6 @@ from typing import Any, Dict, Optional, Set, Tuple
 from playwright.async_api import Error as PlaywrightError, Page, async_playwright
 
 # Ensure repo root is in python path for module imports
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from reddit.reddit_json import (
     MAX_INFO_IDS,

@@ -18,27 +18,17 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
-# Add project root to sys.path
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from shared.paths import REPO_ROOT
 
-# Add video-editing to sys.path
-VIDEO_EDITING_DIR = REPO_ROOT / "video-editing"
-if str(VIDEO_EDITING_DIR) not in sys.path:
-    sys.path.insert(0, str(VIDEO_EDITING_DIR))
-
-from dotenv import load_dotenv
 
 from agentic.ask_browserllm import ask_browserllm, load_prompt, parse_json_response
 from ideas.summarize_video import download_youtube_audio
-from transcribe_cloud import transcribe_video_cloud
-from utils import parse_srt_to_text
+from video_editing.transcribe_cloud import transcribe_video_cloud
+from video_editing.utils import parse_srt_to_text
 from youtube_api.fetch_videos import fetch_channel_videos
 from youtube_api.models import Video
 from youtube_api.utils import get_youtube_client, resolve_channel_id
 
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,

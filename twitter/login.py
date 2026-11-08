@@ -2,7 +2,7 @@
 Runs once to log in and save the auth state.
 Creates twitter/data/auth.json.
 
-usage: uv run twitter/login.py
+usage: uv run python -m shared.launch twitter.login
 """
 
 import asyncio

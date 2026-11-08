@@ -19,15 +19,14 @@ Extracts:
   most active hour and weekday
 
 Usage:
-    uv run python reddit/scrape_profile.py spez
-    uv run python reddit/scrape_profile.py "https://www.reddit.com/user/spez/" --posts 50 --comments 50
-    uv run python reddit/scrape_profile.py u/spez --sort top --time year --json
+    phantom research reddit profile spez
+    phantom research reddit profile "https://www.reddit.com/user/spez/" --posts 50 --comments 50
+    phantom research reddit profile u/spez --sort top --time year --json
 """
 
 import argparse
 import asyncio
 import json
-import os
 import re
 import statistics
 import sys
@@ -41,9 +40,6 @@ from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
 # Ensure repo root is in python path for module imports
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from reddit.reddit_json import (
     MAX_LISTING_PAGE,
@@ -57,14 +53,13 @@ from reddit.reddit_json import (
     post_type,
     relative_age,
 )
-from browser.cdp import CDP_PORT, get_cdp_browser_context, get_clean_page
+from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 from reddit.serve import HOME_URL, RedditFetcher
 
 # ==============================================================================
 # Configuration & Constants
 # ==============================================================================
 # The Chrome profile on port 9222 that has the logged-in Reddit account; only used if Chrome isn't running yet
-PROFILE_DIR = Path.home() / "Desktop" / "browser-profiles" / "p9222"
 
 REDDIT = "https://www.reddit.com"
 SORT_OPTIONS = ["new", "hot", "top", "controversial"]

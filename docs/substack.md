@@ -42,7 +42,7 @@ Automates publishing short-form Substack Notes with optional image or video atta
 
 * **Direct Python Usage**:
   ```bash
-  uv run python substack/post_note.py [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]
+  phantom publish substack [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]
   ```
 
 * **Options**:

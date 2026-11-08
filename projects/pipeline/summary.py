@@ -3,8 +3,8 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pipeline.common import to_float
-from pipeline.cuts import format_cut
+from projects.pipeline.common import to_float
+from projects.pipeline.cuts import format_cut
 from shared.timecodes import format_timestamp
 
 # Audio-review confidence below which a flag is called out as borderline.

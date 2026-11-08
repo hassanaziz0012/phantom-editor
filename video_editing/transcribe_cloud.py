@@ -4,12 +4,9 @@ import uuid
 import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dotenv import load_dotenv
 from groq import Groq
 
-# Add the script's directory to the sys.path to guarantee importing from utils
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from utils import format_srt_time, get_video_info
+from video_editing.utils import format_srt_time, get_video_info
 from shared.media import extract_audio
 
 # Limit for Groq API in bytes (25MB hard limit, using 20MB threshold for safety)
@@ -33,7 +30,6 @@ def is_audio_file(file_path):
 
 def init_groq_clients():
     """Loads API keys and returns a list of initialized Groq clients."""
-    load_dotenv()
     api_keys = []
     if os.environ.get("GROQ_API_KEY"):
         api_keys.append(os.environ["GROQ_API_KEY"])

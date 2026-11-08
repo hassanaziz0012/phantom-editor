@@ -6,8 +6,8 @@ import sys
 import textwrap
 import uuid
 from dataclasses import dataclass
-from transcribe_cloud import transcribe_video_cloud
-from utils import get_video_info, resolve_output_path, create_preview_clip
+from video_editing.transcribe_cloud import transcribe_video_cloud
+from video_editing.utils import get_video_info, resolve_output_path, create_preview_clip
 
 DEFAULT_FONT = "Google Sans"
 
@@ -65,7 +65,7 @@ def verify_font(font_name):
         )
         fallback = match_result.stdout.strip()
         return False, fallback
-    except Exception:
+    except (OSError, subprocess.CalledProcessError):
         # If fc-list or fc-match fail/are missing (e.g. non-Linux / no fontconfig)
         return True, None
 

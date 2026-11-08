@@ -2,8 +2,6 @@ import os
 import json
 import time
 import requests
-from dotenv import load_dotenv
-load_dotenv()
 
 # --- Configuration ---
 CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")

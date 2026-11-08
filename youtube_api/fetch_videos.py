@@ -13,18 +13,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from dotenv import load_dotenv
 
-# Add the project root directory to sys.path to allow absolute package imports
-root_dir = str(Path(__file__).resolve().parent.parent)
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
+from shared.paths import REPO_ROOT
 
 from youtube_api.models import Video
 from youtube_api.utils import get_youtube_client, resolve_channel_id
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-load_dotenv()
 
 API_KEY    = os.getenv("YOUTUBE_API_KEY")
 CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID")
@@ -289,8 +284,8 @@ def fetch_channel_videos(
             json.dump(serialized_videos, f, indent=2, ensure_ascii=False)
         
         try:
-            rel_path = cache_file.relative_to(Path(root_dir))
-        except Exception:
+            rel_path = cache_file.relative_to(REPO_ROOT)
+        except ValueError:
             rel_path = cache_file.name
         _log(f"      Saved {len(all_videos)} videos to cache: {rel_path}")
     except Exception as e:

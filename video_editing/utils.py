@@ -10,13 +10,10 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Callable
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
-# Re-exported: the video-editing and broll scripts import these from utils
-from shared.srt import parse_srt, parse_srt_to_text, parse_srt_to_timestamped_transcript  # noqa: E402, F401
-from shared.timecodes import parse_timestamp  # noqa: E402, F401
+# Re-exported: the video_editing and broll scripts import these from utils
+from shared.srt import parse_srt, parse_srt_to_text, parse_srt_to_timestamped_transcript  # noqa: F401
+from shared.timecodes import parse_timestamp  # noqa: F401
 
 # Terminal ANSI Color Constants
 COLOR_GREEN = "\033[92m"
@@ -442,6 +439,9 @@ def run_ffmpeg_with_progress(
 
     # Collected for error reporting; also streamed to stderr_line_callback.
     stderr_lines: list[str] = []
+    # The callback's first error, reported once ffmpeg exits. A failing callback mustn't stop
+    # the drain (ffmpeg would stall on a full pipe), but its results are then incomplete.
+    callback_errors: list[Exception] = []
     
     try:
         process = subprocess.Popen(
@@ -462,9 +462,11 @@ def run_ffmpeg_with_progress(
                     if stderr_line_callback is not None:
                         try:
                             stderr_line_callback(line)
-                        except Exception:
-                            pass
-            except Exception:
+                        except Exception as e:
+                            if not callback_errors:
+                                callback_errors.append(e)
+            except (OSError, ValueError):
+                # The pipe closed under us (ffmpeg killed or cancelled); the exit code says why.
                 pass
 
         stderr_thread = threading.Thread(
@@ -531,6 +533,8 @@ def run_ffmpeg_with_progress(
             sys.exit(process.returncode)
         
         print()  # New line after progress bar
+        if callback_errors:
+            print_warning(f"stderr_line_callback failed, so its results are incomplete: {callback_errors[0]!r}")
         
     except FileNotFoundError:
         print_error("Error: ffmpeg not found in system PATH")

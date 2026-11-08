@@ -10,12 +10,12 @@ Requires `YOUTUBE_API_KEY` and OAuth client/token JSON files in `youtube_api/tok
 ### [count_youtube_uploads.py](../youtube_api/count_youtube_uploads.py)
 Calculates and displays a channel's upload counts for today, the last 7 days, 14 days, and 30 days in a formatted ASCII table.
 
-* **Usage**: `python youtube_api/count_youtube_uploads.py [<channel_id_or_handle>] [--fresh]` or via `phantom yt count-uploads [<channel>] [--fresh]`
+* **Usage**: `phantom yt count-uploads [<channel_id_or_handle>] [--fresh]`
 
 ### [fetch_videos.py](../youtube_api/fetch_videos.py)
 Core retrieval module that handles fetching all videos for a channel and caching them in local JSON files.
 
-* **Usage**: `python youtube_api/fetch_videos.py [<channel_id_or_handle>] [--fresh]`
+* **Usage**: `uv run python -m shared.launch youtube_api.fetch_videos [<channel_id_or_handle>] [--fresh]`
 
 ### [models.py](../youtube_api/models.py)
 Defines shared dataclasses (`Video`, `VideoSeed`, `RankedVideo`, `VideoMetadata`) for storing video metadata, stats, and recommendation rankings.
@@ -25,7 +25,7 @@ Uploads an MP4 video, attaches metadata from a local `metadata.json`, uploads a 
 
 The description is built from `DESCRIPTION_TEMPLATE` in [`config.py`](../config.py). Its RESOURCES section lists `metadata.json`'s `resources` (from `phantom meta resources`) as `key: url` lines, and is left out when there are none. The upload stops before starting if any resource still has a blank `url`.
 
-* **Usage**: `python youtube_api/upload_video.py /path/to/video.mp4` or via `phantom publish yt <video_path> [--playlist <playlist_id_or_name>]`
+* **Usage**: `phantom publish yt <video_path> [--playlist <playlist_id_or_name>]`
 * **Playlist**: `--playlist` adds the uploaded video to a playlist (see [addtoplaylist.py](#addtoplaylistpy)). The playlist is looked up before the upload starts, so an unknown ID or an ambiguous title stops the upload. If adding fails after the upload, it only warns and prints the `phantom yt add-to-playlist` command to retry.
 * **Auth**: The OAuth token needs both the `youtube.upload` and `youtube` scopes. A saved `tokens/token.json` missing either one triggers the browser sign-in again.
 
@@ -40,7 +40,7 @@ Adds a video to one of your channel's playlists.
 ### [video_info.py](../youtube_api/video_info.py)
 Shows quick details about any YouTube video: a direct thumbnail URL, views/likes/comments, and an outlier score — the video's views divided by the median views of the channel's recent uploads of the same format (Shorts vs long-form). Baseline videos younger than 14 days are excluded, and a note is shown if the video itself is that new.
 
-* **Usage**: `python youtube_api/video_info.py <video_url_or_id> [--fresh] [--json]` or via `phantom yt info <video> [--fresh] [--json]`
+* **Usage**: `phantom yt info <video_url_or_id> [--fresh] [--json]`
 * **Caching**: The channel's last 50 uploads are cached in `youtube_api/cache/baselines.json` for 24 hours. A cold lookup costs 3 quota units; a cached one costs 1. `--fresh` forces a refetch.
 
 ### [add_endscreen.py](../youtube_api/add_endscreen.py)

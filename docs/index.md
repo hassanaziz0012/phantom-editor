@@ -10,10 +10,14 @@ Whether you're processing audio, editing video segments, or publishing to variou
 
 The project is structured into several modular directories, each responsible for a distinct part of the media creation and distribution lifecycle:
 
+Every top-level directory is a Python package, and the repo is installed into its venv in editable mode (`uv sync`), so modules import each other as `from metadata.utils import ...` with no `sys.path` changes. Run them through the `phantom` CLI, which loads `.env` once (see `shared/launch.py`). To run a module that has no `phantom` command: `uv run python -m shared.launch <module> [args]`, e.g. `uv run python -m shared.launch youtube_api.fetch_videos`. `./install.sh` links `phantom` into `~/.local/bin`.
+
+The YT Projects folder defaults to `~/Videos/YT Projects`; set `PHANTOM_PROJECTS_DIR` (in `.env` or the shell) to move it. The Chrome profile the browser automations share defaults to `~/Desktop/browser-profiles/p9222`; set `PHANTOM_CDP_PROFILE` to move it.
+
 ### 🎬 [Content Pipelines](pipelines.md)
 End-to-end orchestration for the 10-stage YouTube content lifecycle and single-pass video masking/trimming.
 
-* **Main Scripts**: [current_pipeline.py](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/current_pipeline.py), [process_video.py](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/process_video.py) (with the `pipeline/` package), and [newvideo.py](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/newvideo.py)
+* **Main Scripts**: [current_pipeline.py](../projects/current_pipeline.py), [process_video.py](../projects/process_video.py) (with the `pipeline/` package), and [newvideo.py](../projects/newvideo.py)
 
 ### 🎙️ [Audio Processing](audio-processing.md)
 Tools for extracting, clean-up, and normalizing audio tracks.
@@ -29,7 +33,7 @@ Automation scripts to handle video rendering, splitting, and effects.
 ### 🎞️ [B-roll Templates](broll.md)
 Reusable HyperFrames B-roll clips timed to the video's word-level captions from a small cue file.
 
-* **Main Script**: `broll-templates/broll.py` (`phantom broll`)
+* **Main Script**: `broll_templates/broll.py` (`phantom broll`)
 
 ### 🤖 [Filmora Automation](filmora-automation.md)
 Automating timeline composition and video editing workflows in Wondershare Filmora.
@@ -37,7 +41,7 @@ Automating timeline composition and video editing workflows in Wondershare Filmo
 ### 🔍 [Video Quality Review](review.md)
 Inspect final videos for aspect ratio, resolution, and glitchy frames (black screen and freeze frames) prior to distribution.
 
-* **Main Script**: [video_inspector.py](file:///home/hassan/Desktop/programming/phantom-editor/review/video_inspector.py)
+* **Main Script**: [video_inspector.py](../review/video_inspector.py)
 
 ---
 

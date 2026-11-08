@@ -1,13 +1,13 @@
 """The pipeline's step list."""
 
-from pipeline.context import PipelineContext
-from pipeline.runner import Step
-from pipeline.steps import raw
-from pipeline.steps.audio import process_audio
-from pipeline.steps.metadata import create_metadata
-from pipeline.steps.review import review, review_skip_reason
-from pipeline.steps.transcribe import transcribe
-from pipeline.steps.verify import verify_final
+from projects.pipeline.context import PipelineContext
+from projects.pipeline.runner import Step
+from projects.pipeline.steps import raw
+from projects.pipeline.steps.audio import process_audio
+from projects.pipeline.steps.metadata import create_metadata
+from projects.pipeline.steps.review import review, review_skip_reason
+from projects.pipeline.steps.transcribe import transcribe
+from projects.pipeline.steps.verify import verify_final
 
 REVIEW_STEP = 6
 

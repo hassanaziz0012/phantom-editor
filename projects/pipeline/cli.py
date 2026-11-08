@@ -5,15 +5,15 @@ import sys
 import time
 from pathlib import Path
 
-from utils import get_video_info, print_error, print_info, print_success, print_warning
+from video_editing.utils import get_video_info, print_error, print_info, print_success, print_warning
 
-from pipeline.common import PipelineError
-from pipeline.context import Outputs, PipelineContext, Scripts
-from pipeline.cuts import CUTS_FILENAME, load_cuts
-from pipeline.runner import PipelineRunner, plan_steps
-from pipeline.status import confirm_execution, print_overview
-from pipeline.steps import REVIEW_STEP, build_steps
-from pipeline.summary import RunSummary, format_duration, write_summary
+from projects.pipeline.common import PipelineError
+from projects.pipeline.context import Outputs, PipelineContext, Scripts
+from projects.pipeline.cuts import CUTS_FILENAME, load_cuts
+from projects.pipeline.runner import PipelineRunner, plan_steps
+from projects.pipeline.status import confirm_execution, print_overview
+from projects.pipeline.steps import REVIEW_STEP, build_steps
+from projects.pipeline.summary import RunSummary, format_duration, write_summary
 
 RULE = "=" * 60
 

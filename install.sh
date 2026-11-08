@@ -20,10 +20,9 @@ mkdir -p "$HOME/.local/bin"
 # Make sure the source script is executable
 chmod +x "$PHANTOM_SRC"
 
-echo "Copying phantom CLI to $PHANTOM_DEST..."
-cp "$PHANTOM_SRC" "$PHANTOM_DEST"
+# A symlink, not a copy: phantom finds the repo by following it, and edits to the
+# script take effect without reinstalling.
+echo "Linking $PHANTOM_DEST to $PHANTOM_SRC..."
+ln -sfn "$PHANTOM_SRC" "$PHANTOM_DEST"
 
-# Ensure the copied file is executable
-chmod +x "$PHANTOM_DEST"
-
-echo "Successfully updated phantom CLI at $PHANTOM_DEST!"
+echo "Successfully installed phantom CLI at $PHANTOM_DEST!"

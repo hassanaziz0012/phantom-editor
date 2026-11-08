@@ -4,10 +4,8 @@ Script to list all contacts and segments in Resend account.
 """
 
 import os
-from dotenv import load_dotenv
 import resend
 
-load_dotenv()
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 

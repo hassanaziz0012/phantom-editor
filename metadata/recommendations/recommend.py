@@ -26,16 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from dotenv import load_dotenv
 
-# Ensure repository root is in sys.path
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-# Load environment variables
-load_dotenv(REPO_ROOT / ".env")
-load_dotenv()
 
 from agentic.ask_browserllm import ask_browserllm, load_prompt, parse_json_response
 from metadata import utils

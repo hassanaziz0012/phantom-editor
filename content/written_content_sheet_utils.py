@@ -15,21 +15,9 @@ Columns:
 from __future__ import annotations
 
 import argparse
-import os
-import re
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Ensure repository root is in sys.path
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
-
-from dotenv import load_dotenv
-
-load_dotenv(repo_root / ".env")
 
 from projects.google_sheet_utils import get_sheets_service, get_spreadsheet_id
 

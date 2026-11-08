@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from pipeline.common import PipelineError
+from projects.pipeline.common import PipelineError
 
 X264_ARGS = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
 AAC_ARGS = ["-c:a", "aac", "-b:a", "384k"]

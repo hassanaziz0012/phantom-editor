@@ -12,12 +12,8 @@ A title that matches none of your playlists creates a new playlist with that tit
 import argparse
 import re
 import sys
-from pathlib import Path
 from typing import Optional
 
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.append(str(repo_root))
 
 from googleapiclient.errors import HttpError
 

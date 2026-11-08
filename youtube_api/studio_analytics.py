@@ -19,24 +19,18 @@ channels are recognized without opening Chrome.
 import asyncio
 import json
 import os
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError, async_playwright
 
-# Add project root to sys.path to allow package imports
-root_dir = str(Path(__file__).resolve().parent.parent)
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
 
-from browser.cdp import CDP_PORT, get_cdp_browser_context, get_clean_page
+from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 # The Chrome profile on port 9222 that's logged into the channel; only used if Chrome isn't running yet
-PROFILE_DIR        = Path.home() / "Desktop" / "browser-profiles" / "p9222"
 CHANNEL_CACHE_FILE = Path(__file__).resolve().parent / "cache" / "my_channel.json"
 ANALYTICS_URL      = "https://studio.youtube.com/video/{video_id}/analytics/tab-reach_viewers/period-default"
 CHANNEL_URL        = "https://studio.youtube.com/channel/{channel_id}/analytics/tab-content/period-default"

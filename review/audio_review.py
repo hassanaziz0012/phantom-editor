@@ -6,9 +6,9 @@ Detects unwanted noise events (coughs, throat clearing, sighs, mic thumps, click
 in a video or audio file using PANNs (Cnn14), batched for CPU inference.
 
 Usage:
-    python audio_review.py input.mp4
-    python audio_review.py input.wav --output flagged.json --threshold 0.15
-    python audio_review.py input.mp4 --batch-size 64 --min-duration 0.15
+    phantom edit review-audio input.mp4
+    phantom edit review-audio input.wav --output flagged.json --threshold 0.15
+    phantom edit review-audio input.mp4 --batch-size 64 --min-duration 0.15
 """
 
 import argparse
@@ -24,17 +24,9 @@ import torch
 from tqdm import tqdm
 from panns_inference import AudioTagging, labels
 
-try:
-    from utils import Colors, colorize
-except ImportError:
-    from review.utils import Colors, colorize
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.append(REPO_ROOT)
-
-from shared.media import extract_audio  # noqa: E402
-from shared.timecodes import format_timestamp  # noqa: E402
+from review.utils import Colors, colorize
+from shared.media import extract_audio
+from shared.timecodes import format_timestamp
 
 SAMPLE_RATE = 32000  # PANNs was trained at this rate — don't change
 

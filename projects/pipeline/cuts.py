@@ -9,7 +9,7 @@ Blank lines and ``#`` comments are ignored.
 import re
 from pathlib import Path
 
-from pipeline.common import PipelineError
+from projects.pipeline.common import PipelineError
 from shared.timecodes import parse_timestamp
 
 CUTS_FILENAME = "cuts.txt"

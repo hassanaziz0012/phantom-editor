@@ -3,52 +3,17 @@
 Create a new video project folder inside the 'YT Projects' directory.
 Usage:
     phantom projects newvideo <project_name>
-    or
-    python projects/newvideo.py <project_name>
 """
 
-import os
 import sys
 import argparse
 from pathlib import Path
 
-pipeline_dir = Path(__file__).resolve().parent
-repo_root = pipeline_dir.parent
-video_editing_dir = repo_root / "video-editing"
-
-if str(video_editing_dir) not in sys.path:
-    sys.path.insert(0, str(video_editing_dir))
-
-if str(pipeline_dir) not in sys.path:
-    sys.path.insert(0, str(pipeline_dir))
-
-try:
-    from utils import (
-        COLOR_GREEN, COLOR_RED, COLOR_YELLOW, COLOR_BLUE, COLOR_RESET, COLOR_BOLD,
-        print_info, print_success, print_warning, print_error
-    )
-except ImportError:
-    COLOR_GREEN = "\033[92m"
-    COLOR_RED = "\033[91m"
-    COLOR_YELLOW = "\033[93m"
-    COLOR_BLUE = "\033[94m"
-    COLOR_RESET = "\033[0m"
-    COLOR_BOLD = "\033[1m"
-
-    def print_info(text: str):
-        print(f"{COLOR_BLUE}{text}{COLOR_RESET}")
-
-    def print_success(text: str):
-        print(f"{COLOR_GREEN}{text}{COLOR_RESET}")
-
-    def print_warning(text: str):
-        print(f"{COLOR_YELLOW}{text}{COLOR_RESET}")
-
-    def print_error(text: str):
-        print(f"{COLOR_RED}{text}{COLOR_RESET}", file=sys.stderr)
-
-
-DEFAULT_YT_PROJECTS_DIR = Path.home() / "Videos" / "YT Projects"
+from shared.paths import YT_PROJECTS_DIR as DEFAULT_YT_PROJECTS_DIR
+from video_editing.utils import (
+    COLOR_YELLOW, COLOR_RESET, COLOR_BOLD,
+    print_success, print_error
+)
 
 
 def sanitize_project_name(name: str) -> str:

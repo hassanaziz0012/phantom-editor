@@ -6,27 +6,22 @@ comments count) and threaded comments/replies from any Skool post URL by attachi
 to a persistent native Google Chrome instance via CDP.
 
 Usage:
-    uv run python skool/scrape_post.py "https://www.skool.com/maker-zero/0-to-15kmonth-in-8-months-thanks-nick"
-    uv run python skool/scrape_post.py "https://www.skool.com/..." --json
-    uv run python skool/scrape_post.py "https://www.skool.com/..." --max-comments 50
+    phantom research skool post "https://www.skool.com/maker-zero/0-to-15kmonth-in-8-months-thanks-nick"
+    phantom research skool post "https://www.skool.com/..." --json
+    phantom research skool post "https://www.skool.com/..." --max-comments 50
 """
 
 import argparse
 import asyncio
 import json
-import os
 import re
-import sys
 from pathlib import Path
 from typing import List, Optional
 
-from playwright.async_api import async_playwright
+from playwright.async_api import Error as PlaywrightError, async_playwright
 from pydantic import BaseModel, Field
 
 # Ensure repo root is in python path
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 
@@ -116,7 +111,7 @@ async def scrape_skool_post(
                 if await see_more_post.count() > 0:
                     await see_more_post.first.click(timeout=2000)
                     await asyncio.sleep(0.3)
-            except Exception:
+            except PlaywrightError:
                 pass
 
             # ------------------------------------------------------------------
@@ -163,7 +158,7 @@ async def scrape_skool_post(
                     await btn.click(timeout=2000)
                     expansions += 1
                     await asyncio.sleep(0.6)
-                except Exception:
+                except PlaywrightError:
                     break
 
             # ------------------------------------------------------------------

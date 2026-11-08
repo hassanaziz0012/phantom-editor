@@ -20,20 +20,14 @@ import json
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Add repository root to sys.path
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
+from shared.paths import REPO_ROOT
 
-from dotenv import load_dotenv
 
 from ideas.common import Colors, export_ideas, fetch_recent_channel_titles, fetch_video_metadata, parse_ideas_response
 from youtube_api.utils import extract_video_id
 
-load_dotenv()
 
 # Logging setup
 logging.basicConfig(
@@ -43,7 +37,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("phantom.ideas.outliers_generator")
 
-PROMPT_TEMPLATE_PATH = repo_root / "agentic" / "prompts" / "generate_ideas_from_outliers.md"
+PROMPT_TEMPLATE_PATH = REPO_ROOT / "agentic" / "prompts" / "generate_ideas_from_outliers.md"
 
 
 # ── Video Summarization ────────────────────────────────────────────────────────

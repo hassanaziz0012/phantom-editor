@@ -18,7 +18,7 @@ Usage as a Python module:
     meta.save()
 
 Usage as a CLI script:
-    python metadata/read_metadata.py /path/to/project/or/video.mp4
+    phantom meta read /path/to/project/or/video.mp4
     phantom meta read /path/to/project
 """
 
@@ -31,10 +31,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
-# Ensure repository root is in sys.path
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
 
 if TYPE_CHECKING:
     from youtube_api.models import VideoSeed

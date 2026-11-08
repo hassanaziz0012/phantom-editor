@@ -98,21 +98,21 @@ Until every URL is filled in, `phantom projects status` doesn't count the metada
 ### [create_metadata.py](../metadata/create_metadata.py)
 Interactively prompts for and creates a `metadata.json` file used when uploading a video.
 
-* **CLI Command**: `phantom meta manual <video_path>` or `python metadata/create_metadata.py <video_path>`
+* **CLI Command**: `phantom meta manual <video_path>`
 
 ---
 
 ### [read_metadata.py](../metadata/read_metadata.py)
 Parses, discovers, and reads `metadata.json` files for YouTube projects into typed `VideoMetadata` objects with dictionary fallback compatibility and auto-saving support.
 
-* **CLI Command**: `phantom meta read [<project_or_video_path>] [--json]` or `python metadata/read_metadata.py [<project_or_video_path>] [--json]`
+* **CLI Command**: `phantom meta read [<project_or_video_path>] [--json]`
 
 ---
 
 ### [prepare_yt_recommendations.py](../metadata/recommendations/prepare_yt_recommendations.py)
 Orchestrates YouTube channel video summarization and vector embedding generation with Google Gemini. Supports `--json` mode for machine-readable JSON summaries with suppressed logging.
 
-* **CLI Command**: `phantom meta prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]` or `python metadata/recommendations/prepare_yt_recommendations.py [<channel>] [--json]`
+* **CLI Command**: `phantom meta prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]`
 
 ---
 

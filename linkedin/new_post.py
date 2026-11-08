@@ -4,17 +4,8 @@ import sys
 from pathlib import Path
 import requests
 
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
-linkedin_dir = Path(__file__).resolve().parent
-if str(linkedin_dir) not in sys.path:
-    sys.path.insert(0, str(linkedin_dir))
+from linkedin.authenticate import get_valid_access_token, get_member_urn
 
-try:
-    from authenticate import get_valid_access_token, get_member_urn
-except ImportError:
-    from linkedin.authenticate import get_valid_access_token, get_member_urn
 
 def upload_image_asset(access_token, author_urn, file_path):
     """Registers and uploads a local image to LinkedIn, returning its asset URN."""

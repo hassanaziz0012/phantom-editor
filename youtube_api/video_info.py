@@ -26,10 +26,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-# Add project root to sys.path to allow package imports
-root_dir = str(Path(__file__).resolve().parent.parent)
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
 
 from youtube_api import studio_analytics
 from youtube_api.fetch_videos import fetch_video_details

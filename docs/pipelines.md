@@ -6,7 +6,7 @@ The **Pipelines** module provides an end-to-end orchestration suite for creating
 
 ## 🏗️ Architecture & Pipeline Lifecycle
 
-The content pipeline follows a structured 9-stage lifecycle, automatically tracking asset presence across your project workspace (`~/Videos/YT Projects/` by default). The thumbnail is designed before recording: it's much easier to shape a recording to deliver on a strong thumbnail than to design a strong thumbnail for a finished recording.
+The content pipeline follows a structured 9-stage lifecycle, automatically tracking asset presence across your project workspace (`~/Videos/YT Projects/` by default, or `PHANTOM_PROJECTS_DIR`). The thumbnail is designed before recording: it's much easier to shape a recording to deliver on a strong thumbnail than to design a strong thumbnail for a finished recording.
 
 ```mermaid
 flowchart LR
@@ -44,7 +44,7 @@ phantom projects process /path/to/raw.mp4 --bgm lofi-chill
 
 ---
 
-## 📊 Pipeline Status Tracker: [`current_pipeline.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/current_pipeline.py)
+## 📊 Pipeline Status Tracker: [`current_pipeline.py`](../projects/current_pipeline.py)
 
 The status tracker scans project folders, validates required assets, synchronizes project status with Google Sheets, and displays an overview with progress bars, file checklists, and actionable next steps.
 
@@ -124,7 +124,7 @@ While a video needs repackaging, every `status` run compares its live YouTube ti
 
 ---
 
-## 📁 Project Initialization: [`newvideo.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/newvideo.py)
+## 📁 Project Initialization: [`newvideo.py`](../projects/newvideo.py)
 
 Creates a standardized workspace folder inside `~/Videos/YT Projects/<project_name>` (or a custom directory), verifying that the directory does not already exist and printing onboarding instructions.
 
@@ -209,7 +209,7 @@ phantom projects process <raw_video> [options]
 
 ---
 
-## 🔌 Google Sheets Backend: [`google_sheet_utils.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/google_sheet_utils.py)
+## 🔌 Google Sheets Backend: [`google_sheet_utils.py`](../projects/google_sheet_utils.py)
 
 The backend driver powering Google Sheets synchronization:
 

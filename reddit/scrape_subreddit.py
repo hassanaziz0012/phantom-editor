@@ -15,16 +15,15 @@ Extracts:
 - post title & post url
 
 Usage:
-    uv run python reddit/scrape_subreddit.py webdev
-    uv run python reddit/scrape_subreddit.py r/webdev --top-weekly
-    uv run python reddit/scrape_subreddit.py "https://www.reddit.com/r/webdev" --hot --limit 25
-    uv run python reddit/scrape_subreddit.py webdev --top-daily --json
+    phantom research reddit sub webdev
+    phantom research reddit sub r/webdev --top-weekly
+    phantom research reddit sub "https://www.reddit.com/r/webdev" --hot --limit 25
+    phantom research reddit sub webdev --top-daily --json
 """
 
 import argparse
 import asyncio
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -34,9 +33,6 @@ from playwright.async_api import async_playwright, Page
 from pydantic import BaseModel, Field
 
 # Ensure repo root is in python path for module imports
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 from reddit.navigate import goto_with_retries

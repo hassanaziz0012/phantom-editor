@@ -3,20 +3,5 @@
 Chains transcription, silence trimming, audio processing, final encode (with
 optional BGM), verification, review and metadata generation for a single
 pre-composed recording (e.g. OBS).
-Entry point: ``projects/process_video.py`` -> :func:`pipeline.cli.main`.
+Entry point: ``projects/process_video.py`` -> :func:`projects.pipeline.cli.main`.
 """
-
-import sys
-from pathlib import Path
-
-PIPELINE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = PIPELINE_DIR.parent.parent
-VIDEO_EDITING_DIR = REPO_ROOT / "video-editing"
-
-# The shared helpers (utils, trim_silences) live in
-# video-editing/, which is not a package, so it has to be on sys.path before
-# any pipeline module imports them. The repo root is needed for shared/.
-if str(VIDEO_EDITING_DIR) not in sys.path:
-    sys.path.insert(0, str(VIDEO_EDITING_DIR))
-if str(REPO_ROOT) not in sys.path:
-    sys.path.append(str(REPO_ROOT))

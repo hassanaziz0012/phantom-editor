@@ -16,14 +16,14 @@ Ranges listed in the project's cuts.txt (bad takes) are removed from the speech
 intervals before snapping, so they are cut by this same encode.
 """
 
-from utils import VideoQCCollector, print_info, print_warning, run_ffmpeg_with_progress
-from trim_silences import get_silence_trim_expressions, get_speech_intervals
+from video_editing.utils import VideoQCCollector, print_info, print_warning, run_ffmpeg_with_progress
+from video_editing.trim_silences import get_silence_trim_expressions, get_speech_intervals
 
-from pipeline.common import PipelineError, is_valid_file, require_output
-from pipeline.context import PipelineContext
-from pipeline.cuts import subtract_cuts
-from pipeline.ffmpeg import AAC_ARGS, X264_ARGS, ffmpeg_cmd, resolve_bgm_path
-from pipeline.summary import VideoFlag
+from projects.pipeline.common import PipelineError, is_valid_file, require_output
+from projects.pipeline.context import PipelineContext
+from projects.pipeline.cuts import subtract_cuts
+from projects.pipeline.ffmpeg import AAC_ARGS, X264_ARGS, ffmpeg_cmd, resolve_bgm_path
+from projects.pipeline.summary import VideoFlag
 
 FPS = 30
 AUDIO_RATE = 48000

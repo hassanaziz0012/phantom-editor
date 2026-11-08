@@ -13,14 +13,12 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
-from dotenv import load_dotenv
 from pydantic import BaseModel
 import requests
 
 from agentic.schema_utils import build_messages, json_schema_response_format, parse_structured_response
 
 # Ensure environment variables are loaded
-load_dotenv()
 
 logger = logging.getLogger("phantom.agentic.openrouter")
 

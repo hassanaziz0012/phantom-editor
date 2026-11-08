@@ -4,18 +4,18 @@ This directory contains scripts for automating video editing tasks such as mixin
 
 ## Scripts
 
-### [add_bgm_to_video.sh](../video-editing/add_bgm_to_video.sh)
+### [add_bgm_to_video.sh](../video_editing/add_bgm_to_video.sh)
 Mixes a background music (BGM) track into a video's audio track. Loops the music if it is shorter than the video, adjusts BGM volume, and outputs a new video file while performing a lossless video stream copy.
 
 * **CLI Command**: `phantom edit add-bgm <path_to_video_or_folder> <bgm_track> [arguments]`
-* **Usage**: `./video-editing/add_bgm_to_video.sh <path_to_video_or_folder> <bgm_track> [--volume <percentage>] [-R|--recursive]`
+* **Usage**: `./video_editing/add_bgm_to_video.sh <path_to_video_or_folder> <bgm_track> [--volume <percentage>] [-R|--recursive]`
 * **Default Output**: `<video_name>-bgm.mp4` in the same directory as the source video for single file mode. For directory mode, outputs are saved under a parallel `added_bgm/` directory next to the folder's parent directory, preserving the original folder structure.
 * **BGM Library**: Looks up tracks relative to `~/Videos/Asset Library/BGM` if a full path is not provided.
 * **Usage/Arguments**:
   - `--volume <percentage>`: Set the BGM volume (1-100). Default is `10`%.
   - `-R`, `--recursive`: Recursively process videos if the input path is a folder. If not specified, folder mode only processes top-level videos.
 
-### [auto_caption.py](../video-editing/auto_caption.py)
+### [auto_caption.py](../video_editing/auto_caption.py)
 Transcribes audio from a video with Groq Cloud's Whisper API (via `transcribe_cloud.py`), generates a subtitles `.srt` file, and burns the captions directly into the video using `ffmpeg` with custom styling or presets (e.g. for shorts and longs).
 
 * **CLI Command**: `phantom edit caption <video_path> [arguments]`
@@ -35,7 +35,7 @@ Transcribes audio from a video with Groq Cloud's Whisper API (via `transcribe_cl
   - `--preset {shorts, longs}`: Apply a predefined set of styling options.
   - `-R`, `--recursive`: Recursively process videos if the input path is a directory.
 
-### [downscale.py](../video-editing/downscale.py)
+### [downscale.py](../video_editing/downscale.py)
 Downscales a video to 1080p resolution using FFmpeg with bicubic scaling.
 
 * **CLI Command**: `phantom edit downscale <video_path> [arguments]`
@@ -45,7 +45,7 @@ Downscales a video to 1080p resolution using FFmpeg with bicubic scaling.
 * **Key Features**:
   - Uses FFmpeg's `scale=1920:1080:flags=bicubic` filter along with `libx264` (`-preset veryfast`, `-crf 20`) and copies audio without re-encoding (`-c:a copy`).
 
-### [transcribe_cloud.py](../video-editing/transcribe_cloud.py)
+### [transcribe_cloud.py](../video_editing/transcribe_cloud.py)
 Transcribes audio from a video using Groq Cloud's Whisper API and outputs a standardized subtitle `.srt` file.
 
 * **CLI Command**: `phantom edit transcribe-cloud <video_path> [arguments]`
@@ -60,7 +60,7 @@ Transcribes audio from a video using Groq Cloud's Whisper API and outputs a stan
   - Runs transcription in the cloud for near-instant speeds compared to local execution.
   - Processes word-level timestamps returned from Groq's top-level `"words"` response array and always saves a companion 1-word-per-timestamp subtitle file named `{output_file}-1word.srt` in the same directory.
 
-### [trim_silences.py](../video-editing/trim_silences.py)
+### [trim_silences.py](../video_editing/trim_silences.py)
 Trims silences from a video using Silero VAD (Voice Activity Detection) via `faster_whisper.vad` to detect speech.
 
 * **CLI Command**: `phantom edit trim-silences <video_path> [arguments]`
@@ -89,7 +89,7 @@ Generates YouTube chapters and video topics with start timestamps from a phrase-
   - Ensures the first chapter starts at `00:00` for YouTube chapter compatibility.
   - Updates the `"timestamps"` array directly in the project's existing `metadata.json`.
 
-### [utils.py](../video-editing/utils.py)
+### [utils.py](../video_editing/utils.py)
 A shared utility module containing helper functions for subtitle/SRT parsing, timestamp formatting, slug generation, and Google Docs retrieval:
 
 - `parse_srt(srt_path)`: Parses an SRT subtitle file into a list of `(start_seconds, end_seconds, text)` tuples.

@@ -4,25 +4,25 @@ This directory contains utility scripts for extracting, cleaning, and normalizin
 
 ## Scripts
 
-### [extract_wav_from_mp4.sh](../audio-processing/extract_wav_from_mp4.sh)
+### [extract_wav_from_mp4.sh](../audio_processing/extract_wav_from_mp4.sh)
 Extracts audio from an MP4 video file to a 16-bit, 48 kHz stereo WAV file using FFmpeg.
 
 * **Usage**: `./extract_wav_from_mp4.sh <input.mp4> [--output-file <output.wav>]`
 * **Default Output**: `<input_name>.wav`
 
-### [noise_reduction.sh](../audio-processing/noise_reduction.sh)
+### [noise_reduction.sh](../audio_processing/noise_reduction.sh)
 Applies noise reduction to a WAV file using `deep-filter`.
 
 * **Usage**: `./noise_reduction.sh <input.wav> [--output-file <output.wav> | -o <output.wav>] [-h | --help]`
 * **Default Output**: `<input_name>_filtered.wav`
 
-### [normalize_audio.sh](../audio-processing/normalize_audio.sh)
+### [normalize_audio.sh](../audio_processing/normalize_audio.sh)
 Normalizes audio loudness to standard targets using FFmpeg's `loudnorm` filter (integrated: -16 LUFS, true peak: -1.5 dBTP, LRA: 11).
 
 * **Usage**: `./normalize_audio.sh <input.wav> [--output-file <output.wav> | -o <output.wav>] [-h | --help]`
 * **Default Output**: `<input_name>_normalized.wav`
 
-### [process_audio.sh](../audio-processing/process_audio.sh)
+### [process_audio.sh](../audio_processing/process_audio.sh)
 Runs the entire audio processing pipeline (extraction, noise filtering, normalization, and track replacement) for video projects.
 
 * **CLI Command**: `phantom edit process-audio [-R|--recursive] <path>`

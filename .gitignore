@@ -42,3 +42,8 @@ Kokoro-82M
 temp_*
 site/
 reddit/example_analysis_output.txt
+.herenow
+
+# Generated reports
+performance_report.html
+review/reports/

@@ -3,20 +3,15 @@ import asyncio
 import os
 import sys
 import tempfile
-from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-# Setup import path for sibling modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from substack.post_note import post_substack_note, get_cdp_browser_context, get_clean_page
-
-PROFILE_DIR = Path.home() / "Desktop" / "browser-profiles" / "p9222"
-CDP_PORT = 9222
+from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
+from substack.post_note import post_substack_note
 
 async def _run_post_tweet(content: str, use_image: bool = False):
     async with async_playwright() as p:
-        # Attach to (or launch) a headful Chrome on the p9222 profile via CDP.
+        # Attach to (or launch) a headful Chrome on the shared profile via CDP.
         # Chrome is left running afterwards; only our tab is closed.
         context = await get_cdp_browser_context(p, profile_path=PROFILE_DIR, port=CDP_PORT, headless=False)
         page = await get_clean_page(context)
@@ -99,7 +94,7 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {{
             if temp_image_path and os.path.exists(temp_image_path):
                 try:
                     os.remove(temp_image_path)
-                except Exception:
+                except OSError:
                     pass
 
 async def post_tweet(content: str, use_image: bool = False, substack: bool = False):

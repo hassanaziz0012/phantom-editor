@@ -23,27 +23,13 @@ import time
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-# Ensure repository root is in sys.path
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
-
-try:
-    import metadata.utils as utils
-    from metadata.auto_gen_desc import generate_description_for_project
-    from metadata.auto_gen_tweet import generate_tweet_for_project
-    from metadata.recommendations.recommend import recommend_videos_for_project
-    from metadata.generate_timestamps import generate_timestamps_for_project
-    from metadata.generate_titles import generate_titles_for_project
-    from metadata.check_resource_links import blank_resources, check_resource_links_for_project
-except ImportError:
-    import utils  # noqa: E402
-    from auto_gen_desc import generate_description_for_project  # noqa: E402
-    from auto_gen_tweet import generate_tweet_for_project  # noqa: E402
-    from recommendations.recommend import recommend_videos_for_project  # noqa: E402
-    from generate_timestamps import generate_timestamps_for_project  # noqa: E402
-    from generate_titles import generate_titles_for_project  # noqa: E402
-    from check_resource_links import blank_resources, check_resource_links_for_project  # noqa: E402
+import metadata.utils as utils
+from metadata.auto_gen_desc import generate_description_for_project
+from metadata.auto_gen_tweet import generate_tweet_for_project
+from metadata.recommendations.recommend import recommend_videos_for_project
+from metadata.generate_timestamps import generate_timestamps_for_project
+from metadata.generate_titles import generate_titles_for_project
+from metadata.check_resource_links import blank_resources, check_resource_links_for_project
 
 
 T = TypeVar("T")
@@ -119,13 +105,9 @@ def auto_create_metadata(
     project_dir, metadata_path, captions_path, default_title = utils.resolve_project_paths(target)
 
     # Load existing metadata if present
-    metadata: dict[str, Any] = {}
+    metadata = utils.load_metadata_json(metadata_path)
     if metadata_path.is_file():
-        try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            print(f"🔄 Updating existing metadata at: {metadata_path}")
-        except Exception:
-            metadata = {}
+        print(f"🔄 Updating existing metadata at: {metadata_path}")
     else:
         print(f"✨ Creating new metadata at: {metadata_path}")
 

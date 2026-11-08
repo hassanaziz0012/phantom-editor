@@ -12,8 +12,8 @@ import sys
 from datetime import UTC, datetime
 from typing import Optional
 
-from dotenv import load_dotenv
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from youtube_api.video_id import extract_video_id  # noqa: F401  (re-exported for existing callers)
 
@@ -25,7 +25,6 @@ def get_youtube_client(api_key: Optional[str] = None):
     Authenticate and return an active Google API YouTube Client resource.
     Automatically reads YOUTUBE_API_KEY from environment variables if not provided.
     """
-    load_dotenv()
     key = api_key or os.getenv("YOUTUBE_API_KEY")
     if not key:
         raise EnvironmentError(
@@ -68,7 +67,7 @@ def resolve_channel_id(youtube, channel_input: str) -> str:
             items = response.get("items", [])
             if items:
                 return items[0]["id"]
-        except Exception:
+        except HttpError:
             pass  # Fallback to search API if forHandle fails or is unsupported
 
     # 4. User URL containing /user/...
@@ -83,8 +82,8 @@ def resolve_channel_id(youtube, channel_input: str) -> str:
             items = response.get("items", [])
             if items:
                 return items[0]["id"]
-        except Exception:
-            pass
+        except HttpError:
+            pass  # Fall back to the search API below
 
     # 5. Robust Fallback: Search API to locate the channel reliably
     # Clean up input string for query if it's a full URL
@@ -130,7 +129,7 @@ def supports_color() -> bool:
     return True
 
 
-# ── Heuristic Heuristic / Similarity Scoring Functions ─────────────────────────
+# ── Heuristic / Similarity Scoring Functions ─────────────────────────
 
 def parse_iso8601_duration(value: Optional[str]) -> Optional[int]:
     """Parse an ISO 8601 duration string (e.g. PT4M13S) to total seconds."""

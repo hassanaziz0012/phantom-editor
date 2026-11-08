@@ -6,18 +6,16 @@ Scrapes post titles and canonical URLs from any Skool community page
 to a persistent native Google Chrome instance via CDP.
 
 Usage:
-    uv run python skool/scrape_community.py "https://www.skool.com/maker-zero"
-    uv run python skool/scrape_community.py "https://www.skool.com/maker-zero" --limit 50
-    uv run python skool/scrape_community.py "https://www.skool.com/maker-zero" --json
-    uv run python skool/scrape_community.py "https://www.skool.com/maker-zero" --output posts.json
+    phantom research skool community "https://www.skool.com/maker-zero"
+    phantom research skool community "https://www.skool.com/maker-zero" --limit 50
+    phantom research skool community "https://www.skool.com/maker-zero" --json
+    phantom research skool community "https://www.skool.com/maker-zero" --output posts.json
 """
 
 import argparse
 import asyncio
 import json
-import os
 import re
-import sys
 from pathlib import Path
 from typing import List, Optional, Set
 from urllib.parse import urljoin, urlparse
@@ -26,9 +24,6 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError, a
 from pydantic import BaseModel, Field
 
 # Ensure repo root is in python path
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 

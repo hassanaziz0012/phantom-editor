@@ -5,13 +5,12 @@ Moves specific files to YT Archive and optionally deletes remaining files.
 """
 
 import argparse
-import os
 import shutil
 import sys
 from pathlib import Path
 
+from shared.paths import YT_PROJECTS_DIR
 
-YT_PROJECTS_DIR = Path.home() / "Videos" / "YT Projects"
 YT_ARCHIVE_DIR = Path.home() / "Videos" / "YT Archive"
 
 FILES_TO_ARCHIVE = [

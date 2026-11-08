@@ -23,16 +23,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-from dotenv import load_dotenv
 
-# Add project root to sys.path
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from shared.paths import REPO_ROOT
 
-# Load environment variables
-load_dotenv(REPO_ROOT / ".env")
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,

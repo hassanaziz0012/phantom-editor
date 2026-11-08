@@ -17,22 +17,16 @@ Usage:
 import argparse
 import asyncio
 import sys
-from pathlib import Path
 
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
-# Add project root to sys.path to allow package imports
-root_dir = str(Path(__file__).resolve().parent.parent)
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
 
-from browser.cdp import CDP_PORT, get_cdp_browser_context, get_clean_page
+from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 from youtube_api.utils import extract_video_id
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 # The Chrome profile on port 9222 that's logged into the channel; only used if Chrome isn't running yet
-PROFILE_DIR      = Path.home() / "Desktop" / "browser-profiles" / "p9222"
 EDITOR_URL       = "https://studio.youtube.com/video/{video_id}/editor"
 DEFAULT_TEMPLATE = "Import from latest video"
 LOAD_TIMEOUT_MS  = 30000

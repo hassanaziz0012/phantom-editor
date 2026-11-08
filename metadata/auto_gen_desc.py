@@ -13,17 +13,9 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
-# Ensure repository root is in sys.path
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
 
-try:
-    import metadata.utils as utils
-except ImportError:
-    import utils  # noqa: E402
+import metadata.utils as utils
 
 
 def generate_description_for_project(
@@ -57,12 +49,7 @@ def generate_description_for_project(
         raise ValueError(f"Could not extract description from Claude response:\n{raw_response}")
 
     # Load and update metadata.json
-    metadata: dict[str, Any] = {}
-    if save_meta_path.is_file():
-        try:
-            metadata = json.loads(save_meta_path.read_text(encoding="utf-8"))
-        except Exception:
-            metadata = {}
+    metadata = utils.load_metadata_json(save_meta_path)
 
     metadata["description"] = description
     save_meta_path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 YouTube Video Uploader
-Usage: python upload_video.py /path/to/video.mp4
+Usage: phantom publish yt /path/to/video.mp4
 Expects metadata.json and thumbnail.png (optional) in the same folder as the video.
 """
 
@@ -12,10 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any, Optional, Union
 
-# Add project root to sys.path to import global config
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.append(str(repo_root))
+from shared.commands import python_module
 import config
 from metadata.read_metadata import read_metadata, VideoMetadata
 from metadata.check_resource_links import blank_resources
@@ -43,8 +40,6 @@ TOKEN_FILE = Path(__file__).parent / "tokens/token.json"
 YOUTUBE_API_SERVICE = "youtube"
 YOUTUBE_API_VERSION = "v3"
 CHUNK_SIZE = 25 * 1024 * 1024  # 25 MB — balances throughput with progress granularity
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -476,26 +471,23 @@ def main():
         # Send email broadcast
         title = metadata.get("title", video_path.stem)
         description = metadata.get("description", "")
-        resend_script = repo_root / "emails" / "resend_broadcast.py"
 
         print(f"\n📧 Sending email broadcast for '{title}'...")
         subprocess.run(
-            [
-                sys.executable,
-                str(resend_script),
+            python_module(
+                "emails.resend_broadcast",
                 "--title",
                 title,
                 "--description",
                 description,
                 "--url",
                 share_url,
-            ],
+            ),
             check=True,
         )
         print("✅ Email broadcast sent!")
 
     print("\n🎉 All done!")
-
 
 
 if __name__ == "__main__":

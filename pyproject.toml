@@ -1,7 +1,7 @@
 [project]
-name = "editing-scripts"
+name = "phantom-editor"
 version = "0.1.0"
-description = "Add your description here"
+description = "The phantom CLI: tools for making, publishing and tracking YouTube videos"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -44,3 +44,19 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 
+
+# The repo is installed into the venv in editable mode, so every top-level folder below is an
+# importable package (`python -m projects.current_pipeline`) without touching sys.path.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "agentic", "broll_templates", "browser", "content", "devto", "emails", "hashnode", "ideas",
+    "linkedin", "metadata", "projects", "reddit", "review", "shared", "skool", "substack",
+    "twitter", "video_editing", "youtube_api",
+]

@@ -9,11 +9,8 @@ import argparse
 import re
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from dotenv import load_dotenv
 import resend
 
-# Load environment variables from .env if present
-load_dotenv()
 
 # ANSI escape codes for output styling
 GREEN = "\033[92m"

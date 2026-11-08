@@ -16,15 +16,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Ensure repository root is in sys.path
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
+from shared.commands import python_module
 
-try:
-    import metadata.utils as utils
-except ImportError:
-    import utils  # noqa: E402
+import metadata.utils as utils
 
 
 def format_timestamps(data: Any) -> list[dict[str, str]]:
@@ -77,17 +71,13 @@ def generate_timestamps_for_project(
                 raise FileNotFoundError(f"Neither 'trimmed.srt' nor 'final.mp4' found in {project_dir}")
 
             print(f"⚡ Transcribing final.mp4 to generate trimmed.srt...")
-            transcribe_script = repo_root / "video-editing" / "transcribe_cloud.py"
-            subprocess.run([sys.executable, str(transcribe_script), str(final_mp4), "--output", str(captions_path)], check=True)
+            subprocess.run(
+                python_module("video_editing.transcribe_cloud", str(final_mp4), "--output", str(captions_path)),
+                check=True,
+            )
 
     # Determine title
-    title = ""
-    if save_meta_path.is_file():
-        try:
-            data = json.loads(save_meta_path.read_text(encoding="utf-8"))
-            title = data.get("title", "")
-        except Exception:
-            pass
+    title = utils.load_metadata_json(save_meta_path).get("title", "")
 
     if not title:
         title = project_dir.name.replace("-", " ").replace("_", " ").title()
@@ -103,12 +93,7 @@ def generate_timestamps_for_project(
     timestamps = format_timestamps(parsed_json)
 
     # Load and update metadata.json
-    metadata: dict[str, Any] = {}
-    if save_meta_path.is_file():
-        try:
-            metadata = json.loads(save_meta_path.read_text(encoding="utf-8"))
-        except Exception:
-            metadata = {}
+    metadata = utils.load_metadata_json(save_meta_path)
 
     metadata["timestamps"] = timestamps
     save_meta_path.parent.mkdir(parents=True, exist_ok=True)
