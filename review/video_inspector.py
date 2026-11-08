@@ -16,7 +16,7 @@ def compute_aspect_ratio(width: int, height: int) -> str:
     gcd = math.gcd(width, height)
     return f"{width // gcd}:{height // gcd}"
 
-def get_video_metadata(video_path: str) -> dict:
+def probe_video_stream(video_path: str) -> dict:
     """Uses ffprobe to gather resolution, aspect ratio, frame rate, and duration."""
     cmd = [
         'ffprobe', '-v', 'error',
@@ -368,7 +368,7 @@ def main():
 
     # Get metadata
     print(colorize("Analyzing video structure...", Colors.BOLD + Colors.BLUE))
-    meta = get_video_metadata(args.video_path)
+    meta = probe_video_stream(args.video_path)
     
     # Store total duration for progress parsing
     args.total_duration = meta.get('duration', 0.0)

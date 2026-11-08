@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pipeline.common import to_float
 from pipeline.cuts import format_cut
+from shared.timecodes import format_timestamp
 
 # Audio-review confidence below which a flag is called out as borderline.
 BORDERLINE_CONFIDENCE = 0.25
@@ -81,15 +82,6 @@ class RunSummary:
 
     def ordered_steps(self) -> list[StepRecord]:
         return [self.steps[i] for i in sorted(self.steps)]
-
-
-def format_timestamp(seconds: float) -> str:
-    """Format seconds as mm:ss, or hh:mm:ss from one hour up."""
-    hours, remainder = divmod(int(round(max(0.0, seconds))), 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours:
-        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-    return f"{minutes:02d}:{secs:02d}"
 
 
 def format_duration(seconds: float) -> str:

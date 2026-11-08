@@ -61,38 +61,6 @@ class VideoSummaryResponse(BaseModel):
     )
 
 
-def get_video_metadata(video_url: str) -> Dict[str, Any]:
-    """Fetches video metadata (title, channel_id, channel_title) using yt-dlp --dump-json."""
-    cmd = [
-        "yt-dlp",
-        "--no-playlist",
-        "--dump-json",
-        "--skip-download",
-        video_url,
-    ]
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        data = json.loads(res.stdout)
-        return {
-            "title": data.get("title", ""),
-            "channel_id": data.get("channel_id") or data.get("uploader_id") or "unknown_channel",
-            "channel_title": data.get("channel") or data.get("uploader") or "",
-            "description": data.get("description") or "",
-            "duration": data.get("duration"),
-            "view_count": data.get("view_count", 0),
-        }
-    except Exception as e:
-        logger.warning("Could not fetch metadata via yt-dlp: %s", e)
-        return {
-            "title": "",
-            "channel_id": "unknown_channel",
-            "channel_title": "",
-            "description": "",
-            "duration": None,
-            "view_count": 0,
-        }
-
-
 def download_youtube_audio(video_url: str, output_dir: Path) -> Tuple[Path, Dict[str, Any]]:
     """
     Downloads the audio track of a YouTube video into output_dir using yt-dlp.

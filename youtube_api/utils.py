@@ -15,14 +15,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 
-# Text processing configuration
-TOKEN_RE = re.compile(r"[a-z0-9]+")
-STOP_WORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from",
-    "how", "i", "if", "in", "into", "is", "it", "my", "of", "on", "or",
-    "our", "out", "so", "that", "the", "this", "to", "up", "video", "vs",
-    "we", "with", "you", "your",
-}
+from youtube_api.video_id import extract_video_id  # noqa: F401  (re-exported for existing callers)
 
 
 # ── Credential & Client Initialization ──────────────────────────────────────────
@@ -110,23 +103,20 @@ def resolve_channel_id(youtube, channel_input: str) -> str:
     raise ValueError(f"Could not resolve YouTube channel ID for input: {channel_input!r}")
 
 
-# ── Video ID Extraction ─────────────────────────────────────────────────────────
+# ── Duration Formatting ─────────────────────────────────────────────────────────
 
-def extract_video_id(input_str: str) -> str:
-    """
-    Extract the 11-character YouTube video ID from a raw ID or any common URL format
-    (watch?v=, youtu.be/, shorts/, embed/, v/, live/, studio.youtube.com/video/).
-    """
-    input_str = input_str.strip()
+def format_duration(seconds: Optional[float], missing: str = "?") -> str:
+    """Clock-style duration: M:SS, or H:MM:SS from one hour up; ``missing`` for None."""
+    if seconds is None:
+        return missing
+    hours, rem = divmod(round(seconds), 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{hours}:{minutes:02}:{secs:02}" if hours else f"{minutes}:{secs:02}"
 
-    if re.fullmatch(r"[a-zA-Z0-9_-]{11}", input_str):
-        return input_str
 
-    match = re.search(r"(?:v=|/v/|/video/|embed/|shorts/|live/|youtu\.be/|/e/)([a-zA-Z0-9_-]{11})", input_str)
-    if match:
-        return match.group(1)
-
-    raise ValueError(f"Could not extract a valid YouTube video ID from: '{input_str}'")
+def format_duration_ms(milliseconds: Optional[int], missing: str = "?") -> str:
+    """format_duration for a duration in milliseconds (as YouTube Analytics reports them)."""
+    return format_duration(milliseconds / 1000 if milliseconds is not None else None, missing)
 
 
 # ── Terminal Display Utilities ──────────────────────────────────────────────────
@@ -138,34 +128,6 @@ def supports_color() -> bool:
     if os.name == 'nt':
         return 'ANSICON' in os.environ or os.environ.get('TERM') == 'xterm'
     return True
-
-
-# ── Text Tokenization & Jaccard Overlaps ────────────────────────────────────────
-
-def tokenize(text: str) -> set[str]:
-    """Tokenize a string into a set of meaningful, lowercased alphanumeric words."""
-    return {
-        token
-        for token in TOKEN_RE.findall(text.lower())
-        if token not in STOP_WORDS and len(token) > 1
-    }
-
-
-def normalize_tags(tags: list[str]) -> set[str]:
-    """Combine and tokenize a list of video tags."""
-    combined = " ".join(tags)
-    return tokenize(combined)
-
-
-def overlap_score(left: set[str], right: set[str]) -> float:
-    """Calculate the Jaccard similarity coefficient between two token sets."""
-    if not left or not right:
-        return 0.0
-    intersection = len(left & right)
-    if intersection == 0:
-        return 0.0
-    union = len(left | right)
-    return intersection / union
 
 
 # ── Heuristic Heuristic / Similarity Scoring Functions ─────────────────────────

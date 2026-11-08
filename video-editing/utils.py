@@ -10,6 +10,14 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Callable
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+# Re-exported: the video-editing and broll scripts import these from utils
+from shared.srt import parse_srt, parse_srt_to_text, parse_srt_to_timestamped_transcript  # noqa: E402, F401
+from shared.timecodes import parse_timestamp  # noqa: E402, F401
+
 # Terminal ANSI Color Constants
 COLOR_GREEN = "\033[92m"
 COLOR_RED = "\033[91m"
@@ -165,100 +173,6 @@ def format_srt_time(seconds: float) -> str:
                 minutes = 0
                 hours += 1
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
-
-
-def parse_timestamp(val: str) -> float:
-    """Parses float seconds or HH:MM:SS,mmm formatted timestamps into float seconds."""
-    val = val.strip()
-    if not val:
-        return 0.0
-    try:
-        return float(val)
-    except ValueError:
-        pass
-    
-    val = val.replace(',', '.')
-    parts = val.split(':')
-    if len(parts) == 3:
-        # HH:MM:SS.mmm
-        h = int(parts[0])
-        m = int(parts[1])
-        s = float(parts[2])
-        return h * 3600 + m * 60 + s
-    elif len(parts) == 2:
-        # MM:SS.mmm
-        m = int(parts[0])
-        s = float(parts[1])
-        return m * 60 + s
-    else:
-        raise ValueError(f"Invalid timestamp format: '{val}'. Expected float seconds or HH:MM:SS,mmm")
-
-
-def parse_srt(srt_path: str | Path) -> list[tuple[float, float, str]]:
-    """
-    Parses an SRT subtitle file into a list of (start_seconds, end_seconds, text) tuples.
-    """
-    path = Path(srt_path).resolve()
-    if not path.exists():
-        raise FileNotFoundError(f"SRT captions file not found: {path}")
-
-    content = path.read_text(encoding="utf-8", errors="replace")
-    content = content.replace("\r\n", "\n").strip()
-    blocks = re.split(r"\n\s*\n", content)
-
-    timestamp_pattern = re.compile(
-        r"(\d{1,2}:\d{2}:\d{2}(?:[,\.]\d{1,3})?)\s*-->\s*(\d{1,2}:\d{2}:\d{2}(?:[,\.]\d{1,3})?)"
-    )
-
-    captions: list[tuple[float, float, str]] = []
-    for block in blocks:
-        lines = block.strip().split("\n")
-        if len(lines) < 2:
-            continue
-
-        time_line = lines[1] if len(lines) >= 2 and ("-->" in lines[1]) else lines[0]
-        match = timestamp_pattern.search(time_line)
-        if not match:
-            continue
-
-        start_t = parse_timestamp(match.group(1))
-        end_t = parse_timestamp(match.group(2))
-
-        time_line_idx = lines.index(time_line)
-        raw_text = " ".join(lines[time_line_idx + 1 :]).strip()
-        cleaned_text = re.sub(r"<[^>]+>", "", raw_text).strip()
-        if cleaned_text:
-            captions.append((start_t, end_t, cleaned_text))
-
-    return captions
-
-
-def parse_srt_to_text(srt_path: str | Path) -> str:
-    """
-    Parses an SRT subtitle file into clean continuous plain text.
-    """
-    captions = parse_srt(srt_path)
-    full_text = " ".join(text for _, _, text in captions)
-    return re.sub(r"\s+", " ", full_text).strip()
-
-
-def parse_srt_to_timestamped_transcript(srt_path: str | Path) -> str:
-    """
-    Parses an SRT subtitle file into a formatted transcript with [MM:SS] or [HH:MM:SS] cues.
-    """
-    captions = parse_srt(srt_path)
-    if not captions:
-        raise ValueError(f"No subtitle segments could be extracted from: {srt_path}")
-
-    lines = []
-    for start_t, _, text in captions:
-        h = int(start_t // 3600)
-        m = int((start_t % 3600) // 60)
-        s = int(start_t % 60)
-        ts = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
-        lines.append(f"[{ts}] {text}")
-
-    return "\n".join(lines)
 
 
 def slugify(text: str) -> str:

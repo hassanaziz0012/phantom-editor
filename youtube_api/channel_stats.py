@@ -35,7 +35,7 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 from youtube_api import studio_analytics
-from youtube_api.utils import supports_color
+from youtube_api.utils import format_duration_ms, supports_color
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -132,13 +132,6 @@ RED   = _c("\033[91m")
 RESET = _c("\033[0m")
 
 
-def _format_duration(milliseconds: Optional[int]) -> str:
-    if milliseconds is None:
-        return "-"
-    minutes, seconds = divmod(round(milliseconds / 1000), 60)
-    return f"{minutes}:{seconds:02}"
-
-
 def _format_number(value) -> str:
     return f"{value:,}" if value is not None else "-"
 
@@ -153,7 +146,7 @@ def print_stats(stats: dict) -> None:
     row("Impressions", _format_number(stats.get("impressions")))
     row("CTR", f"{BOLD}{stats['ctr']:.2f}%{RESET}" if stats.get("ctr") is not None else "-")
     row("Views", _format_number(stats.get("views")))
-    row("Avg view", f"{BOLD}{_format_duration(stats.get('avg_view_duration_ms'))}{RESET}")
+    row("Avg view", f"{BOLD}{format_duration_ms(stats.get('avg_view_duration_ms'), missing='-')}{RESET}")
     watch_time = stats.get("watch_time_ms")
     row("Watch time", f"{watch_time / 3_600_000:,.1f}h" if watch_time is not None else "-")
     row("Subscribers", f"+{stats.get('subscribers_gained') or 0:,} / -{stats.get('subscribers_lost') or 0:,}")
@@ -168,7 +161,7 @@ def print_history(history: list[dict]) -> None:
         ctr = f"{s['ctr']:.2f}%" if s.get("ctr") is not None else "-"
         print(
             f"  {s['date']:<12}{_format_number(s.get('impressions')):>12}{ctr:>8}"
-            f"{_format_number(s.get('views')):>8}{_format_duration(s.get('avg_view_duration_ms')):>10}"
+            f"{_format_number(s.get('views')):>8}{format_duration_ms(s.get('avg_view_duration_ms'), missing='-'):>10}"
         )
     print(f"  {DIM}Each row is the 28 days up to that date.{RESET}")
     print()

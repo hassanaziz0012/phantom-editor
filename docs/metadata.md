@@ -118,8 +118,8 @@ Orchestrates YouTube channel video summarization and vector embedding generation
 
 ### [utils.py](../metadata/utils.py)
 Shared helper module containing:
-- `query_claude(prompt_text)`: Invokes `browserllm -p <file> --provider claude -o <file>` (add `--output-json` via `output_json=True` for JSON prompts).
-- `parse_claude_json(response_text)`: Parses JSON arrays or objects from Claude's response (handles code fences and plain text).
+- `ask_browserllm(prompt_text, provider="claude")`: Invokes `browserllm -p <file> --provider claude -o <file>` (add `--output-json` via `output_json=True` for JSON prompts).
+- `parse_json_response(response_text)`: Parses JSON arrays or objects from the response (handles code fences and plain text).
 - `load_prompt(prompt_name, **kwargs)`: Loads prompts from `agentic/prompts/` and auto-injects deslopifier guidelines.
 - `resolve_project_paths(target)`: Intelligently resolves project directory, `metadata.json`, captions `.srt`, and title.
 - `parse_srt_to_timestamped_transcript(srt_path)`: Converts phrase-level `.srt` into formatted transcript lines (`[MM:SS] text`).

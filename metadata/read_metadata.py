@@ -26,12 +26,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 # Ensure repository root is in sys.path
 repo_root = Path(__file__).resolve().parent.parent
@@ -40,40 +38,6 @@ if str(repo_root) not in sys.path:
 
 if TYPE_CHECKING:
     from youtube_api.models import VideoSeed
-
-
-# ---------------------------------------------------------------------------
-# Helpers for terminal highlighting
-# ---------------------------------------------------------------------------
-
-def _highlight_json(json_str: str) -> str:
-    """Highlights JSON string with ANSI color codes, using pygments if available."""
-    if not sys.stdout.isatty():
-        return json_str
-
-    try:
-        from pygments import highlight
-        from pygments.formatters import TerminalFormatter
-        from pygments.lexers import JsonLexer
-        return highlight(json_str, JsonLexer(), TerminalFormatter()).rstrip()
-    except ImportError:
-        pass
-
-    pattern = r'("(?:\\.|[^"\\])*")(\s*:)?|(\btrue\b|\bfalse\b|\bnull\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
-
-    def colorize(match):
-        string_val, colon, bool_val, num_val = match.groups()
-        if string_val is not None:
-            if colon:
-                return f"\033[1;36m{string_val}\033[0m{colon}"
-            return f"\033[32m{string_val}\033[0m"
-        if bool_val is not None:
-            return f"\033[1;35m{bool_val}\033[0m"
-        if num_val is not None:
-            return f"\033[33m{num_val}\033[0m"
-        return match.group(0)
-
-    return re.sub(pattern, colorize, json_str)
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +89,60 @@ def find_metadata_file(target: Optional[Union[str, Path]] = None) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Field table
+# ---------------------------------------------------------------------------
+
+def _optional_str(value: Any) -> Optional[str]:
+    return (str(value).strip() or None) if value is not None else None
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "y")
+    return bool(value)
+
+
+def _as_tags(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [t.strip() for t in value.split(",") if t.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(t).strip() for t in value if str(t).strip()]
+    return []
+
+
+def _as_list(value: Any) -> list[Any]:
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return [value] if value else []
+
+
+# metadata.json key (camelCase) -> (VideoMetadata field, how a value is coerced)
+FIELDS: dict[str, tuple[str, Callable[[Any], Any]]] = {
+    "title": ("title", str),
+    "description": ("description", str),
+    "tags": ("tags", _as_tags),
+    "categoryId": ("category_id", str),
+    "privacyStatus": ("privacy_status", str),
+    "madeForKids": ("made_for_kids", _as_bool),
+    "tweetTemplate": ("tweet_template", str),
+    "timestamps": ("timestamps", _as_list),
+    "recommendations": ("recommendations", _as_list),
+    "url": ("url", _optional_str),
+    "publishDate": ("publish_date", _optional_str),
+    "uploadedDate": ("uploaded_date", _optional_str),
+}
+
+# Every key the model reads, camelCase or snake_case, -> its field and coercion
+KEY_TO_FIELD: dict[str, tuple[str, Callable[[Any], Any]]] = {
+    **FIELDS,
+    **{field_name: (field_name, coerce) for field_name, coerce in FIELDS.values()},
+}
+
+# Keys to_dict() always writes; the rest only when they have a value
+ALWAYS_WRITTEN = ("title", "description", "tags", "categoryId", "privacyStatus", "madeForKids", "tweetTemplate")
+
+
+# ---------------------------------------------------------------------------
 # VideoMetadata Model
 # ---------------------------------------------------------------------------
 
@@ -150,118 +168,27 @@ class VideoMetadata:
     file_path: Optional[Path] = None
     raw_data: dict[str, Any] = field(default_factory=dict)
 
-    # ── CamelCase Property Aliases for Compatibility ───────────────────────────
-
-    @property
-    def publishDate(self) -> Optional[str]:
-        return self.publish_date
-
-    @publishDate.setter
-    def publishDate(self, value: Optional[str]) -> None:
-        self.publish_date = str(value) if value is not None else None
-
-    @property
-    def uploadedDate(self) -> Optional[str]:
-        return self.uploaded_date
-
-    @uploadedDate.setter
-    def uploadedDate(self, value: Optional[str]) -> None:
-        self.uploaded_date = str(value) if value is not None else None
-
-    @property
-    def categoryId(self) -> str:
-        return self.category_id
-
-    @categoryId.setter
-    def categoryId(self, value: Any) -> None:
-        self.category_id = str(value)
-
-    @property
-    def privacyStatus(self) -> str:
-        return self.privacy_status
-
-    @privacyStatus.setter
-    def privacyStatus(self, value: str) -> None:
-        self.privacy_status = value
-
-    @property
-    def madeForKids(self) -> bool:
-        return self.made_for_kids
-
-    @madeForKids.setter
-    def madeForKids(self, value: bool) -> None:
-        self.made_for_kids = bool(value)
-
-    @property
-    def tweetTemplate(self) -> str:
-        return self.tweet_template
-
-    @tweetTemplate.setter
-    def tweetTemplate(self, value: str) -> None:
-        self.tweet_template = value
-
     @property
     def video_id(self) -> Optional[str]:
         """Extract the YouTube video ID if URL is present."""
-        if not self.url:
-            return None
-        match = re.search(r"(?:v=|youtu\.be/|shorts/)([a-zA-Z0-9_-]{11})", self.url)
-        return match.group(1) if match else None
+        # Imported here: the youtube_api package imports this module
+        from youtube_api.video_id import video_id_or_none
+
+        return video_id_or_none(self.url)
 
     # ── Dict-like Access Compatibility ────────────────────────────────────────
 
     def __getitem__(self, key: str) -> Any:
-        mapping = {
-            "title": self.title,
-            "description": self.description,
-            "tags": self.tags,
-            "categoryId": self.category_id,
-            "category_id": self.category_id,
-            "privacyStatus": self.privacy_status,
-            "privacy_status": self.privacy_status,
-            "madeForKids": self.made_for_kids,
-            "made_for_kids": self.made_for_kids,
-            "tweetTemplate": self.tweet_template,
-            "tweet_template": self.tweet_template,
-            "timestamps": self.timestamps,
-            "recommendations": self.recommendations,
-            "url": self.url,
-            "publishDate": self.publish_date,
-            "publish_date": self.publish_date,
-            "uploadedDate": self.uploaded_date,
-            "uploaded_date": self.uploaded_date,
-        }
-        if key in mapping:
-            return mapping[key]
+        if key in KEY_TO_FIELD:
+            return getattr(self, KEY_TO_FIELD[key][0])
         if key in self.raw_data:
             return self.raw_data[key]
         raise KeyError(key)
 
     def __setitem__(self, key: str, value: Any) -> None:
-        if key == "title":
-            self.title = str(value)
-        elif key == "description":
-            self.description = str(value)
-        elif key == "tags":
-            self.tags = list(value) if isinstance(value, (list, tuple, set)) else [str(value)]
-        elif key in ("categoryId", "category_id"):
-            self.category_id = str(value)
-        elif key in ("privacyStatus", "privacy_status"):
-            self.privacy_status = str(value)
-        elif key in ("madeForKids", "made_for_kids"):
-            self.made_for_kids = bool(value)
-        elif key in ("tweetTemplate", "tweet_template"):
-            self.tweet_template = str(value)
-        elif key == "timestamps":
-            self.timestamps = list(value) if isinstance(value, (list, tuple, set)) else (value if value else [])
-        elif key == "recommendations":
-            self.recommendations = list(value) if isinstance(value, list) else []
-        elif key == "url":
-            self.url = str(value) if value is not None else None
-        elif key in ("publishDate", "publish_date"):
-            self.publish_date = str(value) if value is not None else None
-        elif key in ("uploadedDate", "uploaded_date"):
-            self.uploaded_date = str(value) if value is not None else None
+        if key in KEY_TO_FIELD:
+            field_name, coerce = KEY_TO_FIELD[key]
+            setattr(self, field_name, coerce(value))
         else:
             self.raw_data[key] = value
 
@@ -273,13 +200,7 @@ class VideoMetadata:
             return default
 
     def __contains__(self, key: str) -> bool:
-        standard_keys = {
-            "title", "description", "tags", "categoryId", "category_id",
-            "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-            "tweetTemplate", "tweet_template", "timestamps", "recommendations", "url", "publishDate", "publish_date",
-            "uploadedDate", "uploaded_date"
-        }
-        return key in standard_keys or key in self.raw_data
+        return key in KEY_TO_FIELD or key in self.raw_data
 
     def keys(self) -> list[str]:
         return list(self.to_dict().keys())
@@ -294,25 +215,11 @@ class VideoMetadata:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a clean dictionary matching YouTube upload schema."""
-        out: dict[str, Any] = {
-            "title": self.title,
-            "description": self.description,
-            "tags": self.tags,
-            "categoryId": self.category_id,
-            "privacyStatus": self.privacy_status,
-            "madeForKids": self.made_for_kids,
-            "tweetTemplate": self.tweet_template,
-        }
-        if self.timestamps:
-            out["timestamps"] = self.timestamps
-        if self.recommendations:
-            out["recommendations"] = self.recommendations
-        if self.url:
-            out["url"] = self.url
-        if self.publish_date:
-            out["publishDate"] = self.publish_date
-        if self.uploaded_date:
-            out["uploadedDate"] = self.uploaded_date
+        out: dict[str, Any] = {}
+        for key, (field_name, _) in FIELDS.items():
+            value = getattr(self, field_name)
+            if key in ALWAYS_WRITTEN or value:
+                out[key] = value
 
         # Include any extra keys originally present
         for k, v in self.raw_data.items():
@@ -368,81 +275,16 @@ class VideoMetadata:
 
 def parse_metadata_dict(data: dict[str, Any], file_path: Optional[Path] = None) -> VideoMetadata:
     """Parse a dictionary (from JSON) into a structured VideoMetadata instance."""
-    title = str(data.get("title", ""))
-    description = str(data.get("description", ""))
-
-    raw_tags = data.get("tags", [])
-    if isinstance(raw_tags, str):
-        tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
-    elif isinstance(raw_tags, (list, tuple, set)):
-        tags = [str(t).strip() for t in raw_tags if str(t).strip()]
-    else:
-        tags = []
-
-    category_id = str(data.get("categoryId") or data.get("category_id") or "28")
-    privacy_status = str(data.get("privacyStatus") or data.get("privacy_status") or "public")
-
-    made_for_kids_val = data.get("madeForKids") if "madeForKids" in data else data.get("made_for_kids", False)
-    if isinstance(made_for_kids_val, str):
-        made_for_kids = made_for_kids_val.strip().lower() in ("true", "1", "yes", "y")
-    else:
-        made_for_kids = bool(made_for_kids_val)
-
-    tweet_template = str(
-        data.get("tweetTemplate") or data.get("tweet_template") or "🎬 New video just dropped! {url}"
-    )
-    raw_timestamps = data.get("timestamps", [])
-    if isinstance(raw_timestamps, list):
-        timestamps = raw_timestamps
-    elif raw_timestamps:
-        timestamps = [raw_timestamps]
-    else:
-        timestamps = []
-
-    raw_recommendations = data.get("recommendations", [])
-    if isinstance(raw_recommendations, list):
-        recommendations = raw_recommendations
-    elif raw_recommendations:
-        recommendations = [raw_recommendations]
-    else:
-        recommendations = []
-
-    url = data.get("url")
-    if url is not None:
-        url = str(url).strip() or None
-
-    publish_date = data.get("publishDate") or data.get("publish_date")
-    if publish_date is not None:
-        publish_date = str(publish_date).strip() or None
-
-    uploaded_date = data.get("uploadedDate") or data.get("uploaded_date")
-    if uploaded_date is not None:
-        uploaded_date = str(uploaded_date).strip() or None
-
-    standard_keys = {
-        "title", "description", "tags", "categoryId", "category_id",
-        "privacyStatus", "privacy_status", "madeForKids", "made_for_kids",
-        "tweetTemplate", "tweet_template", "timestamps", "recommendations", "url", "publishDate", "publish_date",
-        "uploadedDate", "uploaded_date"
-    }
-    raw_data = {k: v for k, v in data.items() if k not in standard_keys}
-
-    return VideoMetadata(
-        title=title,
-        description=description,
-        tags=tags,
-        category_id=category_id,
-        privacy_status=privacy_status,
-        made_for_kids=made_for_kids,
-        tweet_template=tweet_template,
-        timestamps=timestamps,
-        recommendations=recommendations,
-        url=url,
-        publish_date=publish_date,
-        uploaded_date=uploaded_date,
+    metadata = VideoMetadata(
         file_path=file_path,
-        raw_data=raw_data,
+        raw_data={k: v for k, v in data.items() if k not in KEY_TO_FIELD},
     )
+    for key, (field_name, _) in FIELDS.items():
+        value = data[key] if key in data else data.get(field_name)
+        # Missing or empty values keep the dataclass default
+        if value is not None and value != "":
+            metadata[key] = value
+    return metadata
 
 
 def read_metadata(target: Optional[Union[str, Path, dict, VideoMetadata]] = None) -> VideoMetadata:

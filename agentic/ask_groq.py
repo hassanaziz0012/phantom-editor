@@ -8,7 +8,6 @@ schema normalization.
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
@@ -16,7 +15,7 @@ from dotenv import load_dotenv
 from groq import Groq
 from pydantic import BaseModel
 
-from agentic.schema_utils import normalize_schema_for_strict_mode
+from agentic.schema_utils import build_messages, json_schema_response_format, parse_structured_response
 
 # Ensure environment variables are loaded
 load_dotenv()
@@ -59,66 +58,17 @@ def ask_groq(
             raise ValueError("GROQ_API_KEY environment variable is not set.")
         client = Groq(api_key=api_key)
 
-    is_pydantic_model = isinstance(schema, type) and issubclass(schema, BaseModel)
-
-    # Generate JSON schema
-    if is_pydantic_model:
-        raw_schema = schema.model_json_schema()
-        schema_title = raw_schema.get("title", schema_name)
-    elif isinstance(schema, dict):
-        raw_schema = schema
-        schema_title = raw_schema.get("title", schema_name)
-    else:
-        raise TypeError(
-            f"Expected schema to be a Pydantic BaseModel subclass or a dict, got {type(schema)}"
-        )
-
-    # Normalize schema if strict mode is enabled
-    target_schema = (
-        normalize_schema_for_strict_mode(raw_schema) if strict else raw_schema
-    )
-
-    # Prepare messages
-    messages: List[Dict[str, str]] = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-
-    if isinstance(user_prompt, str):
-        messages.append({"role": "user", "content": user_prompt})
-    elif isinstance(user_prompt, list):
-        messages.extend(user_prompt)
-    else:
-        raise TypeError(
-            f"Expected user_prompt to be str or list of dicts, got {type(user_prompt)}"
-        )
-
-    # Construct request payload
-    response_format = {
-        "type": "json_schema",
-        "json_schema": {
-            "name": schema_title,
-            "strict": strict,
-            "schema": target_schema,
-        },
-    }
-
     create_kwargs: Dict[str, Any] = {
         "model": model,
-        "messages": messages,
-        "response_format": response_format,
+        "messages": build_messages(system_prompt, user_prompt),
+        "response_format": json_schema_response_format(schema, schema_name, strict),
         "temperature": temperature,
     }
     if max_tokens is not None:
         create_kwargs["max_tokens"] = max_tokens
 
     response = client.chat.completions.create(**create_kwargs)
-
-    raw_content = response.choices[0].message.content or "{}"
-    parsed_json = json.loads(raw_content)
-
-    if is_pydantic_model:
-        return schema.model_validate(parsed_json)
-    return parsed_json
+    return parse_structured_response(response.choices[0].message.content or "{}", schema)
 
 
 if __name__ == "__main__":

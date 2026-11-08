@@ -12,11 +12,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # Add repository root to sys.path
 repo_root = Path(__file__).resolve().parent.parent.parent
@@ -25,7 +24,7 @@ if str(repo_root) not in sys.path:
 
 from dotenv import load_dotenv
 
-from ideas.common import Colors, export_ideas, fetch_recent_channel_titles, parse_ideas_response
+from ideas.common import Colors, export_ideas, fetch_recent_channel_titles, fetch_video_metadata, parse_ideas_response
 from youtube_api.utils import extract_video_id
 
 load_dotenv()
@@ -39,51 +38,6 @@ logging.basicConfig(
 logger = logging.getLogger("phantom.ideas.generate")
 
 PROMPT_TEMPLATE_PATH = repo_root / "agentic" / "prompts" / "generate_ideas_from_comments.md"
-
-
-# ── Fetch Video Details (Title & Description) ─────────────────────────────────
-
-def fetch_video_metadata(
-    video_id: str,
-    api_key: Optional[str] = None,
-) -> Tuple[str, str]:
-    """
-    Fetches the video title and description using the YouTube API, falling back to yt-dlp.
-    """
-    # 1. Try YouTube Data API via scrape_comments helper
-    try:
-        from ideas.comments.scrape_comments import get_youtube_service
-        youtube = get_youtube_service(api_key=api_key)
-        resp = youtube.videos().list(part="snippet", id=video_id).execute()
-        items = resp.get("items", [])
-        if items:
-            snippet = items[0].get("snippet", {})
-            title = snippet.get("title", "").strip()
-            description = snippet.get("description", "").strip()
-            if title:
-                return title, description
-    except Exception as e:
-        logger.debug("YouTube API metadata fetch failed: %s", e)
-
-    # 2. Fallback to yt-dlp
-    try:
-        cmd = [
-            "yt-dlp",
-            "--no-playlist",
-            "--dump-json",
-            "--skip-download",
-            f"https://www.youtube.com/watch?v={video_id}",
-        ]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        data = json.loads(res.stdout)
-        title = data.get("title", "").strip()
-        description = data.get("description", "").strip()
-        if title:
-            return title, description
-    except Exception as e:
-        logger.debug("yt-dlp metadata fetch failed: %s", e)
-
-    return f"YouTube Video ({video_id})", "No description available."
 
 
 # ── Scrape Comments ────────────────────────────────────────────────────────────
@@ -160,7 +114,7 @@ def build_prompt(
     return prompt
 
 
-from agentic.ask_browserllm import query_claude
+from agentic.ask_browserllm import ask_browserllm
 
 
 # ── Terminal Display ──────────────────────────────────────────────────────────
@@ -328,7 +282,8 @@ def main():
         comments_future = pool.submit(
             scrape_comments_json, video=video_id, limit=args.limit, order=args.order, api_key=args.api_key
         )
-        title, description = metadata_future.result()
+        video_meta = metadata_future.result()
+        title, description = video_meta["title"], video_meta["description"]
         recent_video_titles = titles_future.result()
     try:
         raw_comments = comments_future.result()
@@ -382,8 +337,8 @@ def main():
     if not args.json:
         print(f"{Colors.CYAN}Sending {filtered_count} comments to Claude via BrowserLLM...{Colors.RESET}")
     try:
-        claude_raw_response = query_claude(
-            prompt_text=prompt_text,
+        claude_raw_response = ask_browserllm(
+            prompt_text,
             headless=args.headless,
             profile=args.profile,
             profile_dir=args.profile_dir,

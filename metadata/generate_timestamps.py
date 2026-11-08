@@ -97,9 +97,9 @@ def generate_timestamps_for_project(
 
     print("🤖 Generating timestamps with Claude via BrowserLLM...")
     prompt = utils.load_prompt("generate_timestamps.md", title=title, transcript=transcript)
-    raw_response = utils.query_claude(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
+    raw_response = utils.ask_browserllm(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
 
-    parsed_json = utils.parse_claude_json(raw_response)
+    parsed_json = utils.parse_json_response(raw_response)
     timestamps = format_timestamps(parsed_json)
 
     # Load and update metadata.json

@@ -11,18 +11,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import re
-import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 # Ensure repository root is in sys.path
 repo_root = Path(__file__).resolve().parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
+
+from shared.terminal import edit_text, highlight_json
 
 # Enable GNU readline for interactive terminal editing (fixes arrow key escape sequences like ^[[D)
 try:
@@ -31,79 +28,13 @@ except ImportError:
     pass
 
 
-def highlight_json(json_str: str) -> str:
-    """Highlights JSON string with ANSI color codes, using pygments if available."""
-    if not sys.stdout.isatty():
-        return json_str
-
-    try:
-        from pygments import highlight
-        from pygments.lexers import JsonLexer
-        from pygments.formatters import TerminalFormatter
-        return highlight(json_str, JsonLexer(), TerminalFormatter()).rstrip()
-    except ImportError:
-        pass
-
-    pattern = r'("(?:\\.|[^"\\])*")(\s*:)?|(\btrue\b|\bfalse\b|\bnull\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
-
-    def colorize(match):
-        string_val, colon, bool_val, num_val = match.groups()
-        if string_val is not None:
-            if colon:
-                return f"\033[1;36m{string_val}\033[0m{colon}"
-            else:
-                return f"\033[32m{string_val}\033[0m"
-        elif bool_val is not None:
-            return f"\033[1;35m{bool_val}\033[0m"
-        elif num_val is not None:
-            return f"\033[33m{num_val}\033[0m"
-        return match.group(0)
-
-    return re.sub(pattern, colorize, json_str)
-
-
-def get_editor() -> str:
-    """Find available terminal/system text editor."""
-    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
-    if editor:
-        return editor
-    for candidate in ["nano", "vim", "vi", "gnome-text-editor", "code"]:
-        if shutil.which(candidate):
-            return candidate
-    return "vim"
-
-
 def open_in_editor(initial_text: str = "") -> str:
     """Opens system editor with initial_text and returns the edited content."""
-    editor = get_editor()
-
-    with tempfile.NamedTemporaryFile(suffix=".txt", mode="w+", delete=False, encoding="utf-8") as tf:
-        tf.write(initial_text)
-        temp_path = tf.name
-
     try:
-        if editor.endswith("code") or editor == "code":
-            cmd = [editor, "--wait", temp_path]
-        else:
-            cmd = f"{editor} '{temp_path}'"
-
-        print(f"\n📝 Opening text editor ({editor})... Save and close when done.")
-        res = subprocess.run(cmd if isinstance(cmd, list) else cmd, shell=isinstance(cmd, str))
-        if res.returncode == 0:
-            with open(temp_path, "r", encoding="utf-8") as f:
-                return f.read().rstrip("\n")
-        else:
-            print(f"⚠️ Editor exited with code {res.returncode}. Keeping previous description.")
-            return initial_text
+        return edit_text(initial_text).rstrip("\n")
     except Exception as e:
-        print(f"⚠️ Error launching editor ({editor}): {e}")
+        print(f"⚠️ {e}. Keeping previous description.")
         return initial_text
-    finally:
-        if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except OSError:
-                pass
 
 
 def get_description() -> str:

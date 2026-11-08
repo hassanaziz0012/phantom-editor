@@ -63,9 +63,9 @@ def generate_tweet_for_project(
 
     print("🤖 Generating promotional tweet template with Claude via BrowserLLM...")
     prompt = utils.load_prompt("generate_video_tweet.md", transcript=transcript)
-    raw_response = utils.query_claude(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
+    raw_response = utils.ask_browserllm(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
 
-    parsed = utils.parse_claude_json(raw_response)
+    parsed = utils.parse_json_response(raw_response)
     if isinstance(parsed, dict):
         tweet_text = str(parsed.get("tweet") or parsed.get("description") or parsed.get("text") or "").strip()
     elif isinstance(parsed, str):

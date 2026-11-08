@@ -10,6 +10,7 @@ from groq import Groq
 # Add the script's directory to the sys.path to guarantee importing from utils
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils import format_srt_time, get_video_info
+from shared.media import extract_audio
 
 # Limit for Groq API in bytes (25MB hard limit, using 20MB threshold for safety)
 GROQ_LIMIT_BYTES = 25 * 1024 * 1024
@@ -29,33 +30,6 @@ def is_audio_file(file_path):
     if info.has_audio and info.width == 0 and info.height == 0:
         return True
     return False
-
-def extract_audio(input_path, output_audio_path, duration=None):
-    """Extracts audio from a video or audio file into a FLAC file using ffmpeg."""
-    cmd = [
-        "ffmpeg", "-y",
-        "-threads", "0",
-        "-i", str(input_path)
-    ]
-    if duration:
-        cmd.extend(["-t", str(duration)])
-    cmd.extend([
-        "-vn",
-        "-ar", "16000",
-        "-ac", "1",
-        "-c:a", "flac",
-        str(output_audio_path)
-    ])
-    
-    print(f"Extracting audio to {output_audio_path}...")
-    try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except subprocess.CalledProcessError as e:
-        print(f"Error extracting audio: ffmpeg failed with exit code {e.returncode}")
-        raise
-    except FileNotFoundError:
-        print("Error: ffmpeg is not installed or not found in system PATH.")
-        raise
 
 def init_groq_clients():
     """Loads API keys and returns a list of initialized Groq clients."""
@@ -313,7 +287,8 @@ def transcribe_video_cloud(input_path=None, model_name="whisper-large-v3", outpu
             extracted_audio = f"temp_extracted_{temp_id}.flac"
             temp_files.append(extracted_audio)
             duration = 5 if preview else None
-            extract_audio(input_path, extracted_audio, duration=duration)
+            print(f"Extracting audio to {extracted_audio}...")
+            extract_audio(input_path, extracted_audio, sample_rate=16000, codec="flac", duration=duration)
             base_audio = extracted_audio
 
         # 2. Determine and split into audio chunks if needed

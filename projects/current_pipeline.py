@@ -36,7 +36,6 @@ import json
 import re
 import argparse
 from datetime import date, datetime, timedelta
-from urllib.parse import urlparse, parse_qs
 from pathlib import Path
 
 pipeline_dir = Path(__file__).resolve().parent
@@ -50,15 +49,17 @@ if str(video_editing_dir) not in sys.path:
     sys.path.append(str(video_editing_dir))
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
 
 try:
-    from metadata.read_metadata import read_metadata
+    from metadata.read_metadata import parse_metadata_dict, read_metadata
     from metadata.check_resource_links import blank_resources
 except ImportError:
-    from read_metadata import read_metadata
+    from read_metadata import parse_metadata_dict, read_metadata
     from check_resource_links import blank_resources
+
+from youtube_api.video_id import extract_video_id, is_valid_yt_url
 
 PERFORMANCE_CHECK_KEY = "performanceCheck"
 
@@ -100,38 +101,6 @@ OUTLINE_CTA_PATTERN = re.compile(r"\[\s*LIKE\s*/\s*SUBSCRIBE\s*\]", re.IGNORECAS
 # Keys metadata.json must contain for the metadata step to count as done.
 # "resources" is written by `phantom meta resources`; each entry's "url" must also be filled in.
 REQUIRED_METADATA_KEYS = ("title", "titles", "description", "tweetTemplate", "recommendations", "timestamps", "resources")
-
-
-def is_valid_yt_url(url: str) -> bool:
-    """Check if a URL string is a valid YouTube URL (fast, no HTTP requests)."""
-    if not url or not isinstance(url, str):
-        return False
-    url = url.strip()
-    try:
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            return False
-        hostname = (parsed.hostname or "").lower()
-        valid_hosts = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "www.youtu.be"}
-        if hostname not in valid_hosts:
-            return False
-
-        if hostname in ("youtu.be", "www.youtu.be"):
-            path = parsed.path.strip("/")
-            return len(path) > 0
-        else:
-            if parsed.path == "/watch":
-                qs = parse_qs(parsed.query)
-                v_param = qs.get("v", [""])[0]
-                return len(v_param) > 0
-            elif parsed.path.startswith(("/embed/", "/v/", "/shorts/", "/live/")):
-                parts = [p for p in parsed.path.split("/") if p]
-                return len(parts) >= 2
-            elif len(parsed.path.strip("/")) > 0:
-                return True
-        return False
-    except Exception:
-        return False
 
 
 @dataclass
@@ -238,16 +207,13 @@ def has_outline_cta(outline_file: Path) -> bool:
     return bool(OUTLINE_CTA_PATTERN.search(outline_file.read_text(encoding="utf-8", errors="replace")))
 
 
-def check_metadata(metadata_file: Path) -> tuple[List[str], List[str]]:
+def check_metadata(data: Any) -> tuple[List[str], List[str]]:
     """Return (the REQUIRED_METADATA_KEYS metadata.json lacks, the "resources" keys with a blank URL).
 
-    All keys count as missing if the file can't be read as an object. Reads the raw JSON:
-    read_metadata() fills in defaults, so it can't tell a missing key from a default.
+    ``data`` is the file's raw JSON (None if unreadable); all keys count as missing unless
+    it's an object. It has to be the raw JSON: read_metadata() fills in defaults, so it
+    can't tell a missing key from a default.
     """
-    try:
-        data = json.loads(metadata_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return list(REQUIRED_METADATA_KEYS), []
     if not isinstance(data, dict):
         return list(REQUIRED_METADATA_KEYS), []
     return [key for key in REQUIRED_METADATA_KEYS if key not in data], blank_resources(data.get("resources"))
@@ -333,7 +299,6 @@ def run_performance_checks(projects: List[VideoProject], quiet: bool = False) ->
 
     # Imported here so status stays fast (no Playwright or API client) when nothing is due.
     from youtube_api.performance_check import check_videos
-    from youtube_api.utils import extract_video_id
 
     by_video_id = {}
     for project in due:
@@ -393,7 +358,6 @@ def run_repackaging_checks(projects: List[VideoProject], quiet: bool = False) ->
 
     # Imported here so status stays fast when nothing needs repackaging.
     from youtube_api.performance_check import check_repackaged
-    from youtube_api.utils import extract_video_id
 
     by_video_id = {}
     for project in flagged:
@@ -479,9 +443,13 @@ def analyze_project(project_dir: Path) -> VideoProject:
             project.final_file = item
         elif item.name.lower() == "metadata.json":
             project.metadata_file = item
-            project.metadata_missing_keys, project.metadata_blank_resources = check_metadata(item)
             try:
-                meta = read_metadata(item)
+                data = json.loads(item.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data = None
+            project.metadata_missing_keys, project.metadata_blank_resources = check_metadata(data)
+            try:
+                meta = parse_metadata_dict(data, file_path=item)
                 if meta.title:
                     project.title = meta.title
                 if meta.url and is_valid_yt_url(meta.url):

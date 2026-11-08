@@ -8,7 +8,6 @@ schema normalization.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -18,7 +17,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 import requests
 
-from agentic.schema_utils import normalize_schema_for_strict_mode
+from agentic.schema_utils import build_messages, json_schema_response_format, parse_structured_response
 
 # Ensure environment variables are loaded
 load_dotenv()
@@ -125,55 +124,15 @@ def ask_openrouter(
             )
         start_idx = _CURRENT_KEY_INDEX
 
-    # Prepare messages
-    messages: List[Dict[str, str]] = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-
-    if isinstance(user_prompt, str):
-        messages.append({"role": "user", "content": user_prompt})
-    elif isinstance(user_prompt, list):
-        messages.extend(user_prompt)
-    else:
-        raise TypeError(
-            f"Expected user_prompt to be str or list of dicts, got {type(user_prompt)}"
-        )
-
     payload: Dict[str, Any] = {
         "model": model,
-        "messages": messages,
+        "messages": build_messages(system_prompt, user_prompt),
         "temperature": temperature,
     }
-
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens
-
-    is_pydantic_model = False
     if schema is not None:
-        is_pydantic_model = isinstance(schema, type) and issubclass(schema, BaseModel)
-        if is_pydantic_model:
-            raw_schema = schema.model_json_schema()
-            schema_title = raw_schema.get("title", schema_name)
-        elif isinstance(schema, dict):
-            raw_schema = schema
-            schema_title = raw_schema.get("title", schema_name)
-        else:
-            raise TypeError(
-                f"Expected schema to be a Pydantic BaseModel subclass or a dict, got {type(schema)}"
-            )
-
-        target_schema = (
-            normalize_schema_for_strict_mode(raw_schema) if strict else raw_schema
-        )
-
-        payload["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema_title,
-                "strict": strict,
-                "schema": target_schema,
-            },
-        }
+        payload["response_format"] = json_schema_response_format(schema, schema_name, strict)
 
     # Iterate through keys sequentially, advancing on 429
     idx = start_idx
@@ -227,21 +186,7 @@ def ask_openrouter(
         if schema is None:
             return raw_content
 
-        # If raw_content is wrapped in markdown code blocks like ```json ... ```, strip them
-        cleaned_content = raw_content.strip()
-        if cleaned_content.startswith("```json"):
-            cleaned_content = cleaned_content[7:]
-        elif cleaned_content.startswith("```"):
-            cleaned_content = cleaned_content[3:]
-        if cleaned_content.endswith("```"):
-            cleaned_content = cleaned_content[:-3]
-        cleaned_content = cleaned_content.strip()
-
-        parsed_json = json.loads(cleaned_content)
-
-        if is_pydantic_model:
-            return schema.model_validate(parsed_json)
-        return parsed_json
+        return parse_structured_response(raw_content, schema)
 
     # All keys were exhausted with 429
     raise RuntimeError(

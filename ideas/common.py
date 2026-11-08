@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger("phantom.ideas")
@@ -32,6 +33,64 @@ class Colors:
     RED = "\033[31m"
     GRAY = "\033[90m"
     WHITE = "\033[97m"
+
+
+# ── Fetch Video Metadata ──────────────────────────────────────────────────────
+
+def fetch_ytdlp_metadata(video_url: str) -> Dict[str, Any]:
+    """Fetches a video's title, channel, description, duration and views with yt-dlp --dump-json."""
+    cmd = ["yt-dlp", "--no-playlist", "--dump-json", "--skip-download", video_url]
+    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    data = json.loads(res.stdout)
+    return {
+        "title": (data.get("title") or "").strip(),
+        "channel_id": data.get("channel_id") or data.get("uploader_id") or "unknown_channel",
+        "channel_title": (data.get("channel") or data.get("uploader") or "").strip(),
+        "description": (data.get("description") or "").strip(),
+        "duration": data.get("duration"),
+        "view_count": data.get("view_count") or 0,
+    }
+
+
+def fetch_video_metadata(video_id: str, api_key: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Fetches title, channel_title, channel_id, description and view_count for a video,
+    from the YouTube Data API, falling back to yt-dlp, then to placeholders.
+    """
+    api_key = api_key or os.getenv("YOUTUBE_API_KEY")
+    if api_key:
+        try:
+            from youtube_api.utils import get_youtube_client
+
+            resp = get_youtube_client(api_key).videos().list(part="snippet,statistics", id=video_id).execute()
+            items = resp.get("items", [])
+            if items:
+                snippet = items[0].get("snippet", {})
+                stats = items[0].get("statistics", {})
+                return {
+                    "title": snippet.get("title", "").strip(),
+                    "channel_title": snippet.get("channelTitle", "").strip(),
+                    "channel_id": snippet.get("channelId", "").strip(),
+                    "description": snippet.get("description", "").strip(),
+                    "view_count": int(stats.get("viewCount", 0)),
+                }
+        except Exception as e:
+            logger.debug("YouTube API metadata fetch failed: %s", e)
+
+    try:
+        data = fetch_ytdlp_metadata(f"https://www.youtube.com/watch?v={video_id}")
+        if data["title"]:
+            return data
+    except Exception as e:
+        logger.debug("yt-dlp metadata fetch failed: %s", e)
+
+    return {
+        "title": f"YouTube Video ({video_id})",
+        "channel_title": "Unknown Channel",
+        "channel_id": "unknown_channel",
+        "description": "No description available.",
+        "view_count": 0,
+    }
 
 
 # ── Fetch Recent Channel Video Titles ──────────────────────────────────────────

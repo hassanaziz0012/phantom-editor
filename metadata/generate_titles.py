@@ -101,9 +101,9 @@ def generate_titles_for_project(
         title=title,
         transcript=transcript,
     )
-    raw_response = utils.query_claude(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
+    raw_response = utils.ask_browserllm(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
 
-    parsed_json = utils.parse_claude_json(raw_response)
+    parsed_json = utils.parse_json_response(raw_response)
     titles = format_titles(parsed_json)
 
     # The full response (extracted facts, all 25 titles, flags) is long, so it lives in titles.json

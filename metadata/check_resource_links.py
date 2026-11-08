@@ -119,9 +119,9 @@ def check_resource_links_for_project(
 
     print("🤖 Checking for promised resource links with Claude via BrowserLLM...")
     prompt = utils.load_prompt("check_resource_links.md", title=title, transcript=transcript)
-    raw_response = utils.query_claude(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
+    raw_response = utils.ask_browserllm(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
 
-    found = format_resources(utils.parse_claude_json(raw_response))
+    found = format_resources(utils.parse_json_response(raw_response))
 
     metadata: dict[str, Any] = {}
     if save_meta_path.is_file():

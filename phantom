@@ -11,168 +11,183 @@ fi
 # Clean up external VIRTUAL_ENV so uv targets the project environment without warnings
 unset VIRTUAL_ENV
 
+# Every command, one per line: group ; names ; flags ; target ; usage
+#   group   "projects", or two words ("research reddit") for a nested group
+#   names   comma-separated; the first is shown in help, the rest are old aliases
+#   flags   r = needs at least one argument, k = pass the subcommand on to the target
+#   target  "py <file>" runs it with the project's Python, "run <file>" runs it directly,
+#           anything else is a function in this script
+# Help, each group's usage and dispatch are all generated from this table.
+COMMANDS=(
+    "projects;status;;py projects/current_pipeline.py;[arguments]"
+    "projects;process;r;py projects/process_video.py;<raw_video> [arguments]"
+    "projects;newvideo;r;py projects/newvideo.py;<project_name>"
+    "projects;cleanup;;py projects/cleanup.py;[<project_path>] [--full]"
+
+    "edit;add-bgm,add_bgm;;run video-editing/add_bgm_to_video.sh;<path_to_video> <bgm_track> [--volume <percentage>]"
+    "edit;process-audio;r;run audio-processing/process_audio.sh;[-R|--recursive] <path>"
+    "edit;inspect-video;r;py review/video_inspector.py;<video_path> [arguments]"
+    "edit;review-audio;r;py review/audio_review.py;<video_or_audio_path> [arguments]"
+    "edit;caption;r;py video-editing/auto_caption.py;<video_path> [arguments]"
+    "edit;downscale;r;py video-editing/downscale.py;<video_path> [arguments]"
+    "edit;transcribe-cloud;r;py video-editing/transcribe_cloud.py;<video_path> [arguments]"
+    "edit;trim-silences;r;py video-editing/trim_silences.py;<video_path> [arguments]"
+
+    "meta;create,auto-create;;py metadata/auto_create_metadata.py;[<project_path>] [arguments]"
+    "meta;desc,description,auto-desc;;py metadata/auto_gen_desc.py;[<project_path>] [arguments]"
+    "meta;tweet,auto-tweet;;py metadata/auto_gen_tweet.py;[<project_path>] [arguments]"
+    "meta;timestamps,generate-timestamps;;py metadata/generate_timestamps.py;[<captions_srt_path>] [arguments]"
+    "meta;titles,generate-titles;;py metadata/generate_titles.py;[<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>]"
+    "meta;resources,check-resource-links;;py metadata/check_resource_links.py;[<project_path>] [arguments]"
+    "meta;read;;py metadata/read_metadata.py;[<project_or_video_path>] [--json]"
+    "meta;manual,interactive;r;py metadata/create_metadata.py;<video_path>"
+    "meta;recommend,recommendations;;py metadata/recommendations/recommend.py;[<project_path>] [arguments]"
+    "meta;prepare-recommendations,prepare-yt-recommendations;;py metadata/recommendations/prepare_yt_recommendations.py;[<channel>] [--limit <int>] [--force] [--fresh] [--json]"
+
+    "publish;yt,youtube;;py youtube_api/upload_video.py;<video_path> [--playlist <playlist_id_or_name>]"
+    "publish;x,tweet,twitter;r;run twitter/tweet.sh;[--image] [--substack] <tweet_content>"
+    "publish;substack;;py substack/post_note.py;[<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
+    "publish;linkedin;;py linkedin/new_post.py;[<text>] [-f <file>] [-i <images>...] [--url <url>]"
+    "publish;devto;;py devto/post.py;<markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
+    "publish;email,emails;;py emails/resend_broadcast.py;--title <title> --description <desc> --url <url> [arguments]"
+    "publish;yap;;py content/yap_to_post.py;--platform <linkedin|substack>"
+
+    "research reddit;post,scrape,scrape-post;;py reddit/scrape_reddit_post.py;<url> [--headless] [--max-comments <int>] [--json]"
+    "research reddit;analyze,analyze-post;;py reddit/analyze_post.py;<url> [--headless] [--json]"
+    "research reddit;sub,scrapesub,scrape-sub,scrape-subreddit;;py reddit/scrape_subreddit.py;<subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
+    "research reddit;search,scrapesearch,scrape-search;;py reddit/scrape_search.py;<query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
+    "research reddit;profile,scrape-profile,user;;py reddit/scrape_profile.py;<username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
+    "research reddit;serve;;py reddit/serve.py;[--port <int>] [--headless]   (answers post/feed scrape requests as JSON lines on stdin)"
+    "research skool;post,scrape,scrape-post;;py skool/scrape_post.py;<url> [--max-comments <int>] [--headless] [--json]"
+    "research skool;community,scrapecommunity,scrape-community;;py skool/scrape_community.py;<url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
+
+    "ideas;from-comments,generate-from-comments;r;py ideas/comments/generate_ideas.py;<video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
+    "ideas;from-outlier,generate-from-outlier;r;py ideas/generate_from_outlier.py;<video> [--no-export] [--fresh-summary] [--json]"
+    "ideas;export;;py ideas/export_ideas_to_sheet.py;[--file <path> | --idea <text>] [arguments]"
+    "ideas;archive;;py ideas/archive_reviewed_ideas.py;[--dry-run]"
+
+    "yt;add-to-playlist,addtoplaylist;;py youtube_api/addtoplaylist.py;<video> <playlist_id_or_name> [--privacy <public|unlisted|private>]"
+    "yt;count-uploads;;py youtube_api/count_youtube_uploads.py;[<channel>] [--fresh]"
+    "yt;titles,print-titles;;py youtube_api/print_titles.py;[<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
+    "yt;summarize;;py ideas/summarize_video.py;<video> [--model <model>] [--json]"
+    "yt;comments,scrape-comments;;py ideas/comments/scrape_comments.py;<video> [--limit <int>] [--order <relevance|time>] [--json]"
+    "yt;info;;py youtube_api/video_info.py;<video> [--fresh] [--json] [--days <int>]"
+    "yt;channel-stats;;py youtube_api/channel_stats.py;[--fresh] [--json] [--history]"
+    "yt;endscreen;;py youtube_api/add_endscreen.py;<video>... [--template <name>] [--dry-run]"
+
+    "broll;list;k;py broll-templates/broll.py;[<template>]"
+    "broll;find;k;py broll-templates/broll.py;<phrase> [--srt <word_srt>] [--after <timestamp>]"
+    "broll;render;k;py broll-templates/broll.py;<cue_file.json> [--srt <word_srt>] [--only <file>...] [--dry-run] [--force]"
+    "broll;clip;k;py broll-templates/broll.py;<template> -o <output.mp4> [--cue <phrase>] [--until <phrase>] [--var key=value...] [arguments]"
+
+    "docs;open;;docs_open;"
+)
+
+# Old command names, left out of the help: other projects still call them. Each
+# rewrites the leading words of the command line into the current command.
+declare -A LEGACY=(
+    ["metadata"]="meta"
+    ["reddit"]="research reddit"
+    ["skool"]="research skool"
+    ["tweet"]="publish x"
+    ["yt upload"]="publish yt"
+    ["audio process"]="edit process-audio"
+    ["review inspect"]="edit inspect-video"
+    ["review audio"]="edit review-audio"
+    ["emails broadcast"]="publish email"
+    ["content yap"]="publish yap"
+    ["substack note"]="publish substack"
+    ["linkedin post"]="publish linkedin"
+    ["linkedin new-post"]="publish linkedin"
+    ["devto post"]="publish devto"
+)
+
+REMOVED=("shorts" "threads" "edit attach-webcam-mask" "edit auto-attach-webcam" "edit transcribe" "edit trim-silences-whisper")
+
+py() {
+    local script="$1"
+    shift
+    uv run --project "$BASE_DIR" python "$BASE_DIR/$script" "$@"
+}
+
+run() {
+    local script="$1"
+    shift
+    "$BASE_DIR/$script" "$@"
+}
+
+docs_open() {
+    open_url() {
+        local url="$1"
+        if command -v explorer.exe >/dev/null 2>&1; then
+            explorer.exe "$url" >/dev/null 2>&1 || true
+        elif command -v xdg-open >/dev/null 2>&1; then
+            xdg-open "$url" >/dev/null 2>&1 || true
+        else
+            python3 -m webbrowser "$url" >/dev/null 2>&1 || true
+        fi
+    }
+
+    # Check if port 8000 is already in use
+    if python3 -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(1); s.connect(('127.0.0.1', 8000))" 2>/dev/null; then
+        echo "Docs server is already running on http://127.0.0.1:8000"
+        echo "Opening browser..."
+        open_url "http://127.0.0.1:8000"
+        return 0
+    fi
+
+    echo "Starting docs server on http://127.0.0.1:8000..."
+    uv run --project "$BASE_DIR" mkdocs serve &
+    SERVER_PID=$!
+
+    # Set trap to ensure server is cleaned up when script exits
+    trap 'kill $SERVER_PID 2>/dev/null' EXIT INT TERM
+
+    # Wait 2 seconds for server to start
+    sleep 2
+
+    echo "Opening browser..."
+    open_url "http://127.0.0.1:8000"
+
+    # Keep script running to show server output
+    wait $SERVER_PID
+}
+
+# Splits a COMMANDS entry into GROUP, NAMES, FLAGS, TARGET and ARGS_USAGE.
+parse_entry() {
+    IFS=';' read -r GROUP NAMES FLAGS TARGET ARGS_USAGE <<< "$1"
+}
+
 show_usage() {
     echo "Usage: phantom <command> [arguments]"
     echo ""
     echo "Commands:"
-    echo "  projects:"
-    echo "    status [arguments]"
-    echo "    process <raw_video> [arguments]"
-    echo "    newvideo <project_name>"
-    echo "    cleanup [<project_path>] [--full]"
-    echo ""
-    echo "  edit:"
-    echo "    add-bgm <path_to_video> <bgm_track> [--volume <percentage>]"
-    echo "    process-audio [-R|--recursive] <path>"
-    echo "    inspect-video <video_path> [arguments]"
-    echo "    review-audio <video_or_audio_path> [arguments]"
-    echo "    caption <video_path> [arguments]"
-    echo "    downscale <video_path> [arguments]"
-    echo "    transcribe-cloud <video_path> [arguments]"
-    echo "    trim-silences <video_path> [arguments]"
-    echo ""
-    echo "  meta:"
-    echo "    create [<project_path>] [arguments]"
-    echo "    desc [<project_path>] [arguments]"
-    echo "    tweet [<project_path>] [arguments]"
-    echo "    timestamps [<captions_srt_path>] [arguments]"
-    echo "    titles [<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>]"
-    echo "    resources [<project_path>] [arguments]"
-    echo "    read [<project_or_video_path>] [--json]"
-    echo "    manual <video_path>"
-    echo "    recommend [<project_path>] [arguments]"
-    echo "    prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]"
-    echo ""
-    echo "  publish:"
-    echo "    yt <video_path> [--playlist <playlist_id_or_name>]"
-    echo "    x [--image] [--substack] <tweet_content>"
-    echo "    substack [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
-    echo "    linkedin [<text>] [-f <file>] [-i <images>...] [--url <url>]"
-    echo "    devto <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
-    echo "    email --title <title> --description <desc> --url <url> [arguments]"
-    echo "    yap --platform <linkedin|substack>"
-    echo ""
-    echo "  research:"
-    echo "    reddit post <url> [--headless] [--max-comments <int>] [--json]"
-    echo "    reddit analyze <url> [--headless] [--json]"
-    echo "    reddit sub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
-    echo "    reddit search <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
-    echo "    reddit profile <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
-    echo "    reddit serve [--port <int>] [--headless]   (answers post/feed scrape requests as JSON lines on stdin)"
-    echo "    skool post <url> [--max-comments <int>] [--headless] [--json]"
-    echo "    skool community <url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
-    echo ""
-    echo "  ideas:"
-    echo "    from-comments <video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
-    echo "    from-outlier <video> [--no-export] [--fresh-summary] [--json]"
-    echo "    export [--file <path> | --idea <text>] [arguments]"
-    echo "    archive [--dry-run]"
-    echo ""
-    echo "  yt:"
-    echo "    add-to-playlist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]"
-    echo "    count-uploads [<channel>] [--fresh]"
-    echo "    titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
-    echo "    summarize <video> [--model <model>] [--json]"
-    echo "    comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
-    echo "    info <video> [--fresh] [--json] [--days <int>]"
-    echo "    channel-stats [--fresh] [--json] [--history]"
-    echo "    endscreen <video>... [--template <name>] [--dry-run]"
-    echo ""
-    echo "  broll:"
-    echo "    list [<template>]"
-    echo "    find <phrase> [--srt <word_srt>] [--after <timestamp>]"
-    echo "    render <cue_file.json> [--srt <word_srt>] [--only <file>...] [--dry-run] [--force]"
-    echo "    clip <template> -o <output.mp4> [--cue <phrase>] [--until <phrase>] [--var key=value...] [arguments]"
-    echo ""
-    echo "  docs:"
-    echo "    open"
-}
-
-# Old command names (reddit/skool groups, scrapesub, add_bgm, addtoplaylist,
-# generate-from-*, tweet, yt upload, yt print-titles, audio process, metadata,
-# review, emails/content/substack/linkedin/devto groups, ...) are still
-# dispatched below but left out of the help: other projects call them. Keep
-# them until those callers are migrated.
-
-removed_command() {
-    echo "phantom $1 was removed." >&2
-    exit 1
-}
-
-run_reddit() {
-    local SUBCOMMAND="$1"
-    shift
-    if [ "$SUBCOMMAND" = "post" ] || [ "$SUBCOMMAND" = "scrape" ] || [ "$SUBCOMMAND" = "scrape-post" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_reddit_post.py" "$@"
-    elif [ "$SUBCOMMAND" = "analyze" ] || [ "$SUBCOMMAND" = "analyze-post" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/analyze_post.py" "$@"
-    elif [ "$SUBCOMMAND" = "sub" ] || [ "$SUBCOMMAND" = "scrapesub" ] || [ "$SUBCOMMAND" = "scrape-sub" ] || [ "$SUBCOMMAND" = "scrape-subreddit" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_subreddit.py" "$@"
-    elif [ "$SUBCOMMAND" = "search" ] || [ "$SUBCOMMAND" = "scrapesearch" ] || [ "$SUBCOMMAND" = "scrape-search" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_search.py" "$@"
-    elif [ "$SUBCOMMAND" = "profile" ] || [ "$SUBCOMMAND" = "scrape-profile" ] || [ "$SUBCOMMAND" = "user" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/scrape_profile.py" "$@"
-    elif [ "$SUBCOMMAND" = "serve" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/reddit/serve.py" "$@"
-    else
-        echo "Unknown reddit subcommand: $SUBCOMMAND"
-        echo "Usage: phantom research reddit post <url> [--headless] [--max-comments <int>] [--json]"
-        echo "       phantom research reddit analyze <url> [--headless] [--json]"
-        echo "       phantom research reddit sub <subreddit> [--best|--hot|--top-...] [--limit <int>] [--headless] [--json]"
-        echo "       phantom research reddit search <query> [--sort <sort>] [--time <time>] [--limit <int>] [--headless] [--json]"
-        echo "       phantom research reddit profile <username_or_url> [--posts <int>] [--comments <int>] [--sort <sort>] [--time <time>] [--json]"
-        echo "       phantom research reddit serve [--port <int>] [--headless]"
-        exit 1
-    fi
-}
-
-run_skool() {
-    local SUBCOMMAND="$1"
-    shift
-    if [ "$SUBCOMMAND" = "post" ] || [ "$SUBCOMMAND" = "scrape" ] || [ "$SUBCOMMAND" = "scrape-post" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/skool/scrape_post.py" "$@"
-    elif [ "$SUBCOMMAND" = "community" ] || [ "$SUBCOMMAND" = "scrapecommunity" ] || [ "$SUBCOMMAND" = "scrape-community" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/skool/scrape_community.py" "$@"
-    else
-        echo "Unknown skool subcommand: $SUBCOMMAND"
-        echo "Usage: phantom research skool post <url> [--max-comments <int>] [--headless] [--json]"
-        echo "       phantom research skool community <url_or_slug> [--limit <int>] [-o|--output <file>] [--headless] [--json]"
-        exit 1
-    fi
-}
-
-run_publish() {
-    local TARGET="$1"
-    shift
-    if [ "$TARGET" = "yt" ] || [ "$TARGET" = "youtube" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/upload_video.py" "$@"
-    elif [ "$TARGET" = "x" ] || [ "$TARGET" = "tweet" ] || [ "$TARGET" = "twitter" ]; then
-        if [ $# -eq 0 ]; then
-            echo "Usage: phantom publish x [--image] [--substack] <tweet_content>"
-            exit 1
+    local entry header last_header=""
+    for entry in "${COMMANDS[@]}"; do
+        parse_entry "$entry"
+        header="${GROUP%% *}"
+        if [ "$header" != "$last_header" ]; then
+            [ -n "$last_header" ] && echo ""
+            echo "  $header:"
+            last_header="$header"
         fi
-        "$BASE_DIR/twitter/tweet.sh" "$@"
-    elif [ "$TARGET" = "substack" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/substack/post_note.py" "$@"
-    elif [ "$TARGET" = "linkedin" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/linkedin/new_post.py" "$@"
-    elif [ "$TARGET" = "devto" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/devto/post.py" "$@"
-    elif [ "$TARGET" = "email" ] || [ "$TARGET" = "emails" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/emails/resend_broadcast.py" "$@"
-    elif [ "$TARGET" = "yap" ]; then
-        uv run --project "$BASE_DIR" python "$BASE_DIR/content/yap_to_post.py" "$@"
-    else
-        echo "Unknown publish target: $TARGET"
-        echo "Usage: phantom publish yt <video_path> [--playlist <playlist_id_or_name>]"
-        echo "       phantom publish x [--image] [--substack] <tweet_content>"
-        echo "       phantom publish substack [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
-        echo "       phantom publish linkedin [<text>] [-f <file>] [-i <images>...] [--url <url>]"
-        echo "       phantom publish devto <markdown_file> [arguments]"
-        echo "       phantom publish email --title <title> --description <desc> --url <url> [arguments]"
-        echo "       phantom publish yap --platform <linkedin|substack>"
-        exit 1
-    fi
+        # Nested groups show their second word before the command ("reddit post")
+        local prefix=""
+        [ "$GROUP" != "$header" ] && prefix="${GROUP#* } "
+        echo "    $prefix${NAMES%%,*}${ARGS_USAGE:+ $ARGS_USAGE}"
+    done
+}
+
+# Usage lines for every command in a group (or under a group header like "research").
+group_usage() {
+    local entry label="Usage:"
+    for entry in "${COMMANDS[@]}"; do
+        parse_entry "$entry"
+        if [ "$GROUP" = "$1" ] || [ "${GROUP%% *}" = "$1" ]; then
+            echo "$label phantom $GROUP ${NAMES%%,*}${ARGS_USAGE:+ $ARGS_USAGE}"
+            label="      "
+        fi
+    done
 }
 
 if [ $# -eq 0 ]; then
@@ -180,379 +195,67 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-COMMAND="$1"
-shift
-
-case "$COMMAND" in
-    projects)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "status" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/projects/current_pipeline.py" "$@"
-        elif [ "$SUBCOMMAND" = "process" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom projects process <raw_video> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/projects/process_video.py" "$@"
-        elif [ "$SUBCOMMAND" = "newvideo" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom projects newvideo <project_name>"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/projects/newvideo.py" "$@"
-        elif [ "$SUBCOMMAND" = "cleanup" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/projects/cleanup.py" "$@"
-        else
-            echo "Unknown projects subcommand: $SUBCOMMAND"
-            echo "Usage: phantom projects status [arguments]"
-            echo "       phantom projects process <raw_video> [arguments]"
-            echo "       phantom projects newvideo <project_name>"
-            echo "       phantom projects cleanup [<project_path>] [--full]"
-            exit 1
-        fi
-        ;;
-    audio)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "process" ]; then
-            exec "$0" edit process-audio "$@"
-        else
-            echo "Unknown audio subcommand: $SUBCOMMAND"
-            echo "Usage: phantom edit process-audio [-R|--recursive] <path>"
-            exit 1
-        fi
-        ;;
-    edit)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "add-bgm" ] || [ "$SUBCOMMAND" = "add_bgm" ]; then
-            "$BASE_DIR/video-editing/add_bgm_to_video.sh" "$@"
-        elif [ "$SUBCOMMAND" = "process-audio" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit process-audio [-R|--recursive] <path>"
-                exit 1
-            fi
-            "$BASE_DIR/audio-processing/process_audio.sh" "$@"
-        elif [ "$SUBCOMMAND" = "inspect-video" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit inspect-video <video_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/review/video_inspector.py" "$@"
-        elif [ "$SUBCOMMAND" = "review-audio" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit review-audio <video_or_audio_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/review/audio_review.py" "$@"
-        elif [ "$SUBCOMMAND" = "attach-webcam-mask" ] || [ "$SUBCOMMAND" = "auto-attach-webcam" ] \
-            || [ "$SUBCOMMAND" = "transcribe" ] || [ "$SUBCOMMAND" = "trim-silences-whisper" ]; then
-            removed_command "edit $SUBCOMMAND"
-        elif [ "$SUBCOMMAND" = "caption" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit caption <video_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/auto_caption.py" "$@"
-        elif [ "$SUBCOMMAND" = "downscale" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit downscale <video_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/downscale.py" "$@"
-        elif [ "$SUBCOMMAND" = "transcribe-cloud" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit transcribe-cloud <video_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/transcribe_cloud.py" "$@"
-        elif [ "$SUBCOMMAND" = "trim-silences" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom edit trim-silences <video_path> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/video-editing/trim_silences.py" "$@"
-        else
-            echo "Unknown edit subcommand: $SUBCOMMAND"
-            echo "Usage: phantom edit add-bgm <path_to_video> <bgm_track> [--volume <percentage>]"
-            echo "       phantom edit process-audio [-R|--recursive] <path>"
-            echo "       phantom edit inspect-video <video_path> [arguments]"
-            echo "       phantom edit review-audio <video_or_audio_path> [arguments]"
-            echo "       phantom edit caption <video_path> [arguments]"
-            echo "       phantom edit downscale <video_path> [arguments]"
-            echo "       phantom edit transcribe-cloud <video_path> [arguments]"
-            echo "       phantom edit trim-silences <video_path> [arguments]"
-            exit 1
-        fi
-        ;;
-    meta|metadata)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "create" ] || [ "$SUBCOMMAND" = "auto-create" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/auto_create_metadata.py" "$@"
-        elif [ "$SUBCOMMAND" = "desc" ] || [ "$SUBCOMMAND" = "description" ] || [ "$SUBCOMMAND" = "auto-desc" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/auto_gen_desc.py" "$@"
-        elif [ "$SUBCOMMAND" = "tweet" ] || [ "$SUBCOMMAND" = "auto-tweet" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/auto_gen_tweet.py" "$@"
-        elif [ "$SUBCOMMAND" = "timestamps" ] || [ "$SUBCOMMAND" = "generate-timestamps" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/generate_timestamps.py" "$@"
-        elif [ "$SUBCOMMAND" = "titles" ] || [ "$SUBCOMMAND" = "generate-titles" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/generate_titles.py" "$@"
-        elif [ "$SUBCOMMAND" = "resources" ] || [ "$SUBCOMMAND" = "check-resource-links" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/check_resource_links.py" "$@"
-        elif [ "$SUBCOMMAND" = "read" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/read_metadata.py" "$@"
-        elif [ "$SUBCOMMAND" = "manual" ] || [ "$SUBCOMMAND" = "interactive" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom meta manual <video_path>"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/create_metadata.py" "$@"
-        elif [ "$SUBCOMMAND" = "recommend" ] || [ "$SUBCOMMAND" = "recommendations" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/recommendations/recommend.py" "$@"
-        elif [ "$SUBCOMMAND" = "prepare-recommendations" ] || [ "$SUBCOMMAND" = "prepare-yt-recommendations" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/metadata/recommendations/prepare_yt_recommendations.py" "$@"
-        else
-            echo "Unknown meta subcommand: $SUBCOMMAND"
-            echo "Usage: phantom meta create [<project_path>] [arguments]"
-            echo "       phantom meta desc [<project_path>] [arguments]"
-            echo "       phantom meta tweet [<project_path>] [arguments]"
-            echo "       phantom meta timestamps [<captions_srt_path>] [arguments]"
-            echo "       phantom meta titles [<project_path>] [arguments]"
-            echo "       phantom meta resources [<project_path>] [arguments]"
-            echo "       phantom meta read [<project_or_video_path>] [--json]"
-            echo "       phantom meta manual <video_path>"
-            echo "       phantom meta recommend [<project_path>] [arguments]"
-            echo "       phantom meta prepare-recommendations [<channel>] [--limit <int>] [--force] [--fresh] [--json]"
-            exit 1
-        fi
-        ;;
-    emails)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "broadcast" ]; then
-            run_publish email "$@"
-        else
-            echo "Unknown emails subcommand: $SUBCOMMAND"
-            echo "Usage: phantom publish email [arguments]"
-            exit 1
-        fi
-        ;;
-    research)
-        SOURCE="$1"
-        shift
-        if [ "$SOURCE" = "reddit" ]; then
-            run_reddit "$@"
-        elif [ "$SOURCE" = "skool" ]; then
-            run_skool "$@"
-        else
-            echo "Unknown research source: $SOURCE"
-            echo "Usage: phantom research reddit <post|analyze|sub|search|profile|serve> [arguments]"
-            echo "       phantom research skool <post|community> [arguments]"
-            exit 1
-        fi
-        ;;
-    reddit)
-        run_reddit "$@"
-        ;;
-    skool)
-        run_skool "$@"
-        ;;
-    publish)
-        run_publish "$@"
-        ;;
-    tweet)
-        run_publish x "$@"
-        ;;
-    ideas)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "from-comments" ] || [ "$SUBCOMMAND" = "generate-from-comments" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom ideas from-comments <video> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/comments/generate_ideas.py" "$@"
-        elif [ "$SUBCOMMAND" = "from-outlier" ] || [ "$SUBCOMMAND" = "generate-from-outlier" ]; then
-            if [ $# -eq 0 ]; then
-                echo "Usage: phantom ideas from-outlier <video> [arguments]"
-                exit 1
-            fi
-            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/generate_from_outlier.py" "$@"
-        elif [ "$SUBCOMMAND" = "export" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/export_ideas_to_sheet.py" "$@"
-        elif [ "$SUBCOMMAND" = "archive" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/archive_reviewed_ideas.py" "$@"
-        else
-            echo "Unknown ideas subcommand: $SUBCOMMAND"
-            echo "Usage: phantom ideas from-comments <video> [arguments]"
-            echo "       phantom ideas from-outlier <video> [arguments]"
-            echo "       phantom ideas export [--file <path> | --idea <text>] [arguments]"
-            echo "       phantom ideas archive [--dry-run]"
-            exit 1
-        fi
-        ;;
-    yt)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "upload" ]; then
-            run_publish yt "$@"
-        elif [ "$SUBCOMMAND" = "add-to-playlist" ] || [ "$SUBCOMMAND" = "addtoplaylist" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/addtoplaylist.py" "$@"
-        elif [ "$SUBCOMMAND" = "count-uploads" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/count_youtube_uploads.py" "$@"
-        elif [ "$SUBCOMMAND" = "titles" ] || [ "$SUBCOMMAND" = "print-titles" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/print_titles.py" "$@"
-        elif [ "$SUBCOMMAND" = "summarize" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/summarize_video.py" "$@"
-        elif [ "$SUBCOMMAND" = "comments" ] || [ "$SUBCOMMAND" = "scrape-comments" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/ideas/comments/scrape_comments.py" "$@"
-        elif [ "$SUBCOMMAND" = "info" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/video_info.py" "$@"
-        elif [ "$SUBCOMMAND" = "channel-stats" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/channel_stats.py" "$@"
-        elif [ "$SUBCOMMAND" = "endscreen" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/youtube_api/add_endscreen.py" "$@"
-        else
-            echo "Unknown yt subcommand: $SUBCOMMAND"
-            echo "Usage: phantom yt add-to-playlist <video> <playlist_id_or_name> [--privacy <public|unlisted|private>]"
-            echo "       phantom yt count-uploads [<channel>] [--fresh]"
-            echo "       phantom yt titles [<channel>] [--fresh] [--limit <int>] [--numbered] [--reverse] [--with-id] [--json]"
-            echo "       phantom yt summarize <video> [--model <model>] [--json]"
-            echo "       phantom yt comments <video> [--limit <int>] [--order <relevance|time>] [--json]"
-            echo "       phantom yt info <video> [--fresh] [--json] [--days <int>]"
-            echo "       phantom yt channel-stats [--fresh] [--json] [--history]"
-            echo "       phantom yt endscreen <video>... [--template <name>] [--dry-run]"
-            exit 1
-        fi
-        ;;
-    shorts|threads)
-        removed_command "$COMMAND"
-        ;;
-    docs)
-        SUBCOMMAND="$1"
-        shift
-        
-        open_url() {
-            local url="$1"
-            if command -v explorer.exe >/dev/null 2>&1; then
-                explorer.exe "$url" >/dev/null 2>&1 || true
-            elif command -v xdg-open >/dev/null 2>&1; then
-                xdg-open "$url" >/dev/null 2>&1 || true
-            else
-                python3 -m webbrowser "$url" >/dev/null 2>&1 || true
-            fi
-        }
-
-        if [ "$SUBCOMMAND" = "open" ]; then
-            # Check if port 8000 is already in use
-            if python3 -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(1); s.connect(('127.0.0.1', 8000))" 2>/dev/null; then
-                echo "Docs server is already running on http://127.0.0.1:8000"
-                echo "Opening browser..."
-                open_url "http://127.0.0.1:8000"
-                exit 0
-            else
-                echo "Starting docs server on http://127.0.0.1:8000..."
-                uv run --project "$BASE_DIR" mkdocs serve &
-                SERVER_PID=$!
-                
-                # Set trap to ensure server is cleaned up when script exits
-                trap 'kill $SERVER_PID 2>/dev/null' EXIT INT TERM
-                
-                # Wait 2 seconds for server to start
-                sleep 2
-                
-                echo "Opening browser..."
-                open_url "http://127.0.0.1:8000"
-                
-                # Keep script running to show server output
-                wait $SERVER_PID
-            fi
-        else
-            echo "Unknown docs subcommand: $SUBCOMMAND"
-            echo "Usage: phantom docs open"
-            exit 1
-        fi
-        ;;
-    review)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "inspect" ]; then
-            exec "$0" edit inspect-video "$@"
-        elif [ "$SUBCOMMAND" = "audio" ]; then
-            exec "$0" edit review-audio "$@"
-        else
-            echo "Unknown review subcommand: $SUBCOMMAND"
-            echo "Usage: phantom edit inspect-video <video_path> [arguments]"
-            echo "       phantom edit review-audio <video_or_audio_path> [arguments]"
-            exit 1
-        fi
-        ;;
-    content)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "yap" ]; then
-            run_publish yap "$@"
-        else
-            echo "Unknown content subcommand: $SUBCOMMAND"
-            echo "Usage: phantom publish yap --platform <linkedin|substack>"
-            exit 1
-        fi
-        ;;
-    substack)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "note" ]; then
-            run_publish substack "$@"
-        else
-            echo "Unknown substack subcommand: $SUBCOMMAND"
-            echo "Usage: phantom publish substack [<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
-            exit 1
-        fi
-        ;;
-    linkedin)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "post" ] || [ "$SUBCOMMAND" = "new-post" ]; then
-            run_publish linkedin "$@"
-        else
-            echo "Unknown linkedin subcommand: $SUBCOMMAND"
-            echo "Usage: phantom publish linkedin [<text>] [-f <file>] [-i <images>...] [--url <url>]"
-            exit 1
-        fi
-        ;;
-    devto)
-        SUBCOMMAND="$1"
-        shift
-        if [ "$SUBCOMMAND" = "post" ]; then
-            run_publish devto "$@"
-        else
-            echo "Unknown devto subcommand: $SUBCOMMAND"
-            echo "Usage: phantom publish devto <markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
-            exit 1
-        fi
-        ;;
-    broll)
-        SUBCOMMAND="$1"
-        if [ "$SUBCOMMAND" = "list" ] || [ "$SUBCOMMAND" = "find" ] || [ "$SUBCOMMAND" = "render" ] || [ "$SUBCOMMAND" = "clip" ]; then
-            uv run --project "$BASE_DIR" python "$BASE_DIR/broll-templates/broll.py" "$@"
-        else
-            echo "Unknown broll subcommand: $SUBCOMMAND"
-            echo "Usage: phantom broll list [<template>]"
-            echo "       phantom broll find <phrase> [--srt <word_srt>] [--after <timestamp>]"
-            echo "       phantom broll render <cue_file.json> [--srt <word_srt>] [--only <file>...] [--dry-run] [--force]"
-            echo "       phantom broll clip <template> -o <output.mp4> [--cue <phrase>] [--until <phrase>] [--var key=value...] [arguments]"
-            exit 1
-        fi
-        ;;
+case "$1" in
     help|--help|-h)
         show_usage
         exit 0
         ;;
-    *)
-        echo "Unknown command: $COMMAND"
-        show_usage
-        exit 1
-        ;;
 esac
+
+# Rewrite old command names into current ones
+if [ -n "${LEGACY["$1 $2"]+set}" ]; then
+    read -r -a NEW_WORDS <<< "${LEGACY["$1 $2"]}"
+    set -- "${NEW_WORDS[@]}" "${@:3}"
+elif [ -n "${LEGACY["$1"]+set}" ]; then
+    read -r -a NEW_WORDS <<< "${LEGACY["$1"]}"
+    set -- "${NEW_WORDS[@]}" "${@:2}"
+fi
+
+for removed in "${REMOVED[@]}"; do
+    if [ "$removed" = "$1" ] || [ "$removed" = "$1 $2" ]; then
+        echo "phantom $removed was removed." >&2
+        exit 1
+    fi
+done
+
+# Find the group: two words for nested groups ("research reddit"), else one
+GROUP_ARG="$1"
+shift
+for entry in "${COMMANDS[@]}"; do
+    parse_entry "$entry"
+    if [ "$GROUP" = "$GROUP_ARG $1" ]; then
+        GROUP_ARG="$GROUP_ARG $1"
+        shift
+        break
+    fi
+done
+
+SUBCOMMAND="$1"
+[ $# -gt 0 ] && shift
+
+KNOWN_GROUP=false
+for entry in "${COMMANDS[@]}"; do
+    parse_entry "$entry"
+    [ "$GROUP" = "$GROUP_ARG" ] || [ "${GROUP%% *}" = "$GROUP_ARG" ] || continue
+    KNOWN_GROUP=true
+    [ "$GROUP" = "$GROUP_ARG" ] || continue
+    if [[ ",$NAMES," == *",$SUBCOMMAND,"* ]] && [ -n "$SUBCOMMAND" ]; then
+        if [[ "$FLAGS" == *r* ]] && [ $# -eq 0 ]; then
+            echo "Usage: phantom $GROUP ${NAMES%%,*}${ARGS_USAGE:+ $ARGS_USAGE}"
+            exit 1
+        fi
+        [[ "$FLAGS" == *k* ]] && set -- "$SUBCOMMAND" "$@"
+        read -r -a CMD <<< "$TARGET"
+        "${CMD[@]}" "$@"
+        exit $?
+    fi
+done
+
+if [ "$KNOWN_GROUP" = true ]; then
+    echo "Unknown $GROUP_ARG subcommand: $SUBCOMMAND"
+    group_usage "$GROUP_ARG"
+else
+    echo "Unknown command: $GROUP_ARG"
+    show_usage
+fi
+exit 1

@@ -36,6 +36,8 @@ from youtube_api.fetch_videos import fetch_video_details
 from youtube_api.models import Video
 from youtube_api.utils import (
     extract_video_id,
+    format_duration,
+    format_duration_ms,
     get_youtube_client,
     is_short as _is_short,
     parse_iso8601_duration,
@@ -81,14 +83,6 @@ def _format_age(published_at: datetime) -> str:
     return f"{days // 365}y ago"
 
 
-def _format_duration(seconds: Optional[int]) -> str:
-    if seconds is None:
-        return "?"
-    hours, rem = divmod(seconds, 3600)
-    minutes, secs = divmod(rem, 60)
-    return f"{hours}:{minutes:02}:{secs:02}" if hours else f"{minutes}:{secs:02}"
-
-
 def _format_count(value: Optional[int]) -> str:
     return f"{value:,}" if value is not None else "hidden"
 
@@ -104,10 +98,6 @@ def _format_ctr(value: Optional[float]) -> str:
 
 def _format_hours(milliseconds: Optional[int]) -> str:
     return f"{milliseconds / 3_600_000:,.1f}h" if milliseconds is not None else "-"
-
-
-def _format_seconds(milliseconds: Optional[int]) -> str:
-    return _format_duration(round(milliseconds / 1000)) if milliseconds is not None else "?"
 
 
 # ── Baseline cache ────────────────────────────────────────────────────────────
@@ -256,7 +246,7 @@ def build_payload(video: Video, outlier: dict, baseline_cached: Optional[bool], 
 
 def print_human(video: Video, outlier: dict, owner: dict, daily_rows: int) -> None:
     duration_seconds = parse_iso8601_duration(video.duration)
-    kind = "Short" if _is_short(duration_seconds) else _format_duration(duration_seconds)
+    kind = "Short" if _is_short(duration_seconds) else format_duration(duration_seconds)
 
     def row(label: str, value: str) -> None:
         print(f"  {DIM}{label:<11}{RESET}{value}")
@@ -311,7 +301,7 @@ def print_owner_analytics(owner: dict, daily_rows: int) -> None:
     row("Unique", _format_metric(totals.get("unique_viewers")))
     row("Watch time", _format_hours(totals.get("watch_time_ms")))
     avg_percentage = totals.get("avg_view_percentage")
-    row("Avg view", _format_seconds(totals.get("avg_view_duration_ms")) + (
+    row("Avg view", format_duration_ms(totals.get("avg_view_duration_ms")) + (
         f" {DIM}({avg_percentage:.1f}% of the video){RESET}" if avg_percentage is not None else ""
     ))
     row("Subscribers", f"+{totals.get('subscribers_gained') or 0:,} / -{totals.get('subscribers_lost') or 0:,}")

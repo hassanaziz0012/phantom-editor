@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -16,37 +15,14 @@ from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel
 
+# Re-exported: callers parse output_json replies with it
+from agentic.schema_utils import parse_json_response, parse_structured_response, schema_to_json  # noqa: F401
+
 T = TypeVar("T", bound=BaseModel)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROMPTS_DIR = REPO_ROOT / "agentic" / "prompts"
 BROWSERLLM_BIN = shutil.which("browserllm") or str(Path.home() / ".local" / "bin" / "browserllm")
-
-
-def extract_json_block(text: str) -> str:
-    """Extracts JSON substring from text or markdown code fences."""
-    text = text.strip()
-    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if fence_match:
-        return fence_match.group(1).strip()
-
-    start = min((pos for pos in (text.find("{"), text.find("[")) if pos != -1), default=-1)
-    end = max(text.rfind("}"), text.rfind("]"))
-    if start != -1 and end != -1 and end >= start:
-        return text[start : end + 1]
-    return text
-
-
-def parse_json_response(response_text: str) -> Any:
-    """Extracts and parses JSON object or array from LLM response."""
-    json_text = extract_json_block(response_text)
-    json_text = json_text.replace('\u201c', '"').replace('\u201d', '"').replace('\u2018', "'").replace('\u2019', "'")
-    return json.loads(json_text)
-
-
-def parse_claude_json(response_text: str) -> Any:
-    """Backward-compatible alias for parse_json_response."""
-    return parse_json_response(response_text)
 
 
 def load_prompt(prompt_name: str, **kwargs: Any) -> str:
@@ -93,11 +69,8 @@ def ask_browserllm(
     if system_prompt:
         prompt_text = f"System Instructions:\n{system_prompt.strip()}\n\n---\n\n{prompt_text.strip()}"
 
-    is_pydantic = isinstance(schema, type) and issubclass(schema, BaseModel)
-    if schema is not None:
-        raw_schema = schema.model_json_schema() if is_pydantic else schema
-        if "json" not in prompt_text.lower():
-            prompt_text += f"\n\nRespond ONLY with valid JSON conforming to this schema:\n```json\n{json.dumps(raw_schema, indent=2)}\n```"
+    if schema is not None and "json" not in prompt_text.lower():
+        prompt_text += f"\n\nRespond ONLY with valid JSON conforming to this schema:\n```json\n{json.dumps(schema_to_json(schema), indent=2)}\n```"
 
     with tempfile.NamedTemporaryFile("w+", suffix=".txt", delete=False, encoding="utf-8") as pf, \
          tempfile.NamedTemporaryFile("r+", suffix=".txt", delete=False, encoding="utf-8") as of:
@@ -140,37 +113,13 @@ def ask_browserllm(
             raise RuntimeError(f"BrowserLLM ({provider}) returned empty response. Stderr: {res.stderr.strip()}")
 
         if schema is not None:
-            parsed = parse_json_response(output)
-            return schema.model_validate(parsed) if is_pydantic else parsed
+            return parse_structured_response(output, schema)
 
         return output
     finally:
         for p in (prompt_path, output_path):
             if os.path.exists(p):
                 os.remove(p)
-
-
-# Provider Shortcuts
-def ask_claude(user_prompt: Any, **kwargs: Any) -> Any:
-    return ask_browserllm(user_prompt, provider="claude", **kwargs)
-
-def ask_chatgpt(user_prompt: Any, **kwargs: Any) -> Any:
-    return ask_browserllm(user_prompt, provider="chatgpt", **kwargs)
-
-def ask_gemini(user_prompt: Any, **kwargs: Any) -> Any:
-    return ask_browserllm(user_prompt, provider="gemini", **kwargs)
-
-def query_browserllm(prompt_text: str, provider: str = "claude", **kwargs: Any) -> str:
-    return str(ask_browserllm(prompt_text, provider=provider, schema=None, **kwargs))
-
-def query_claude(prompt_text: str, **kwargs: Any) -> str:
-    return query_browserllm(prompt_text, provider="claude", **kwargs)
-
-def query_chatgpt(prompt_text: str, **kwargs: Any) -> str:
-    return query_browserllm(prompt_text, provider="chatgpt", **kwargs)
-
-def query_gemini(prompt_text: str, **kwargs: Any) -> str:
-    return query_browserllm(prompt_text, provider="gemini", **kwargs)
 
 
 def main() -> None:

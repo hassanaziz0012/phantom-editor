@@ -37,7 +37,7 @@ if str(REPO_ROOT) not in sys.path:
 load_dotenv(REPO_ROOT / ".env")
 load_dotenv()
 
-from agentic.ask_browserllm import ask_claude, load_prompt, parse_claude_json
+from agentic.ask_browserllm import ask_browserllm, load_prompt, parse_json_response
 from metadata import utils
 from metadata.recommendations.embed_my_videos import (
     DEFAULT_INPUT_PATH as DEFAULT_VIDEOS_JSON,
@@ -251,10 +251,10 @@ def select_recommendations_with_claude(
     )
 
     logger.info("Querying Claude via BrowserLLM to select top recommendations...")
-    raw_response = ask_claude(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
+    raw_response = ask_browserllm(prompt, model="sonnet", effort="high", output_json=True, profile=profile)
     raw_text = str(raw_response).strip()
 
-    parsed = parse_claude_json(raw_text)
+    parsed = parse_json_response(raw_text)
     if not isinstance(parsed, list):
         raise ValueError(f"Claude did not return a JSON list. Response was: {raw_text[:200]}")
 

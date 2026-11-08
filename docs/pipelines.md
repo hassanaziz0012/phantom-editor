@@ -217,7 +217,7 @@ The backend driver powering Google Sheets synchronization:
 * **Dynamic Header & Schema Mapping**: Detects existing sheet headers (`Title`, `Description`, `URL`, `Publish Date`, `Platform`) or initializes default columns if the sheet is empty.
 * **Default Worksheet**: Synchronizes with the `YouTube` sheet tab by default.
 * **Project Synchronization**: One-way sync from local project folders to the sheet via `sync_projects_to_sheet()` during `phantom projects status`.
-* **Written Content Synchronization**: [`written_content_sheet_utils.py`](file:///home/hassan/Desktop/programming/phantom-editor/pipelines/written_content_sheet_utils.py) re-exports sheet utilities for tracking written social posts across platforms (Substack, LinkedIn).
+* **Written Content Synchronization**: [`content/written_content_sheet_utils.py`](../content/written_content_sheet_utils.py) holds the sheet utilities for tracking written social posts across platforms (Substack, LinkedIn).
 
 ### Configuration
 

@@ -6,7 +6,7 @@ Automates creating and posting Substack Notes with text, image(s), and video att
 using Playwright over Chrome DevTools Protocol (CDP).
 
 Adheres to:
-- Persistent Chrome CDP Architecture (PLAYWRIGHT_CDP_GUIDE.md)
+- Persistent Chrome CDP Architecture (browser/cdp.py)
 - Role & Accessibility-first element selectors (get_by_role, get_by_text)
 
 Usage:
@@ -31,195 +31,24 @@ Usage:
 
 import argparse
 import asyncio
-import json
 import os
-import shlex
-import shutil
-import subprocess
 import sys
-import tempfile
 import time
-import urllib.request
 from pathlib import Path
 from typing import List, Optional, Union
-from playwright.async_api import async_playwright, BrowserContext, Page, TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import async_playwright, Page
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from browser.cdp import get_cdp_browser_context, get_clean_page
+from shared.terminal import edit_text
 
 # ==============================================================================
 # Configuration & Constants
 # ==============================================================================
-PROFILE_DIR = Path.home() / "Desktop" / "browser-profiles" / "cdp"
-CDP_PORT = 9222
-CDP_URL = f"http://127.0.0.1:{CDP_PORT}"
 SUBSTACK_URL = "https://substack.com/home"
-
-STEALTH_INIT_SCRIPT = """
-(() => {
-    // 1. Mask navigator.webdriver
-    try {
-        if (Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver')) {
-            Object.defineProperty(Navigator.prototype, 'webdriver', {
-                get: () => false,
-                enumerable: true,
-                configurable: true,
-            });
-        }
-    } catch (_) {}
-    try {
-        if (Object.prototype.hasOwnProperty.call(navigator, 'webdriver')) {
-            delete navigator.webdriver;
-        }
-    } catch (_) {}
-
-    // 2. Ensure window.chrome structure is authentic
-    if (!window.chrome) {
-        window.chrome = {
-            runtime: { id: undefined, connect: function() {}, sendMessage: function() {} },
-            loadTimes: function() {},
-            csi: function() {},
-            app: { isInstalled: false, InstallState: {}, RunningState: {} },
-        };
-    }
-
-    // 3. Fix permissions query for notifications
-    if (navigator.permissions && navigator.permissions.query) {
-        const originalQuery = navigator.permissions.query.bind(navigator.permissions);
-        navigator.permissions.query = (parameters) => {
-            if (parameters && parameters.name === 'notifications') {
-                return Promise.resolve({
-                    state: typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'granted' : 'prompt',
-                    name: 'notifications',
-                    onchange: null,
-                    addEventListener: () => {},
-                    removeEventListener: () => {},
-                    dispatchEvent: () => false,
-                });
-            }
-            return originalQuery(parameters);
-        };
-    }
-})();
-"""
-
-# ==============================================================================
-# Chrome CDP Lifecycle Helpers
-# ==============================================================================
-def find_chrome_executable() -> str:
-    """Locates the system Google Chrome binary."""
-    for binary in ("google-chrome-stable", "google-chrome", "chromium-browser", "chromium"):
-        path = shutil.which(binary)
-        if path:
-            return path
-    raise FileNotFoundError("Google Chrome executable not found on system PATH.")
-
-
-def is_cdp_ready(port: int = CDP_PORT) -> bool:
-    """Checks if the Chrome CDP endpoint is responding."""
-    try:
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/json/version",
-            headers={"User-Agent": "Playwright-CDP-Client"},
-        )
-        with urllib.request.urlopen(req, timeout=1.0) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
-
-
-def get_cdp_ws_endpoint(port: int = CDP_PORT) -> str:
-    """Fetches WebSocket debugger URL to avoid Node.js DEP0169 url.parse warning."""
-    try:
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/json/version",
-            headers={"User-Agent": "Playwright-CDP-Client"},
-        )
-        with urllib.request.urlopen(req, timeout=2.0) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data.get("webSocketDebuggerUrl") or f"http://127.0.0.1:{port}"
-    except Exception:
-        return f"http://127.0.0.1:{port}"
-
-
-def cleanup_stale_locks(profile_path: Path) -> None:
-    """Removes dangling singleton locks if Chrome crashed or was killed."""
-    for lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
-        target = profile_path / lock
-        try:
-            if target.is_symlink() or target.is_file():
-                target.unlink(missing_ok=True)
-            elif target.is_dir():
-                shutil.rmtree(target, ignore_errors=True)
-        except Exception:
-            pass
-
-
-def ensure_chrome_cdp(
-    profile_path: Path = PROFILE_DIR,
-    port: int = CDP_PORT,
-    headless: bool = False,
-) -> str:
-    """Ensures Chrome is running with CDP enabled. Auto-launches if not active."""
-    cdp_url = f"http://127.0.0.1:{port}"
-    if is_cdp_ready(port):
-        return cdp_url
-
-    profile_path = profile_path.resolve()
-    profile_path.mkdir(parents=True, exist_ok=True)
-    cleanup_stale_locks(profile_path)
-
-    chrome_bin = find_chrome_executable()
-    cmd = [
-        chrome_bin,
-        f"--remote-debugging-port={port}",
-        f"--user-data-dir={profile_path}",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-blink-features=AutomationControlled",
-        "--password-store=basic",
-    ]
-    if headless:
-        cmd.extend(["--headless=new", "--disable-gpu"])
-
-    subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    for _ in range(40):
-        time.sleep(0.25)
-        if is_cdp_ready(port):
-            return cdp_url
-
-    raise RuntimeError(f"Failed to start Chrome with remote debugging on port {port}")
-
-
-async def get_cdp_browser_context(
-    playwright,
-    profile_path: Path = PROFILE_DIR,
-    port: int = CDP_PORT,
-    headless: bool = False,
-) -> BrowserContext:
-    """Connects Playwright to the live Chrome CDP instance and applies stealth scripts."""
-    ensure_chrome_cdp(profile_path=profile_path, port=port, headless=headless)
-    ws_endpoint = get_cdp_ws_endpoint(port=port)
-    browser = await playwright.chromium.connect_over_cdp(ws_endpoint)
-
-    context = browser.contexts[0] if browser.contexts else await browser.new_context()
-    await context.add_init_script(STEALTH_INIT_SCRIPT)
-    return context
-
-
-async def get_clean_page(context: BrowserContext) -> Page:
-    """Reuses an existing blank page or opens a new tab to avoid collisions."""
-    for page in context.pages:
-        if page.url in ("about:blank", "chrome://newtab/", "chrome://new-tab-page/"):
-            await page.add_init_script(STEALTH_INIT_SCRIPT)
-            return page
-    page = await context.new_page()
-    await page.add_init_script(STEALTH_INIT_SCRIPT)
-    return page
-
 
 # ==============================================================================
 # Substack Note Publishing Workflow
@@ -266,7 +95,7 @@ async def post_substack_note(
     async with async_playwright() as playwright:
         if page is None:
             context = await get_cdp_browser_context(playwright, headless=headless)
-            page = await get_clean_page(context)
+            page = await get_clean_page(context, reuse_blank=True)
             close_page_when_done = True
         else:
             context = page.context
@@ -426,47 +255,6 @@ async def post_substack_note(
             return "https://substack.com/home"
 
 
-def get_editor() -> str:
-    """Finds default editor from environment ($EDITOR / $VISUAL) or common system fallbacks."""
-    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
-    if editor:
-        return editor
-    for candidate in ["nano", "vim", "vi", "gnome-text-editor", "code"]:
-        if shutil.which(candidate):
-            return candidate
-    return "nano"
-
-
-def get_text_from_editor() -> str:
-    """Opens the user's default $EDITOR with a temporary file and returns the written text."""
-    editor = get_editor()
-    cmd = shlex.split(editor)
-
-    with tempfile.NamedTemporaryFile(suffix=".txt", prefix="substack_note_", delete=False) as tf:
-        temp_path = tf.name
-
-    try:
-        binary_name = Path(cmd[0]).name
-        if binary_name == "gnome-text-editor" and "--standalone" not in cmd:
-            cmd.append("--standalone")
-        elif binary_name == "code" and "-w" not in cmd and "--wait" not in cmd:
-            cmd.append("--wait")
-
-        print(f"Opening {editor}... write your note, then save and close.")
-        subprocess.call(cmd + [temp_path])
-
-        if os.path.exists(temp_path):
-            with open(temp_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        return ""
-    finally:
-        if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except OSError:
-                pass
-
-
 # ==============================================================================
 # CLI Entry Point
 # ==============================================================================
@@ -515,7 +303,7 @@ Examples:
     elif not sys.stdin.isatty():
         content = sys.stdin.read().strip()
     else:
-        content = get_text_from_editor()
+        content = edit_text(prefix="substack_note_").strip()
 
     if not content and not args.images and not args.video:
         print("No text entered and no media attached. Aborting.", file=sys.stderr)

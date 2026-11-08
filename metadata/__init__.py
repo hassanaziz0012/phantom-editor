@@ -8,11 +8,10 @@ __all__ = [
     "load_metadata",
     "parse_metadata_dict",
     "read_metadata",
-    "extract_json_block",
+    "ask_browserllm",
     "load_prompt",
-    "parse_claude_json",
+    "parse_json_response",
     "parse_srt_to_timestamped_transcript",
-    "query_claude",
     "resolve_project_paths",
 ]
 

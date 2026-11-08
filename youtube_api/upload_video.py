@@ -183,7 +183,7 @@ def validate_metadata_for_upload(
     require_description: bool = True,
     require_timestamps: bool = True,
     require_recommendations: bool = True,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     """
     Validates metadata fields before uploading.
     Ensures 'description', 'timestamps', and 'recommendations' exist and are non-empty if required,
@@ -237,28 +237,28 @@ def validate_metadata_for_upload(
 # Upload helpers
 # ---------------------------------------------------------------------------
 
-def upload_video(
-    youtube,
-    video_path: Path,
-    metadata: Union[VideoMetadata, dict],
-    require_description: bool = True,
-    require_timestamps: bool = True,
-    require_recommendations: bool = True,
+def build_description(
+    raw_description: str,
+    formatted_timestamps: str,
+    formatted_recommendations: str,
+    formatted_resources: str,
 ) -> str:
-    """Upload the video and return its YouTube video ID."""
-
-    raw_description, formatted_timestamps, formatted_recommendations, formatted_resources = validate_metadata_for_upload(
-        metadata,
-        require_description=require_description,
-        require_timestamps=require_timestamps,
-        require_recommendations=require_recommendations,
-    )
-    full_description = config.DESCRIPTION_TEMPLATE.format(
+    """The full YouTube description: the parts validate_metadata_for_upload returns, put into the template."""
+    return config.DESCRIPTION_TEMPLATE.format(
         video_description=raw_description,
         timestamps=formatted_timestamps,
         recommended=formatted_recommendations,
         resources=formatted_resources,
     )
+
+
+def upload_video(
+    youtube,
+    video_path: Path,
+    metadata: Union[VideoMetadata, dict],
+    full_description: str,
+) -> str:
+    """Upload the video with ``full_description`` (see build_description) and return its YouTube video ID."""
 
     body = {
         "snippet": {
@@ -374,12 +374,7 @@ def main():
     # Pre-check metadata requirements (description, timestamps & recommendations) before authentication or uploading
     print("🔍 Validating metadata...")
     try:
-        raw_description, formatted_timestamps, formatted_recommendations, formatted_resources = validate_metadata_for_upload(
-            metadata,
-            require_description=True,
-            require_timestamps=True,
-            require_recommendations=True,
-        )
+        raw_description, formatted_timestamps, formatted_recommendations, formatted_resources = validate_metadata_for_upload(metadata)
         print("✅ Found video description.")
         ts_count = len(formatted_timestamps.splitlines())
         rec_count = len(formatted_recommendations.splitlines())
@@ -416,14 +411,10 @@ def main():
             print(f"✅ Will create playlist '{args.playlist.strip()}' and add the video to it.")
 
     # Upload video
-    video_id = upload_video(
-        youtube,
-        video_path,
-        metadata,
-        require_description=True,
-        require_timestamps=True,
-        require_recommendations=True,
+    full_description = build_description(
+        raw_description, formatted_timestamps, formatted_recommendations, formatted_resources
     )
+    video_id = upload_video(youtube, video_path, metadata, full_description)
 
     # Set thumbnail
     set_thumbnail(youtube, video_id, thumbnail_file)
@@ -466,7 +457,7 @@ def main():
         )
         print(f"\n🐦 Posting tweet:\n   {tweet_content}")
         try:
-            subprocess.run(["phantom", "tweet", tweet_content], check=True)
+            subprocess.run(["phantom", "publish", "x", tweet_content], check=True)
             print("✅ Tweet posted!")
         except Exception as e:
             print(f"⚠️  Tweet step failed or browser closed: {e}")
@@ -475,7 +466,7 @@ def main():
         # Post Substack note
         print(f"\n📝 Posting Substack note:\n   {tweet_content}")
         try:
-            subprocess.run(["phantom", "substack", "note", tweet_content], check=True)
+            subprocess.run(["phantom", "publish", "substack", tweet_content], check=True)
             print("✅ Substack note posted!")
         except Exception as e:
             print(f"⚠️  Substack note step failed or browser closed: {e}")

@@ -10,22 +10,12 @@ import re
 from pathlib import Path
 
 from pipeline.common import PipelineError
+from shared.timecodes import parse_timestamp
 
 CUTS_FILENAME = "cuts.txt"
 
 _TIMESTAMP = r"\d+(?::\d+){0,2}(?:\.\d+)?"
 _RANGE_RE = re.compile(rf"^({_TIMESTAMP})\s*[-–]\s*({_TIMESTAMP})$")
-
-
-def parse_timestamp(text: str) -> float:
-    """Seconds for ``SS``, ``MM:SS`` or ``HH:MM:SS`` (fractions allowed on the seconds)."""
-    *head, seconds = text.split(":")
-    if any("." in part for part in head):
-        raise ValueError(f"only the seconds may have a fraction: '{text}'")
-    total = 0.0
-    for part in head:
-        total = total * 60 + int(part)
-    return total * 60 + float(seconds)
 
 
 def format_cut(cut: tuple[float, float]) -> str:

@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -31,7 +30,7 @@ if str(repo_root) not in sys.path:
 
 from dotenv import load_dotenv
 
-from ideas.common import Colors, export_ideas, fetch_recent_channel_titles, parse_ideas_response
+from ideas.common import Colors, export_ideas, fetch_recent_channel_titles, fetch_video_metadata, parse_ideas_response
 from youtube_api.utils import extract_video_id
 
 load_dotenv()
@@ -45,58 +44,6 @@ logging.basicConfig(
 logger = logging.getLogger("phantom.ideas.outliers_generator")
 
 PROMPT_TEMPLATE_PATH = repo_root / "agentic" / "prompts" / "generate_ideas_from_outliers.md"
-
-
-# ── Video Metadata Fetching ───────────────────────────────────────────────────
-
-def fetch_video_metadata(video_id: str, api_key: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetches title, description, and channel_title using YouTube API or yt-dlp.
-    """
-    video_url = f"https://www.youtube.com/watch?v={video_id}"
-
-    # 1. Try YouTube Data API
-    api_key = api_key or os.getenv("YOUTUBE_API_KEY")
-    if api_key:
-        try:
-            from youtube_api.utils import get_youtube_client
-            youtube = get_youtube_client(api_key)
-            resp = youtube.videos().list(part="snippet,statistics", id=video_id).execute()
-            items = resp.get("items", [])
-            if items:
-                snippet = items[0].get("snippet", {})
-                stats = items[0].get("statistics", {})
-                return {
-                    "title": snippet.get("title", "").strip(),
-                    "channel_title": snippet.get("channelTitle", "").strip(),
-                    "channel_id": snippet.get("channelId", "").strip(),
-                    "description": snippet.get("description", "").strip(),
-                    "view_count": int(stats.get("viewCount", 0)),
-                }
-        except Exception as e:
-            logger.debug("YouTube API metadata fetch failed: %s", e)
-
-    # 2. Fallback to yt-dlp
-    try:
-        from ideas.summarize_video import get_video_metadata as ytdlp_metadata
-        data = ytdlp_metadata(video_url)
-        return {
-            "title": data.get("title", "").strip(),
-            "channel_title": data.get("channel_title", "").strip(),
-            "channel_id": data.get("channel_id", "").strip(),
-            "description": data.get("description", "").strip(),
-            "view_count": data.get("view_count", 0),
-        }
-    except Exception as e:
-        logger.debug("yt-dlp metadata fetch failed: %s", e)
-
-    return {
-        "title": f"YouTube Video ({video_id})",
-        "channel_title": "Unknown Channel",
-        "channel_id": "unknown_channel",
-        "description": "No description available.",
-        "view_count": 0,
-    }
 
 
 # ── Video Summarization ────────────────────────────────────────────────────────
@@ -163,7 +110,7 @@ def build_outlier_prompt(
     return prompt
 
 
-from agentic.ask_browserllm import query_claude
+from agentic.ask_browserllm import ask_browserllm
 
 
 # ── Terminal Display ──────────────────────────────────────────────────────────
@@ -370,8 +317,8 @@ def main():
         print(f"{Colors.CYAN}Querying Claude via BrowserLLM (headful mode)...{Colors.RESET}")
 
     try:
-        claude_raw_response = query_claude(
-            prompt_text=prompt_text,
+        claude_raw_response = ask_browserllm(
+            prompt_text,
             profile=args.profile,
             profile_dir=args.profile_dir,
             chrome=not args.no_chrome,

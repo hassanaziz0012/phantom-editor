@@ -14,7 +14,6 @@ Usage:
 import argparse
 import json
 import os
-import subprocess
 import sys
 import tempfile
 
@@ -29,6 +28,13 @@ try:
     from utils import Colors, colorize
 except ImportError:
     from review.utils import Colors, colorize
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
+
+from shared.media import extract_audio  # noqa: E402
+from shared.timecodes import format_timestamp  # noqa: E402
 
 SAMPLE_RATE = 32000  # PANNs was trained at this rate — don't change
 
@@ -73,28 +79,18 @@ class Cnn14Classifier(torch.nn.Module):
         return self.model(x)['clipwise_output']
 
 
-def extract_audio(input_path: str) -> str:
+def extract_wav_to_temp(input_path: str) -> str:
     """
     Extracts mono 32kHz WAV audio from any video/audio file using ffmpeg.
     Returns path to a temp .wav file. Caller is responsible for cleanup.
     """
     fd, wav_path = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", input_path,
-        "-ar", str(SAMPLE_RATE),
-        "-ac", "1",
-        "-vn",
-        wav_path,
-    ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if result.returncode != 0:
+    try:
+        extract_audio(input_path, wav_path, sample_rate=SAMPLE_RATE)
+    except Exception:
         os.remove(wav_path)
-        raise RuntimeError(
-            f"ffmpeg failed to extract audio:\n{result.stderr.decode(errors='ignore')}"
-        )
+        raise
     return wav_path
 
 
@@ -227,16 +223,6 @@ def summarize_detected_classes(probs: np.ndarray, start_times: list, top_k: int 
     return summary
 
 
-def format_timestamp(seconds: float) -> str:
-    """Formats float seconds into HH:MM:SS.ss or MM:SS.ss format."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = seconds % 60
-    if hours > 0:
-        return f"{hours:02d}:{minutes:02d}:{secs:05.2f}"
-    return f"{minutes:02d}:{secs:05.2f}"
-
-
 def main():
     cpu_cores = os.cpu_count() or 4
     torch.set_num_threads(cpu_cores)
@@ -305,7 +291,7 @@ def main():
         wav_path = input_path
     else:
         print(f"Extracting audio from {input_path} ...", file=sys.stderr)
-        temp_wav = extract_audio(input_path)
+        temp_wav = extract_wav_to_temp(input_path)
         wav_path = temp_wav
 
     try:
@@ -329,7 +315,7 @@ def main():
             top_summary = summarize_detected_classes(probs, start_times, top_k=args.top_classes)
             print("\n" + colorize("--- Top Detected Sounds in File (Overall) ---", Colors.BOLD + Colors.CYAN))
             for i, item in enumerate(top_summary, 1):
-                time_str = format_timestamp(item["peak_time"])
+                time_str = format_timestamp(item["peak_time"], decimals=2)
                 print(f"  {i:2d}. {item['class']:<30} max conf: {item['max_confidence']:.2f} (peak at {time_str} / {item['peak_time']:.2f}s)")
             print("-" * 50)
 
@@ -357,8 +343,8 @@ def main():
             print(colorize(f"⚠️  FLAGGED AUDIO EVENTS ({len(segments)}):", Colors.BOLD + Colors.WARNING))
             print()
             for idx, s in enumerate(segments, 1):
-                t_start = format_timestamp(s['start'])
-                t_end = format_timestamp(s['end'])
+                t_start = format_timestamp(s['start'], decimals=2)
+                t_end = format_timestamp(s['end'], decimals=2)
                 dur = s['end'] - s['start']
                 time_range = f"{t_start} --> {t_end}"
                 sec_range = f"[{s['start']:.2f}s to {s['end']:.2f}s]"
