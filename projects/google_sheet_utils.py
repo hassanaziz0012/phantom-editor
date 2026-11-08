@@ -12,15 +12,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-# Ensure repo root is accessible
-
-
 # ---------------------------------------------------------------------------
 # Constants & Scopes
 # ---------------------------------------------------------------------------
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 DEFAULT_SHEET_NAME = "YouTube"
 DEFAULT_HEADERS = ["Project", "Title", "Status", "URL", "Publish Date", "Platform"]
+# Status given to a row whose project folder is gone (deleted, or archived by `phantom projects cleanup`)
+ARCHIVED_STATUS = "Archived"
 
 
 def get_spreadsheet_id(spreadsheet_id: Optional[str] = None) -> str:
@@ -195,7 +194,7 @@ def _project_row(project: Any, headers: List[str], col_map: Dict[str, int], plat
         "title": project.title or "",
         "status": project.stage_name,
         "url": project.yt_url or "",
-        "publish_date": getattr(project, "uploaded_date", None) or getattr(project, "scheduled_date", None) or "",
+        "publish_date": getattr(project, "scheduled_date", None) or getattr(project, "uploaded_date", None) or "",
         "platform": platform,
     }
     row = [""] * len(headers)
@@ -241,11 +240,17 @@ def sync_projects_to_sheet(
     - Updates Status, Title, URL, and Publish Date for existing projects to match local state.
     - Clears/unschedules Publish Date in sheet if removed locally.
     - Preserves rows without a Project name (manual/Twitter entries).
-    - Rows with a Project name whose local folder was deleted are removed from the sheet.
+    - Rows are never deleted. A row whose project folder is gone keeps its values and gets
+      the Status "Archived"; if the folder comes back, the row is updated as usual.
+
+    Refuses to run with no projects: that almost always means the projects folder is missing
+    or not mounted, and every row would be marked Archived.
 
     Costs one read, plus one write only when something changed.
-    Returns a dictionary summarizing changes: {"added": int, "updated": int, "removed": int, "total": int}
+    Returns a dictionary summarizing changes: {"added": int, "updated": int, "archived": int, "total": int}
     """
+    if not projects:
+        raise ValueError("No local projects found, so the sheet was left alone (is the projects folder mounted?).")
     sheet_id = get_spreadsheet_id(spreadsheet_id)
     if service is None:
         service = get_sheets_service()
@@ -265,7 +270,7 @@ def sync_projects_to_sheet(
     local_projects = {p.name: p for p in projects}
     matched_local_names = set()
 
-    stats = {"added": 0, "updated": 0, "removed": 0, "total": len(projects)}
+    stats = {"added": 0, "updated": 0, "archived": 0, "total": len(projects)}
     new_rows = []
 
     for row in raw_rows:
@@ -286,8 +291,13 @@ def sync_projects_to_sheet(
         # Case 1: Row has a Project folder specified
         if row_proj:
             if row_proj not in local_projects:
-                # Folder was deleted locally! Remove row from sheet
-                stats["removed"] += 1
+                # Folder is gone: keep the row, marked Archived
+                padded_row = (list(row) + [""] * len(headers))[:max(len(headers), len(row))]
+                status_col = col_map["status"]
+                if status_col >= 0 and str(padded_row[status_col]).strip() != ARCHIVED_STATUS:
+                    padded_row[status_col] = ARCHIVED_STATUS
+                    stats["archived"] += 1
+                new_rows.append(padded_row)
                 continue
             p = local_projects[row_proj]
             matched_local_names.add(p.name)

@@ -16,7 +16,9 @@ Stages:
   6. Reviewed          - Manual review complete (final.mp4), needs a complete metadata.json (every key in
                          REQUIRED_METADATA_KEYS and a URL for every entry in "resources").
   7. Ready to Schedule - final.mp4 + complete metadata.json + thumbnail(s), ready for release/upload.
-  8. Scheduled         - Video has scheduled publish date, needs YouTube upload.
+  8. Scheduled         - Ready to Schedule with a publishDate in metadata.json, needs YouTube upload
+                         (`phantom publish yt` uploads it privately, set to go public on that date).
+                         An unfinished project with a publishDate stays at its real stage.
   9. Uploaded          - Video uploaded to YouTube (metadata.json has valid YT URL). Complete!
  10. Needs Repackaging - 48h after publish, its first days' CTR was below the channel's 28-day CTR.
                          Needs a new title & thumbnail; goes back to Uploaded once the title or
@@ -40,7 +42,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from metadata.check_resource_links import blank_resources
-from metadata.read_metadata import parse_metadata_dict, read_metadata
+from metadata.read_metadata import DEFAULT_TWEET_TEMPLATE, parse_metadata_dict, read_metadata
 from projects.google_sheet_utils import sync_projects_to_sheet
 from shared.paths import YT_PROJECTS_DIR
 from video_editing.utils import COLOR_BLUE, COLOR_BOLD, COLOR_GREEN, COLOR_RED, COLOR_RESET, COLOR_YELLOW
@@ -63,8 +65,9 @@ OUTLINE_SECTIONS = ("Hook", "Outline")
 # Marks where in the video to ask viewers to like & subscribe; must appear somewhere in outline.md.
 OUTLINE_CTA_MARKER = "[LIKE / SUBSCRIBE]"
 OUTLINE_CTA_PATTERN = re.compile(r"\[\s*LIKE\s*/\s*SUBSCRIBE\s*\]", re.IGNORECASE)
-# Keys metadata.json must contain for the metadata step to count as done.
-# "resources" is written by `phantom meta resources`; each entry's "url" must also be filled in.
+# Keys metadata.json must have a filled-in value for the metadata step to count as done.
+# "resources" is written by `phantom meta resources` and may be an empty list (nothing promised),
+# but each entry's "url" must be filled in.
 REQUIRED_METADATA_KEYS = ("title", "titles", "description", "tweetTemplate", "recommendations", "timestamps", "resources")
 
 
@@ -171,8 +174,18 @@ def has_outline_cta(outline_file: Path) -> bool:
     return bool(OUTLINE_CTA_PATTERN.search(outline_file.read_text(encoding="utf-8", errors="replace")))
 
 
+def is_filled_in(key: str, value: Any) -> bool:
+    """Whether a REQUIRED_METADATA_KEYS value counts as done (not blank, not a placeholder)."""
+    if key == "resources":
+        return isinstance(value, list)
+    if isinstance(value, str):
+        value = value.strip()
+        return bool(value) and not (key == "tweetTemplate" and value == DEFAULT_TWEET_TEMPLATE)
+    return bool(value)
+
+
 def check_metadata(data: Any) -> tuple[List[str], List[str]]:
-    """Return (the REQUIRED_METADATA_KEYS metadata.json lacks, the "resources" keys with a blank URL).
+    """Return (the REQUIRED_METADATA_KEYS metadata.json lacks or has blank, the "resources" keys with a blank URL).
 
     ``data`` is the file's raw JSON (None if unreadable); all keys count as missing unless
     it's an object. It has to be the raw JSON: read_metadata() fills in defaults, so it
@@ -180,7 +193,8 @@ def check_metadata(data: Any) -> tuple[List[str], List[str]]:
     """
     if not isinstance(data, dict):
         return list(REQUIRED_METADATA_KEYS), []
-    return [key for key in REQUIRED_METADATA_KEYS if key not in data], blank_resources(data.get("resources"))
+    missing = [key for key in REQUIRED_METADATA_KEYS if not is_filled_in(key, data.get(key))]
+    return missing, blank_resources(data.get("resources"))
 
 
 def metadata_todo(project: VideoProject) -> str:
@@ -191,7 +205,7 @@ def metadata_todo(project: VideoProject) -> str:
         return f"Fix metadata.json ({project.metadata_error})"
     todos = []
     if project.metadata_missing_keys:
-        todos.append(f"Add the missing keys to metadata.json ({', '.join(project.metadata_missing_keys)})")
+        todos.append(f"Fill in metadata.json ({', '.join(project.metadata_missing_keys)})")
     if project.metadata_blank_resources:
         todos.append(f"Fill in the resource URLs in metadata.json ({', '.join(project.metadata_blank_resources)})")
     return " AND ".join(todos)
@@ -444,6 +458,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
             project.raw_files.append(item)
 
     has_scheduled_date = bool(project.scheduled_date and project.scheduled_date.strip())
+    is_ready = bool(project.final_file and project.has_metadata and project.thumbnail_files)
 
     # Determine stage
     check = project.performance_check or {}
@@ -460,8 +475,13 @@ def analyze_project(project_dir: Path) -> VideoProject:
     elif project.yt_url:
         project.stage_num = 9
         project.stage_name = "Uploaded"
-        date_str = project.uploaded_date or project.scheduled_date
-        date_info = f" (Published: {date_str})" if date_str else ""
+        date_str = project.scheduled_date or project.uploaded_date
+        if not date_str:
+            date_info = ""
+        elif date_str.strip()[:10] > date.today().isoformat():
+            date_info = f" (Scheduled to go public: {date_str})"
+        else:
+            date_info = f" (Published: {date_str})"
         if check.get("repackaged"):
             check_info = (
                 f" Repackaged ({describe_repackaging(check['repackaged'])}) after a below-average "
@@ -474,15 +494,18 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.next_step = f"Video uploaded to YouTube{date_info}! All pipeline stages complete! 🚀{check_info}"
         project.status_color = COLOR_GREEN
 
-    # Stage 8: Scheduled (has scheduled publish date in local metadata.json, awaiting YouTube upload)
-    elif has_scheduled_date:
+    # Stage 8: Scheduled (ready to upload, with a publish date in metadata.json). An unfinished
+    # project with a publish date stays at its real stage, with the date added to its next step.
+    elif is_ready and has_scheduled_date:
         project.stage_num = 8
         project.stage_name = "Scheduled"
-        project.next_step = f"Upload video to YouTube ({project.scheduled_date})! 🚀 (`phantom publish yt` or add URL to metadata.json)"
+        project.next_step = (
+            f"Upload video to YouTube (`phantom publish yt`); it goes public on {project.scheduled_date} 🚀"
+        )
         project.status_color = COLOR_YELLOW
 
     # Stage 7: Ready to Schedule (final.mp4 + metadata.json + thumbnail(s))
-    elif project.final_file and project.has_metadata and project.thumbnail_files:
+    elif is_ready:
         project.stage_num = 7
         project.stage_name = "Ready to Schedule"
         project.next_step = "Upload video to YouTube (`phantom publish yt`) or set publishDate in metadata.json"
@@ -546,6 +569,9 @@ def analyze_project(project_dir: Path) -> VideoProject:
                 todo.append(f"add a {OUTLINE_CTA_MARKER} marker to {OUTLINE_FILENAME} where the viewer should be asked to engage")
         project.next_step = f"Script the video ({'; '.join(todo)})"
         project.status_color = COLOR_GRAY
+
+    if has_scheduled_date and project.stage_num <= 6:
+        project.next_step += f" (scheduled to go public on {project.scheduled_date})"
 
     return project
 
@@ -614,7 +640,7 @@ def render_stage_bar(proj: VideoProject) -> str:
                     and bool(proj.thumbnail_files)
                 )
             elif idx == 8:
-                is_complete = proj.stage_num > 8 or bool(proj.yt_url) or bool(proj.scheduled_date) or bool(proj.uploaded_date)
+                is_complete = proj.stage_num > 8 or bool(proj.yt_url) or bool(proj.uploaded_date)
             elif idx == 9:
                 is_complete = proj.stage_num == 9 or bool(proj.yt_url)
 
@@ -858,8 +884,11 @@ def main():
     else:
         print_terminal_summary(projects, projects_dir, verbose=args.verbose)
 
-    # Automatically synchronize project statuses with Google Sheets
-    if not args.no_sync:
+    # Automatically synchronize project statuses with Google Sheets. Only for the real projects
+    # folder: the sheet mirrors it, so syncing another folder would mark every project Archived.
+    if not args.no_sync and projects_dir != YT_PROJECTS_DIR.resolve():
+        print(f"Skipped the Google Sheets sync: {projects_dir} isn't the projects folder ({YT_PROJECTS_DIR}).", file=sys.stderr)
+    elif not args.no_sync:
         if args.json:
             # stdout is the JSON, so the outcome goes to stderr
             try:
@@ -875,8 +904,8 @@ def main():
                     details.append(f"{stats['added']} added")
                 if stats.get("updated"):
                     details.append(f"{stats['updated']} updated")
-                if stats.get("removed"):
-                    details.append(f"{stats['removed']} removed")
+                if stats.get("archived"):
+                    details.append(f"{stats['archived']} archived")
                 detail_str = f" ({', '.join(details)})" if details else " (all up to date)"
                 print(f"\r{COLOR_GREEN}✓ Synced {stats['total']} project(s) with Google Sheets{detail_str}.{COLOR_RESET}\n")
             except Exception as e:
