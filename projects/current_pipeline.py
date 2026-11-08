@@ -5,22 +5,25 @@ Scans ~/Videos/YT Projects (or a custom directory) and displays a summary of
 video projects, their current stage in the content pipeline, and the next step required.
 
 Stages:
-  1. New               - New project folder created, needs video script (.excalidraw) and outline.md.
-  2. Scripted          - Script (.excalidraw) and outline.md (filled-in "# Hook" & "# Outline"
-                         sections, plus a [LIKE / SUBSCRIBE] marker for the engagement CTA)
-                         created, needs raw video recordings.
-  3. Recorded          - Raw footage present, needs Phantom processing (to-review.mp4).
-  4. Processed         - Phantom processing complete (to-review.mp4), needs manual review (final.mp4).
-  5. Reviewed          - Manual review complete (final.mp4), needs metadata & thumbnail.
-  6. Added Metadata    - metadata.json created with every key in REQUIRED_METADATA_KEYS and a URL for
-                         every entry in "resources", needs thumbnail.
-  7. Added Thumbnail   - Thumbnail(s) created, needs a complete metadata.json.
-  8. Ready to Schedule - final.mp4 + complete metadata.json + thumbnail(s), ready for release/upload.
-  9. Scheduled         - Video has scheduled publish date, needs YouTube upload.
- 10. Uploaded          - Video uploaded to YouTube (metadata.json has valid YT URL). Complete!
- 11. Needs Repackaging - 48h after publish, its first days' CTR was below the channel's 28-day CTR.
+  1. New               - New project folder created, needs outline.md (the video script).
+  2. Scripted          - outline.md (filled-in "# Hook" & "# Outline" sections, plus a
+                         [LIKE / SUBSCRIBE] marker for the engagement CTA) created, needs a thumbnail.
+                         An .excalidraw presentation is optional (B-roll is generated).
+  3. Added Thumbnail   - Thumbnail(s) designed, needs raw video recordings. The packaging comes before
+                         the recording so the recording can be shaped to deliver on the thumbnail.
+  4. Recorded          - Raw footage present, needs Phantom processing (to-review.mp4).
+  5. Processed         - Phantom processing complete (to-review.mp4), needs manual review (final.mp4).
+  6. Reviewed          - Manual review complete (final.mp4), needs a complete metadata.json (every key in
+                         REQUIRED_METADATA_KEYS and a URL for every entry in "resources").
+  7. Ready to Schedule - final.mp4 + complete metadata.json + thumbnail(s), ready for release/upload.
+  8. Scheduled         - Video has scheduled publish date, needs YouTube upload.
+  9. Uploaded          - Video uploaded to YouTube (metadata.json has valid YT URL). Complete!
+ 10. Needs Repackaging - 48h after publish, its first days' CTR was below the channel's 28-day CTR.
                          Needs a new title & thumbnail; goes back to Uploaded once the title or
                          thumbnail on YouTube no longer matches metadata.json / the local thumbnails.
+
+Projects recorded without a thumbnail still advance by their files, with "design thumbnail" added
+to their next step until one exists.
 
 48 hours after publish, each uploaded video's analytics are read from YouTube Studio and stored in
 its metadata.json under "performanceCheck" (see youtube_api/performance_check.py). That check runs
@@ -84,6 +87,7 @@ COLOR_MAGENTA = "\033[95m"
 COLOR_PURPLE = "\033[35m"
 COLOR_GRAY = "\033[90m"
 COLOR_WHITE = "\033[97m"
+COLOR_ORANGE = "\033[38;5;208m"
 
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
@@ -170,7 +174,8 @@ class VideoProject:
 
     @property
     def is_scripted(self) -> bool:
-        return len(self.script_files) > 0 and self.has_outline
+        # An .excalidraw presentation is optional: B-roll is generated from the outline instead.
+        return self.has_outline
 
     def to_dict(self) -> dict:
         return {
@@ -382,7 +387,7 @@ def run_repackaging_checks(projects: List[VideoProject], quiet: bool = False) ->
     has changed from the metadata.json title and local thumbnails. Once one has, it's
     recorded under performanceCheck.repackaged and the project goes back to Uploaded.
     """
-    flagged = [p for p in projects if p.stage_num == 11]
+    flagged = [p for p in projects if p.stage_num == 10]
     if not flagged:
         return projects
 
@@ -442,8 +447,15 @@ def describe_repackaging(repackaged: dict) -> str:
 
 
 def stage_label(stage_num: int) -> str:
-    # Stage 11 is a post-upload flag, so it isn't shown as part of the 10-step pipeline.
-    return f"Stage {stage_num}/10" if stage_num <= 10 else f"Stage {stage_num}"
+    # Stage 10 is a post-upload flag, so it isn't shown as part of the 9-step pipeline.
+    return f"Stage {stage_num}/9" if stage_num <= 9 else f"Stage {stage_num}"
+
+
+def with_thumbnail_todo(project: VideoProject, next_step: str) -> str:
+    """Append the thumbnail step for projects that got past Scripted without one."""
+    if project.thumbnail_files:
+        return next_step
+    return f"{next_step} AND design thumbnail (e.g. thumbnail.png)"
 
 
 def analyze_project(project_dir: Path) -> VideoProject:
@@ -501,17 +513,17 @@ def analyze_project(project_dir: Path) -> VideoProject:
     # Determine stage
     check = project.performance_check or {}
 
-    # Stage 11: Needs Repackaging (uploaded, the 48h performance check found its CTR below the
+    # Stage 10: Needs Repackaging (uploaded, the 48h performance check found its CTR below the
     # channel's 28-day CTR, and its YouTube title & thumbnail still match the originals)
     if project.yt_url and check.get("needs_repackaging") and not check.get("repackaged"):
-        project.stage_num = 11
+        project.stage_num = 10
         project.stage_name = "Needs Repackaging"
         project.next_step = f"Rework the title & thumbnail: {describe_performance_check(project.performance_check)}"
         project.status_color = COLOR_RED
 
-    # Stage 10: Uploaded (metadata.json contains a valid YouTube URL)
+    # Stage 9: Uploaded (metadata.json contains a valid YouTube URL)
     elif project.yt_url:
-        project.stage_num = 10
+        project.stage_num = 9
         project.stage_name = "Uploaded"
         date_str = project.uploaded_date or project.scheduled_date
         date_info = f" (Published: {date_str})" if date_str else ""
@@ -527,70 +539,66 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.next_step = f"Video uploaded to YouTube{date_info}! All pipeline stages complete! 🚀{check_info}"
         project.status_color = COLOR_GREEN
 
-    # Stage 9: Scheduled (has scheduled publish date in local metadata.json, awaiting YouTube upload)
+    # Stage 8: Scheduled (has scheduled publish date in local metadata.json, awaiting YouTube upload)
     elif has_scheduled_date:
-        project.stage_num = 9
+        project.stage_num = 8
         project.stage_name = "Scheduled"
         date_info = f" ({project.scheduled_date})" if project.scheduled_date else ""
         project.next_step = f"Upload video to YouTube{date_info}! 🚀 (`phantom publish yt` or add URL to metadata.json)"
         project.status_color = COLOR_YELLOW
 
-    # Stage 8: Ready to Schedule (final.mp4 + metadata.json + thumbnail(s))
+    # Stage 7: Ready to Schedule (final.mp4 + metadata.json + thumbnail(s))
     elif project.final_file and project.has_metadata and project.thumbnail_files:
-        project.stage_num = 8
+        project.stage_num = 7
         project.stage_name = "Ready to Schedule"
         project.next_step = "Upload video to YouTube (`phantom publish yt`) or set publishDate in metadata.json"
         project.status_color = COLOR_CYAN
 
-    # Stage 7: Added Thumbnail (final.mp4 + thumbnail, missing or incomplete metadata)
-    elif project.final_file and project.thumbnail_files:
-        project.stage_num = 7
-        project.stage_name = "Added Thumbnail"
-        project.next_step = metadata_todo(project)
-        project.status_color = COLOR_CYAN
-
-    # Stage 6: Added Metadata (final.mp4 + complete metadata.json, missing thumbnail)
-    elif project.final_file and project.has_metadata:
-        project.stage_num = 6
-        project.stage_name = "Added Metadata"
-        project.next_step = "Design and add thumbnail (e.g. thumbnail.png)"
-        project.status_color = COLOR_CYAN
-
-    # Stage 5: Reviewed (final.mp4 exists, missing both a complete metadata.json and thumbnail)
+    # Stage 6: Reviewed (final.mp4 exists, missing a complete metadata.json or a thumbnail)
     elif project.final_file:
-        project.stage_num = 5
+        project.stage_num = 6
         project.stage_name = "Reviewed"
-        project.next_step = f"{metadata_todo(project)} AND design thumbnail (e.g. thumbnail.png)"
+        if project.has_metadata:
+            project.next_step = "Design and add thumbnail (e.g. thumbnail.png)"
+        else:
+            project.next_step = with_thumbnail_todo(project, metadata_todo(project))
         project.status_color = COLOR_PURPLE
 
-    # Stage 4: Processed (to-review.mp4 exists, final.mp4 does not)
+    # Stage 5: Processed (to-review.mp4 exists, final.mp4 does not)
     elif project.to_review_file:
-        project.stage_num = 4
+        project.stage_num = 5
         project.stage_name = "Processed"
-        project.next_step = "Manually review to-review.mp4 and create final.mp4"
+        project.next_step = with_thumbnail_todo(project, "Manually review to-review.mp4 and create final.mp4")
         project.status_color = COLOR_YELLOW
 
-    # Stage 3: Recorded (raw video files present, no to-review.mp4)
+    # Stage 4: Recorded (raw video files present, no to-review.mp4)
     elif len(project.raw_files) > 0:
-        project.stage_num = 3
+        project.stage_num = 4
         project.stage_name = "Recorded"
-        project.next_step = "Process video using Phantom (`phantom process` or `process_video.py`)"
+        project.next_step = with_thumbnail_todo(
+            project, "Process video using Phantom (`phantom process` or `process_video.py`)"
+        )
         project.status_color = COLOR_MAGENTA
 
-    # Stage 2: Scripted (.excalidraw file and filled-in outline.md with the CTA marker present, no raw video files)
+    # Stage 3: Added Thumbnail (scripted + thumbnail(s), no raw video files)
+    elif project.is_scripted and project.thumbnail_files:
+        project.stage_num = 3
+        project.stage_name = "Added Thumbnail"
+        project.next_step = "Record raw footage (webcam & screencast files) that delivers on the thumbnail"
+        project.status_color = COLOR_ORANGE
+
+    # Stage 2: Scripted (filled-in outline.md with the CTA marker present, no thumbnail or raw video files)
     elif project.is_scripted:
         project.stage_num = 2
         project.stage_name = "Scripted"
-        project.next_step = "Record raw footage (webcam & screencast files)"
+        project.next_step = "Design the thumbnail (e.g. thumbnail.png) before recording"
         project.status_color = COLOR_BLUE
 
-    # Stage 1: New (No raw video files, and the .excalidraw script or a filled-in outline.md is missing)
+    # Stage 1: New (No raw video files, and a filled-in outline.md is missing)
     else:
         project.stage_num = 1
         project.stage_name = "New"
         todo = []
-        if not project.script_files:
-            todo.append("create .excalidraw presentation with notes & diagrams")
         if not project.outline_file:
             todo.append(
                 f"write {OUTLINE_FILENAME} with {' & '.join(f'# {s}' for s in OUTLINE_SECTIONS)} sections"
@@ -621,19 +629,28 @@ def get_all_projects(projects_dir: Path) -> List[VideoProject]:
     return projects
 
 
+# Display order, most actionable first: in-progress stages (1-6), then videos to repackage,
+# then ready to schedule, scheduled, and finally uploaded videos that need nothing more.
+DISPLAY_ORDER = (1, 2, 3, 4, 5, 6, 10, 7, 8, 9)
+
+
+def sort_by_actionability(projects: List[VideoProject]) -> List[VideoProject]:
+    """Sort projects for display by DISPLAY_ORDER, then by name within a stage."""
+    return sorted(projects, key=lambda p: (DISPLAY_ORDER.index(p.stage_num), p.name.lower()))
+
+
 def render_stage_bar(proj: VideoProject) -> str:
     """Render a visual step pipeline indicator checking actual completion of each step."""
     steps = [
         ("1", "New"),
         ("2", "Script"),
-        ("3", "Rec"),
-        ("4", "Proc"),
-        ("5", "Rev"),
-        ("6", "Meta"),
-        ("7", "Thumb"),
-        ("8", "Ready"),
-        ("9", "Sched"),
-        ("10", "Upload"),
+        ("3", "Thumb"),
+        ("4", "Rec"),
+        ("5", "Proc"),
+        ("6", "Rev"),
+        ("7", "Ready"),
+        ("8", "Sched"),
+        ("9", "Upload"),
     ]
     parts = []
     for num_str, name in steps:
@@ -654,37 +671,36 @@ def render_stage_bar(proj: VideoProject) -> str:
             elif idx == 2:
                 is_complete = proj.is_scripted or proj.stage_num > 2
             elif idx == 3:
+                # Checked by file, so a project recorded before its thumbnail shows the gap.
+                is_complete = bool(proj.thumbnail_files)
+            elif idx == 4:
                 is_complete = (
-                    proj.stage_num > 3
+                    proj.stage_num > 4
                     or len(proj.raw_files) > 0
                     or proj.to_review_file is not None
                     or proj.final_file is not None
                 )
-            elif idx == 4:
-                is_complete = proj.stage_num > 4 or proj.to_review_file is not None or proj.final_file is not None
             elif idx == 5:
-                is_complete = proj.final_file is not None and proj.stage_num > 5
+                is_complete = proj.stage_num > 5 or proj.to_review_file is not None or proj.final_file is not None
             elif idx == 6:
-                is_complete = proj.has_metadata
+                is_complete = proj.stage_num > 6 or (proj.final_file is not None and proj.has_metadata)
             elif idx == 7:
-                is_complete = bool(proj.thumbnail_files)
-            elif idx == 8:
-                is_complete = proj.stage_num > 8 or (
+                is_complete = proj.stage_num > 7 or (
                     proj.final_file is not None
                     and proj.has_metadata
                     and bool(proj.thumbnail_files)
                 )
+            elif idx == 8:
+                is_complete = proj.stage_num > 8 or bool(proj.yt_url) or bool(proj.scheduled_date) or bool(proj.uploaded_date)
             elif idx == 9:
-                is_complete = proj.stage_num > 9 or bool(proj.yt_url) or bool(proj.scheduled_date) or bool(proj.uploaded_date)
-            elif idx == 10:
-                is_complete = proj.stage_num == 10 or bool(proj.yt_url)
+                is_complete = proj.stage_num == 9 or bool(proj.yt_url)
 
             if is_complete:
                 parts.append(f"{COLOR_GREEN}✓{num_str}{COLOR_RESET}")
             else:
                 parts.append(f"{COLOR_GRAY}{num_str}:{name}{COLOR_RESET}")
-    if proj.stage_num == 11:
-        parts.append(f"{COLOR_BOLD}{COLOR_RED}[11:Repack]{COLOR_RESET}")
+    if proj.stage_num == 10:
+        parts.append(f"{COLOR_BOLD}{COLOR_RED}[10:Repack]{COLOR_RESET}")
     return " ➔ ".join(parts)
 
 
@@ -700,7 +716,7 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         print(f"{COLOR_YELLOW}No project folders found in {projects_dir}{COLOR_RESET}\n")
         return
 
-    stage_counts = {i: 0 for i in range(1, 12)}
+    stage_counts = {i: 0 for i in range(1, 11)}
 
     for idx, proj in enumerate(projects, 1):
         stage_counts[proj.stage_num] += 1
@@ -711,12 +727,11 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         print(f"   Pipeline: {render_stage_bar(proj)}")
         print(f"   {COLOR_BOLD}➜ Next Step:{COLOR_RESET} {proj.next_step}")
 
-        # Checklists for files
+        # Checklists for files (the .excalidraw script is optional, so it's only listed when present)
+        file_statuses = []
         if proj.script_files:
             script_names = ", ".join([f.name for f in proj.script_files])
-            script_status = f"{COLOR_GREEN}✓ script ({script_names}){COLOR_RESET}"
-        else:
-            script_status = f"{COLOR_GRAY}✗ script (.excalidraw){COLOR_RESET}"
+            file_statuses.append(f"{COLOR_GREEN}✓ script ({script_names}){COLOR_RESET}")
 
         if proj.has_outline:
             outline_status = f"{COLOR_GREEN}✓ {proj.outline_file.name}{COLOR_RESET}"
@@ -756,7 +771,8 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         else:
             thumb_status = f"{COLOR_GRAY}✗ thumbnail{COLOR_RESET}"
 
-        print(f"   Files: [{script_status}] | [{outline_status}] | [{raw_info}] | [{to_rev_status}] | [{final_status}] | [{meta_status}] | [{thumb_status}]")
+        file_statuses += [outline_status, raw_info, to_rev_status, final_status, meta_status, thumb_status]
+        print(f"   Files: {' | '.join(f'[{s}]' for s in file_statuses)}")
 
         if verbose and (proj.script_files or proj.raw_files or proj.thumbnail_files or proj.title):
             if proj.title:
@@ -777,27 +793,26 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
     stat_line = (
         f" {COLOR_GRAY}New: {stage_counts[1]}{COLOR_RESET} | "
         f"{COLOR_BLUE}Scripted: {stage_counts[2]}{COLOR_RESET} | "
-        f"{COLOR_MAGENTA}Recorded: {stage_counts[3]}{COLOR_RESET} | "
-        f"{COLOR_YELLOW}Processed: {stage_counts[4]}{COLOR_RESET} | "
-        f"{COLOR_PURPLE}Reviewed: {stage_counts[5]}{COLOR_RESET} | "
-        f"{COLOR_CYAN}Metadata: {stage_counts[6]}{COLOR_RESET} | "
-        f"{COLOR_CYAN}Thumbnail: {stage_counts[7]}{COLOR_RESET} | "
-        f"{COLOR_CYAN}Ready: {stage_counts[8]}{COLOR_RESET} | "
-        f"{COLOR_YELLOW}Scheduled: {stage_counts[9]}{COLOR_RESET} | "
-        f"{COLOR_GREEN}Uploaded: {stage_counts[10]}{COLOR_RESET} | "
-        f"{COLOR_RED}Repackage: {stage_counts[11]}{COLOR_RESET}"
+        f"{COLOR_ORANGE}Thumbnail: {stage_counts[3]}{COLOR_RESET} | "
+        f"{COLOR_MAGENTA}Recorded: {stage_counts[4]}{COLOR_RESET} | "
+        f"{COLOR_YELLOW}Processed: {stage_counts[5]}{COLOR_RESET} | "
+        f"{COLOR_PURPLE}Reviewed: {stage_counts[6]}{COLOR_RESET} | "
+        f"{COLOR_CYAN}Ready: {stage_counts[7]}{COLOR_RESET} | "
+        f"{COLOR_YELLOW}Scheduled: {stage_counts[8]}{COLOR_RESET} | "
+        f"{COLOR_GREEN}Uploaded: {stage_counts[9]}{COLOR_RESET} | "
+        f"{COLOR_RED}Repackage: {stage_counts[10]}{COLOR_RESET}"
     )
     print(stat_line)
 
     action_needed = (
         stage_counts[2] + stage_counts[3] + stage_counts[4] +
         stage_counts[5] + stage_counts[6] + stage_counts[7] +
-        stage_counts[8] + stage_counts[9] + stage_counts[11]
+        stage_counts[8] + stage_counts[10]
     )
-    ready_to_sched = stage_counts[8]
-    scheduled_cnt = stage_counts[9]
-    uploaded_cnt = stage_counts[10]
-    repackage_cnt = stage_counts[11]
+    ready_to_sched = stage_counts[7]
+    scheduled_cnt = stage_counts[8]
+    uploaded_cnt = stage_counts[9]
+    repackage_cnt = stage_counts[10]
     
     if action_needed > 0:
         print(f"\n {COLOR_YELLOW}⚡ Action Required: {action_needed} video(s) in progress / awaiting next steps{COLOR_RESET}")
@@ -845,17 +860,17 @@ def main():
     parser.add_argument(
         "--pending",
         action="store_true",
-        help="Display in-progress stages (Stages 3-7: Recorded through Added Thumbnail).",
+        help="Display in-progress stages (Stages 3-6: Added Thumbnail through Reviewed).",
     )
     parser.add_argument(
         "--finished",
         action="store_true",
-        help="Display ready to schedule, scheduled, uploaded, or needs-repackaging projects (Stages 8-11).",
+        help="Display ready to schedule, scheduled, uploaded, or needs-repackaging projects (Stages 7-10).",
     )
     parser.add_argument(
         "--repackage",
         action="store_true",
-        help="Display only projects that need repackaging (Stage 11).",
+        help="Display only projects that need repackaging (Stage 10).",
     )
     parser.add_argument(
         "--json",
@@ -897,16 +912,17 @@ def main():
     if args.scripted:
         filter_stages.add(2)
     if args.pending:
-        filter_stages.update([3, 4, 5, 6, 7])
+        filter_stages.update([3, 4, 5, 6])
     if args.finished:
-        filter_stages.update([8, 9, 10, 11])
+        filter_stages.update([7, 8, 9, 10])
     if args.repackage:
-        filter_stages.add(11)
+        filter_stages.add(10)
 
     if filter_stages:
         projects = [p for p in all_projects if p.stage_num in filter_stages]
     else:
         projects = all_projects
+    projects = sort_by_actionability(projects)
 
     if args.json:
         data = {
