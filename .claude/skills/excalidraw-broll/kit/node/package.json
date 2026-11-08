@@ -1,0 +1,1 @@
+{ "name": "excalidraw-broll-node", "private": true, "dependencies": { "roughjs": "^4.6.6", "simple-icons": "^16.0.0" } }
