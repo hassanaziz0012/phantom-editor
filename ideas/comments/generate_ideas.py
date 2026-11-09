@@ -337,6 +337,8 @@ def main():
             profile=args.profile,
             profile_dir=args.profile_dir,
             chrome=not args.no_chrome,
+            model="sonnet",
+            effort="high",
             output_json=True,
         )
     except Exception as e:
