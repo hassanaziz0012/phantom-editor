@@ -206,4 +206,27 @@ Under the table add short notes:
 - Anything you skipped or asked about (still recording, no match, etc.).
 - Any `.txt` files left in `~/Videos` that matched no recording, or recordings the user did not mention (leave them alone, just list them).
 
+After the notes, do Step 8.
+
+## Step 8: Title approval (REQUIRED for every processed video)
+
+The pipeline auto-picks the top-scored generated title and marks it `"titleReviewed": false` in `metadata.json`. This never blocks anything: the user approves a title whenever they like.
+
+1. For every project with status `Processed` or `Processed (with cuts)`, run (from anywhere):
+
+```bash
+phantom meta approve-title "<project folder>"
+```
+
+   It prints the current title and every ranked candidate with its score. Do NOT read `metadata.json` or `titles.json` for this.
+2. Show ALL the projects' candidate lists together in ONE message, below the report (copy each list exactly as printed, in a code block per project). Then ask: "Which title should each video use? Reply with a number, your own title, or 'all #1'."
+3. When the user replies, run once per project:
+
+```bash
+phantom meta approve-title "<project folder>" <rank>        # e.g. 3
+phantom meta approve-title "<project folder>" "<their title>"  # their own wording
+```
+
+   Use their wording exactly. Never invent or edit a title yourself. If they skip a project, leave it: the auto-pick stays and `projects status` keeps reminding them.
+
 Only say "done" when every video in the user's mapping appears in the table. State facts as they are: do not say a video was processed unless Step 5 verified success.
