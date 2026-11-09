@@ -23,6 +23,9 @@ phantom meta read [<project_or_video_path>] [--json]
 # Generate scored title ideas (writes titles.json + metadata.json "titles")
 phantom meta titles [<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>]
 
+# List a project's generated titles, or approve one by rank or with your own text
+phantom meta approve-title <project> [<rank_or_title>]
+
 # List the resources the video promises to link (metadata.json "resources", URLs left blank for you)
 phantom meta resources [<project_path>] [arguments]
 

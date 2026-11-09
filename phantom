@@ -34,6 +34,7 @@ COMMANDS=(
     "meta;tweet,auto-tweet;;py metadata.auto_gen_tweet;[<project_path>] [arguments]"
     "meta;timestamps,generate-timestamps;;py metadata.generate_timestamps;[<captions_srt_path>] [arguments]"
     "meta;titles,generate-titles;;py metadata.generate_titles;[<project_path>] [--traffic <search|browse|both>] [--channel-size <small|mid|large>] [--thumbnail <concept>]"
+    "meta;approve-title;r;py metadata.approve_title;<project> [<rank_or_title>]"
     "meta;resources,check-resource-links;;py metadata.check_resource_links;[<project_path>] [arguments]"
     "meta;read;;py metadata.read_metadata;[<project_or_video_path>] [--json]"
     "meta;manual,interactive;r;py metadata.create_metadata;<video_path>"
