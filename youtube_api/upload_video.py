@@ -22,6 +22,7 @@ from shared.commands import python_module
 import config
 from metadata.read_metadata import DEFAULT_CATEGORY_ID, DEFAULT_TWEET_TEMPLATE, read_metadata, VideoMetadata
 from metadata.check_resource_links import blank_resources
+from metadata.approve_title import format_candidates, resolve_choice
 from projects.current_pipeline import is_thumbnail_file
 
 
@@ -302,6 +303,45 @@ def build_description(
     )
 
 
+def confirm_title(metadata: VideoMetadata, choice: Optional[str], keep: bool) -> None:
+    """Make sure the title was approved before it goes public; saves the choice to metadata.json.
+
+    The pipeline auto-picks the top-scored title and sets "titleReviewed": false. A --title
+    choice or --keep-title settles it. Otherwise a terminal asks; without one (e.g. when an
+    agent runs the upload) this exits with the candidates so the choice can be passed back in.
+    """
+    if choice is None and metadata.get("titleReviewed") is not False:
+        return
+    if choice is None and not keep:
+        print("\n🏷️  The title is still the pipeline's auto-pick:")
+        print(format_candidates(metadata))
+        if not sys.stdin.isatty():
+            print(
+                "\n❌ Approve a title first: rerun with --title <rank or your own title>, "
+                "or --keep-title to upload with the current one.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        while True:
+            answer = input("Rank number, your own title, or Enter to keep the current one: ").strip()
+            if not answer:
+                break
+            try:
+                choice = resolve_choice(metadata, answer)
+                break
+            except ValueError as e:
+                print(f"   {e}")
+    if choice is not None:
+        try:
+            metadata["title"] = resolve_choice(metadata, choice)
+        except ValueError as e:
+            print(f"\n❌ Error: {e}\n", file=sys.stderr)
+            sys.exit(1)
+    metadata["titleReviewed"] = True
+    metadata.save()
+    print(f"✅ Title: {metadata.get('title')}")
+
+
 def upload_video(
     youtube,
     video_path: Path,
@@ -459,6 +499,14 @@ def main():
         "--playlist",
         help="Add the video to this playlist (ID, URL, or title; a new title creates a public playlist).",
     )
+    title_group = parser.add_mutually_exclusive_group()
+    title_group.add_argument(
+        "--title",
+        help="Approve this title before uploading: a rank number from metadata.json's titles, or your own text.",
+    )
+    title_group.add_argument(
+        "--keep-title", action="store_true", help="Upload with the current title even if it wasn't approved."
+    )
     args = parser.parse_args()
 
     video_path = Path(args.video_path).resolve()
@@ -499,6 +547,8 @@ def main():
         sys.exit(1)
     if publish_at:
         print(f"📅 Will upload privately and go public on {publish_at:%a %b %d %Y, %H:%M %Z}.")
+
+    confirm_title(metadata, args.title, args.keep_title)
 
     thumbnail_file = find_thumbnail(video_path)
 

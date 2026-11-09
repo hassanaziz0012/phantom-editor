@@ -41,7 +41,7 @@ COMMANDS=(
     "meta;recommend,recommendations;;py metadata.recommendations.recommend;[<project_path>] [arguments]"
     "meta;prepare-recommendations,prepare-yt-recommendations;;py metadata.recommendations.prepare_yt_recommendations;[<channel>] [--limit <int>] [--force] [--fresh] [--json]"
 
-    "publish;yt,youtube;;py youtube_api.upload_video;<video_path> [--playlist <playlist_id_or_name>]"
+    "publish;yt,youtube;;py youtube_api.upload_video;<video_path> [--playlist <playlist_id_or_name>] [--title <rank_or_title> | --keep-title]"
     "publish;x,tweet,twitter;r;py twitter.post_tweet;[--image] [--substack] <tweet_content>"
     "publish;substack;;py substack.post_note;[<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
     "publish;linkedin;;py linkedin.new_post;[<text>] [-f <file>] [-i <images>...] [--url <url>]"

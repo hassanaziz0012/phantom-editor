@@ -30,7 +30,8 @@ Uploads a video, attaches metadata from a local `metadata.json`, uploads a custo
 
 The description is built from `DESCRIPTION_TEMPLATE` in [`config.py`](../config.py). Its RESOURCES section lists `metadata.json`'s `resources` (from `phantom meta resources`) as `key: url` lines, and is left out when there are none. The upload stops before starting if any resource still has a blank `url`.
 
-* **Usage**: `phantom publish yt <video_path> [--playlist <playlist_id_or_name>]`
+* **Usage**: `phantom publish yt <video_path> [--playlist <playlist_id_or_name>] [--title <rank_or_title> | --keep-title]`
+* **Title check**: if `metadata.json` has `"titleReviewed": false` (the pipeline's auto-picked title), the upload lists the generated titles and asks which to use (Enter keeps the current one). Without a terminal it stops before uploading; pass `--title <rank or text>` or `--keep-title`.
 * **Playlist**: `--playlist` adds the uploaded video to a playlist (see [addtoplaylist.py](#addtoplaylistpy)). The playlist is looked up before the upload starts, so an unknown ID or an ambiguous title stops the upload. If adding fails after the upload, it only warns and prints the `phantom yt add-to-playlist` command to retry.
 * **Auth**: The OAuth token needs both the `youtube.upload` and `youtube` scopes. A saved `tokens/token.json` missing either one triggers the browser sign-in again.
 
