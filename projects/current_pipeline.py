@@ -91,6 +91,8 @@ class VideoProject:
     thumbnail_files: List[Path] = field(default_factory=list)
     yt_url: Optional[str] = None
     title: Optional[str] = None
+    # False while the title is the pipeline's auto-pick, until `phantom meta approve-title`
+    title_reviewed: bool = True
     scheduled_date: Optional[str] = None
     uploaded_date: Optional[str] = None
     performance_check: Optional[dict] = None
@@ -137,6 +139,7 @@ class VideoProject:
             "metadata_blank_resources": self.metadata_blank_resources,
             "metadata_error": self.metadata_error,
             "title": self.title,
+            "title_reviewed": self.title_reviewed,
             "thumbnails": [f.name for f in self.thumbnail_files],
             "yt_url": self.yt_url,
             "scheduled_date": self.scheduled_date,
@@ -401,6 +404,13 @@ def with_thumbnail_todo(project: VideoProject, next_step: str) -> str:
     return f"{next_step} AND design thumbnail (e.g. thumbnail.png)"
 
 
+def with_title_todo(project: VideoProject, next_step: str) -> str:
+    """Append the title review for projects whose title is still the pipeline's auto-pick."""
+    if project.title_reviewed:
+        return next_step
+    return f"{next_step} AND approve a title (`phantom meta approve-title`)"
+
+
 def analyze_project(project_dir: Path) -> VideoProject:
     """Scan a project directory and evaluate its pipeline stage."""
     project = VideoProject(name=project_dir.name, path=project_dir)
@@ -435,6 +445,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
                     project.metadata_error = f"a value has the wrong type: {e}"
                 else:
                     project.title = meta.title or None
+                    project.title_reviewed = data.get("titleReviewed") is not False
                     if meta.url and is_valid_yt_url(meta.url):
                         project.yt_url = meta.url
                     project.scheduled_date = meta.publish_date or None
@@ -499,8 +510,8 @@ def analyze_project(project_dir: Path) -> VideoProject:
     elif is_ready and has_scheduled_date:
         project.stage_num = 8
         project.stage_name = "Scheduled"
-        project.next_step = (
-            f"Upload video to YouTube (`phantom publish yt`); it goes public on {project.scheduled_date} 🚀"
+        project.next_step = with_title_todo(
+            project, f"Upload video to YouTube (`phantom publish yt`); it goes public on {project.scheduled_date} 🚀"
         )
         project.status_color = COLOR_YELLOW
 
@@ -508,7 +519,9 @@ def analyze_project(project_dir: Path) -> VideoProject:
     elif is_ready:
         project.stage_num = 7
         project.stage_name = "Ready to Schedule"
-        project.next_step = "Upload video to YouTube (`phantom publish yt`) or set publishDate in metadata.json"
+        project.next_step = with_title_todo(
+            project, "Upload video to YouTube (`phantom publish yt`) or set publishDate in metadata.json"
+        )
         project.status_color = COLOR_CYAN
 
     # Stage 6: Reviewed (final.mp4 exists, missing a complete metadata.json or a thumbnail)
@@ -516,7 +529,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.stage_num = 6
         project.stage_name = "Reviewed"
         if project.has_metadata:
-            project.next_step = "Design and add thumbnail (e.g. thumbnail.png)"
+            project.next_step = with_title_todo(project, "Design and add thumbnail (e.g. thumbnail.png)")
         else:
             project.next_step = with_thumbnail_todo(project, metadata_todo(project))
         project.status_color = COLOR_PURPLE
@@ -727,7 +740,8 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
 
         if verbose and (proj.script_files or proj.raw_files or proj.thumbnail_files or proj.title):
             if proj.title:
-                print(f"   {COLOR_GRAY}└── Video title: {proj.title}{COLOR_RESET}")
+                pending = "" if proj.title_reviewed else " (auto-picked, awaiting approval)"
+                print(f"   {COLOR_GRAY}└── Video title: {proj.title}{pending}{COLOR_RESET}")
             if proj.script_files:
                 script_names = ", ".join([f.name for f in proj.script_files])
                 print(f"   {COLOR_GRAY}└── Script / Presentation: {script_names}{COLOR_RESET}")
