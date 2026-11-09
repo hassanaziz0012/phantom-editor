@@ -86,6 +86,30 @@ def save_metadata(metadata_path: Path, metadata: dict[str, Any]) -> str:
     return json.dumps(metadata, indent=4, ensure_ascii=False)
 
 
+def pick_default_title(
+    metadata: dict[str, Any],
+    titles: list[dict[str, Any]],
+    placeholder: str,
+    explicit_title: str | None = None,
+) -> None:
+    """Use the top-scored candidate as the video title until the user approves one.
+
+    Only replaces a title nobody chose: the project folder name, or an earlier auto-pick that
+    is still unreviewed. A --title passed in, or a title already approved with
+    `phantom meta approve-title`, is kept. Old projects without the flag keep their title.
+    """
+    if explicit_title:
+        metadata["titleReviewed"] = True
+        return
+    if metadata.get("titleReviewed") is True:
+        return
+    current = str(metadata.get("title") or "").strip()
+    if titles and (current == placeholder or metadata.get("titleReviewed") is False):
+        metadata["title"] = titles[0]["title"]
+        metadata["titleReviewed"] = False
+        print(f"🏷️  Auto-picked title (awaiting approval): {metadata['title']}")
+
+
 def auto_create_metadata(
     target: str | Path | None = None,
     title: str | None = None,
@@ -241,6 +265,7 @@ def auto_create_metadata(
                 metadata["timestamps"] = results["timestamps"]
             if results.get("titles") is not None:
                 metadata["titles"] = results["titles"]
+                pick_default_title(metadata, results["titles"], placeholder=project_dir.name, explicit_title=title)
             if results.get("resources") is not None:
                 metadata["resources"] = results["resources"]
 
