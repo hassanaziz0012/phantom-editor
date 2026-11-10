@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
+from agentic.ask_browserllm import BrowserLLMUsageLimitError
 import metadata.utils as utils
 from metadata.auto_gen_desc import generate_description_for_project
 from metadata.auto_gen_tweet import generate_tweet_for_project
@@ -46,6 +47,10 @@ def retry_with_backoff(
     for attempt in range(1, max_retries + 1):
         try:
             return func()
+        except BrowserLLMUsageLimitError as e:
+            # The limit won't lift in a few seconds, so retrying only wastes time
+            print(f"❌ {step_name} failed: usage limit reached, not retrying. {e}")
+            return None
         except Exception as e:
             if attempt < max_retries:
                 delay = base_delay * (2 ** (attempt - 1))
