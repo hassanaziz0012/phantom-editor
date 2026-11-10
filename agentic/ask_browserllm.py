@@ -23,6 +23,12 @@ T = TypeVar("T", bound=BaseModel)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROMPTS_DIR = REPO_ROOT / "agentic" / "prompts"
 BROWSERLLM_BIN = shutil.which("browserllm") or str(Path.home() / ".local" / "bin" / "browserllm")
+# browserllm's exit code when ChatGPT rate-limits the account
+EXIT_RATE_LIMITED = 75
+
+
+class BrowserLLMUsageLimitError(RuntimeError):
+    """The provider account hit its usage or rate limit. Retrying soon won't help."""
 
 
 def load_prompt(prompt_name: str, **kwargs: Any) -> str:
@@ -101,6 +107,15 @@ def ask_browserllm(
         output = Path(output_path).read_text(encoding="utf-8").strip() if Path(output_path).exists() else ""
         if "FATAL ERROR" in output or "hard rate limit reached" in output.lower():
             raise RuntimeError(f"FATAL ERROR: ChatGPT hard rate limit reached in BrowserLLM: {output}")
+
+        if res.returncode != 0 and (
+            res.returncode == EXIT_RATE_LIMITED
+            or "usage limit reached" in res.stderr.lower()
+            or "rate-limited" in res.stderr.lower()
+        ):
+            raise BrowserLLMUsageLimitError(
+                f"BrowserLLM ({provider}) hit the provider's usage limit: {res.stderr.strip() or res.stdout.strip()}"
+            )
 
         if not output:
             if res.returncode != 0:
