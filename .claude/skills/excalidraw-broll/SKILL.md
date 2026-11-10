@@ -21,10 +21,13 @@ scenes that are **unique to this video**. Reference build: "7 practical, high RO
 - Inputs: `<project>/final.mp4`, `trimmed.srt` (you read it), `trimmed-1word.srt` (the kit reads it).
   Projects live in `~/Videos/YT Projects/<name>/`. Match a loose name with `ls`.
 - B-roll share is 60-70%. Use quiet BGM (`Hello World.mp3` from `~/Videos/Asset Library/BGM`, or pass
-  another file name to setup.sh) and SFX. No captions. Use real screenshots and logos of the things the
-  user names.
-- Ask only when a required input is missing or the user's message conflicts with these defaults. Then work
-  end-to-end without stopping. Don't upload, post or publish anything.
+  another file name to setup.sh) and SFX. No captions.
+- **Real assets first.** Whenever a scene would be better showing a real website, app, screenshot, UI,
+  file or video, get the real thing. A drawn illustration is the backup for when the real asset can't be
+  had. See *Real assets*.
+- Ask once, up front, about real assets (step 2b). Otherwise ask only when a required input is missing or
+  the user's message conflicts with these defaults. Then work end-to-end without stopping. Don't upload,
+  post or publish anything.
 
 ## Token budget (this is why the skill exists)
 
@@ -56,7 +59,14 @@ limits).
 2. **Read and storyboard**: read `trimmed.srt`. Decide the face segments and the B-roll scenes
    (rules below). Each B-roll scene has a concept, an "information shape", its anchor words, and the real
    assets it needs.
-3. **Assets**: get screenshots of the real things named (see *Screenshots*). Logos come straight from
+2b. **Ask about real assets (one message, before writing scenes)**: list every scene where a real asset
+   would beat a drawing, in two groups: the ones you can fetch yourself (say from where) and the ones only
+   the user can supply or point to (phone screenshots, private dashboards, a video link, a repo you can't
+   find). Also list any name, domain or title you only know from the transcript and ask the user to
+   confirm the spelling (speech-to-text gets these wrong: "watch.hustondev.me" was really
+   watch.hassandev.me, "Excalibur" was Excalidraw). While you wait for the answer, run setup and fetch
+   the assets in the first group.
+3. **Assets**: collect the real assets (see *Real assets* and *Screenshots*). Logos come straight from
    simple-icons slugs; nothing to download.
 4. **Write `broll/scripts/scenes.py`** from the template that is already there: `board()` plus one function
    per scene. Then run `python3 scripts/build.py && python3 scripts/tools.py share`. share prints the
@@ -71,7 +81,8 @@ limits).
    `<project>/final-broll.mp4`. It prints duration and loudness and writes `research/final-sheet.jpg`
    (24 frames). Read that sheet once. If something is wrong, fix it and re-render.
 7. **Report**: give the path, the B-roll %, and anything the user should check: illustrative numbers,
-   claims you hedged, screenshots of their private pages and what you cropped out.
+   claims you hedged, which real assets you used, screenshots of their private pages and what you
+   cropped out, and any scene that is still a drawing because the real asset couldn't be had.
 
 ## Storyboard rules
 
@@ -107,6 +118,29 @@ paper/pan transitions. **The compositions must come from this video's content.**
 - Facts: only numbers the user said, or values read from a real screenshot. If you draw something like a
   bar comparison without data, label it "(illustrative)". Don't soften the user's claims, and don't
   invent product names. When unsure which tool they mean (e.g. "an SEO skill"), draw it generically.
+
+## Real assets
+
+Look for these before drawing anything. The user reviews the video before it goes out, so use their own
+material freely, but check every image for secrets and private data (keys, emails, other people's names,
+client names, chat history) and crop or skip it. List what you used and cropped in the final report.
+
+- **A video they mention** ("I made a video on this"): ask for the link if it isn't given. Then
+  `curl -s "https://www.youtube.com/oembed?url=<watch url>&format=json"` gives the real title, and
+  `https://i.ytimg.com/vi/<id>/maxresdefault.jpg` is the thumbnail. Show the thumbnail with `k.img` and
+  write the real title, not the half-remembered one from the transcript.
+- **Their own sites and products**: screenshot the live page with shoot.py.
+- **Their skills, scripts and code**: find the real file (`fd`, `rg` under `~/Desktop/programming`, the
+  project's `.claude/skills`) and show it as an image:
+  `python3 scripts/plumbing/fileshot.py research/shots name=/path/to/file [name2=...]` (first 36 lines, editor look;
+  `--cmd name="phantom --help"` shoots real command output as a terminal).
+- **Their apps**: look for screenshots in the app's repo; otherwise ask the user for some.
+- **GitHub**: `gh repo list` / `gh release list` find the repo; shoot the public repo or release page.
+  A private repo's page needs Claude in Chrome, and the user's OK to show it.
+- **Logged-in pages** (claude.ai chat, usage, dashboards): Claude in Chrome, cropped.
+- **Tools they name** (HyperFrames, Excalidraw, ...): the tool's real site or logo.
+- Keep drawings for ideas that have no real-world picture: processes, comparisons, metaphors, numbers.
+  A good scene often mixes both: the real screenshot with hand-drawn rings, arrows and labels on top.
 
 ## Screenshots
 
