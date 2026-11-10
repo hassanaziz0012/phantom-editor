@@ -37,6 +37,10 @@ from metadata.read_metadata import write_metadata_json
 T = TypeVar("T")
 
 
+class MetadataGenerationError(RuntimeError):
+    """One or more AI generation steps failed, so metadata.json is incomplete."""
+
+
 def retry_with_backoff(
     func: Callable[[], T],
     max_retries: int = 3,
@@ -155,6 +159,8 @@ def auto_create_metadata(
     # Write the base fields first: the generators below read the title from metadata.json
     save_metadata(metadata_path, metadata)
 
+    failed_steps: list[str] = []
+
     if not skip_ai:
         if captions_path and captions_path.is_file():
             print(f"\n📂 Found captions file: {captions_path.name}")
@@ -254,10 +260,12 @@ def auto_create_metadata(
                             else:
                                 print(f"✓ [{task_name}] Generated successfully.")
                         else:
-                            print(f"⚠️  [{task_name}] Failed after max retries.")
+                            print(f"⚠️  [{task_name}] Failed.")
+                            failed_steps.append(task_name)
                     except Exception as e:
                         print(f"❌ [{task_name}] Unexpected error: {e}")
                         results[task_name] = None
+                        failed_steps.append(task_name)
 
             # Update metadata with results
             if results.get("description") is not None:
@@ -286,6 +294,15 @@ def auto_create_metadata(
     print("=" * 50)
     print(utils.highlight_json(formatted_json))
     print("=" * 50)
+
+    if failed_steps:
+        # Partial results are saved above, but the run must not look like a success
+        names = ", ".join(sorted(failed_steps))
+        print(f"\n❌ METADATA INCOMPLETE: {len(failed_steps)} step(s) failed: {names}")
+        print(f"   {metadata_path} was saved, but the fields for these steps are empty or stale.")
+        print("   Fix the cause (e.g. a BrowserLLM usage limit) and re-run this script.")
+        raise MetadataGenerationError(f"{len(failed_steps)} metadata step(s) failed: {names}")
+
     print(f"\n✅ Successfully wrote {metadata_path}")
 
     blank = blank_resources(metadata.get("resources"))
