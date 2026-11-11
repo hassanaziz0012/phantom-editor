@@ -27,7 +27,8 @@ def tag(n):
 
 def s_listcard(c, n=1, sub='', sub_at=None, item_at=None, head_at=None, recap=False, check_x=975, **kw):
     items = LIST['items']
-    k = Sk(c, 'list%d' % (0 if recap else n), kw.get('prev_face', False), kw.get('next_face', False))
+    k = Sk(c, 'list%d' % (0 if recap else n), kw.get('prev_face', False), kw.get('next_face', False),
+           face=kw.get('face', True))
     x0, y0 = 150, 250
     step = min(98, 700 / max(1, len(items) - 1))
     title = LIST['recap_title'] if recap else LIST['title']
@@ -57,9 +58,11 @@ def s_listcard(c, n=1, sub='', sub_at=None, item_at=None, head_at=None, recap=Fa
         sfx('sparkle', c.t0 + 0.6, 0.25)
         return k.done()
     cc, bg = col(n)
-    k.ellipse('big', 1390, 470, 560, 540, t=c.t0 + 0.15, d=0.6, stroke=cc, fill=bg, sw=4, gap=11, fw=2.6)
-    k.text('num', 1390, 200, str(n), 400, t=c.t0 + 0.35, align='c', w=600, anim='pop', color=INK)
+    # with the face square in the bottom-right corner, the big number moves up and left to clear it
+    cx, cy, ew, eh, sw_, sy = (1200, 400, 480, 470, 560, 690) if k.face else (1390, 470, 560, 540, 860, 800)
+    k.ellipse('big', cx, cy, ew, eh, t=c.t0 + 0.15, d=0.6, stroke=cc, fill=bg, sw=4, gap=11, fw=2.6)
+    k.text('num', cx, cy - 270, str(n), 400, t=c.t0 + 0.35, align='c', w=600, anim='pop', color=INK)
     sfx('pop', c.t0 + 0.45, 0.3)
     if sub:
-        k.text('sub', 1390, 800, sub, 46, t=sub_at or c.t0 + 0.9, align='c', w=860, color=INK)
+        k.text('sub', cx, sy, sub, 46, t=sub_at or c.t0 + 0.9, align='c', w=sw_, color=INK)
     return k.done()
