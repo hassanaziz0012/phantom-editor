@@ -129,3 +129,80 @@ def bars(k, sid, x, y, rows, t=None, max_w=1200, h=70, gap=50, label_w=180):
         yy = y + i * (h + gap)
         k.text('%sl%d' % (sid, i), x, yy + 10, lab, 44, t=tt, color=GREY)
         k.rect('%sb%d' % (sid, i), x + label_w, yy, max(30, max_w * frac), h, t=tt, stroke=st, fill=fl, sw=3, d=0.4)
+
+
+def person(k, sid, cx, cy, s=1.0, t=None, color=INK, sign=None, sign_color=None, sign_fill=None, size=30, d=0.5):
+    """Stick figure standing at (cx, cy) = hip centre; ~190*s tall. sign='TEXT' adds a placard held overhead."""
+    g = k.g('ellipse', [cx, cy - 120 * s, 56 * s, 56 * s], stroke=color, sw=3, fill='#fff', fs='solid')
+    g += k.g('line', [cx, cy - 92 * s, cx, cy], stroke=color, sw=3)
+    g += k.g('line', [cx, cy, cx - 28 * s, cy + 70 * s], stroke=color, sw=3)
+    g += k.g('line', [cx, cy, cx + 28 * s, cy + 70 * s], stroke=color, sw=3)
+    if sign:
+        g += k.g('line', [cx, cy - 70 * s, cx - 40 * s, cy - 150 * s], stroke=color, sw=3)
+        g += k.g('line', [cx, cy - 70 * s, cx + 40 * s, cy - 150 * s], stroke=color, sw=3)
+    else:
+        g += k.g('line', [cx, cy - 70 * s, cx - 42 * s, cy - 20 * s], stroke=color, sw=3)
+        g += k.g('line', [cx, cy - 70 * s, cx + 42 * s, cy - 20 * s], stroke=color, sw=3)
+    k.svg(sid, g, t, d)
+    if sign:
+        w = max(110 * s, len(sign) * size * 0.75 + 44)
+        k.box(sid + 's', cx - w / 2, cy - 150 * s - 70, w, 64, sign, size, t=t and t + 0.15,
+              stroke=sign_color or color, fill=sign_fill or '#fff', fs='solid', anim='pop', sw=2.4,
+              lstyle='white-space:nowrap')
+
+
+def phone(k, sid, x, y, w, h, t=None, d=0.5):
+    """Sketched phone outline; screen area is (x+18, y+60, w-36, h-110)."""
+    g = k.g('rectangle', [x, y, w, h], stroke=INK, sw=3.5, rough_=0.8)
+    g += k.g('line', [x + w / 2 - 40, y + 30, x + w / 2 + 40, y + 30], stroke=INK, sw=5, rough_=0.4)
+    g += k.g('ellipse', [x + w / 2, y + h - 26, 30, 30], stroke=INK, sw=2.4, rough_=0.6)
+    k.svg(sid, g, t, d)
+
+
+def flag(k, sid, x, y, t=None, color=RED, fill='#ffc9c9', s=1.0, d=0.45):
+    """Hand-drawn flag on a pole; pole foot at (x, y), cloth to the right, ~170*s tall."""
+    g = k.g('line', [x, y, x, y - 170 * s], stroke=INK, sw=3.5)
+    g += k.g('polygon', [[[x, y - 170 * s], [x + 95 * s, y - 145 * s], [x, y - 115 * s]]], stroke=color, sw=3,
+             fill=fill, fs='solid')
+    k.svg(sid, g, t, d)
+
+
+def trash(k, sid, x, y, w=150, h=180, t=None, color=GREY, d=0.5):
+    """Bin with lid; top-left of the lid at (x, y)."""
+    g = k.g('line', [x - 10, y, x + w + 10, y], stroke=color, sw=4)
+    g += k.g('line', [x + w * 0.35, y - 16, x + w * 0.65, y - 16], stroke=color, sw=4)
+    g += k.g('polygon', [[[x + 6, y + 10], [x + w - 6, y + 10], [x + w - 22, y + h], [x + 22, y + h]]], stroke=color,
+             sw=3, fill='#e9ecef', fs='hachure')
+    for i in (0.33, 0.5, 0.67):
+        g += k.g('line', [x + w * i, y + 34, x + w * i, y + h - 24], stroke=color, sw=2.4)
+    k.svg(sid, g, t, d)
+
+
+def clock(k, sid, cx, cy, r, t=None, color=INK, d=0.5):
+    """Clock face with 12 ticks (no hands). Pair with pie() to shade minutes."""
+    g = k.g('ellipse', [cx, cy, 2 * r, 2 * r], stroke=color, sw=4)
+    for i in range(12):
+        a = i * math.pi / 6
+        r1 = r * (0.82 if i % 3 else 0.74)
+        g += k.g('line', [cx + r1 * math.sin(a), cy - r1 * math.cos(a), cx + r * 0.92 * math.sin(a),
+                          cy - r * 0.92 * math.cos(a)], stroke=color, sw=3 if i % 3 == 0 else 2)
+    k.svg(sid, g, t, d)
+
+
+def pie(k, sid, cx, cy, r, frac, t=None, color=RED, fill='#ffc9c9', d=0.6, start=0.0):
+    """Hatched pie slice from `start` to `start+frac` of a full turn (clockwise from 12 o'clock)."""
+    n = max(3, int(48 * frac))
+    pts = [[cx, cy]] + [[cx + r * math.sin(2 * math.pi * (start + frac * i / n)),
+                         cy - r * math.cos(2 * math.pi * (start + frac * i / n))] for i in range(n + 1)]
+    k.svg(sid, k.g('polygon', [pts], stroke=color, sw=3, fill=fill, fs='hachure'), t, d)
+
+
+def card(k, sid, x, y, w, h, t=None, stroke=INK, fill='#fff', fs='solid', seed=0, d=0.3):
+    """Tiny post / job card: frame + dark title line + grey body line (line lengths vary with seed).
+    Rows of these make feeds, piles and before/after lists; cross / check / ring them."""
+    g = k.g('rectangle', [x, y, w, h], stroke=stroke, fill=fill, fs=fs, sw=2.4)
+    g += k.g('line', [x + 14, y + h * 0.3, x + 14 + (w - 28) * (0.6 + 0.3 * ((seed * 37) % 10) / 10), y + h * 0.3],
+             stroke=INK, sw=4, rough_=0.5)
+    g += k.g('line', [x + 14, y + h * 0.62, x + 14 + (w - 28) * (0.4 + 0.4 * ((seed * 53) % 10) / 10), y + h * 0.62],
+             stroke=LGREY, sw=3.5, rough_=0.5)
+    k.svg(sid, g, t, d)
