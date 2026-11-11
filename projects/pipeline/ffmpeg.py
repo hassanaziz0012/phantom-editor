@@ -5,7 +5,15 @@ from pathlib import Path
 
 from projects.pipeline.common import PipelineError
 
-X264_ARGS = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
+# A keyframe every second (30 frames at the pipeline's 30 fps), instead of x264's
+# default of up to 250 frames apart. Frame-accurate seeking needs close keyframes:
+# the excalidraw-broll kit (HyperFrames) shows frozen frames otherwise, and used to
+# re-encode all of final.mp4 just to get them. Its setup.sh checks for this spacing.
+KEYFRAME_INTERVAL = 30
+X264_ARGS = [
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    "-g", str(KEYFRAME_INTERVAL), "-keyint_min", str(KEYFRAME_INTERVAL),
+]
 AAC_ARGS = ["-c:a", "aac", "-b:a", "384k"]
 
 DEFAULT_BGM_DIR = Path.home() / "Videos" / "Asset Library" / "BGM"
