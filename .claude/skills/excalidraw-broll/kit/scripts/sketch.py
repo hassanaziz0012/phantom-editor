@@ -8,8 +8,11 @@ Every B-roll scene is a sheet of "paper" over the face footage:
   B -> face : the sheet slides out to the left          (low whoosh)
   B -> B    : the camera pans right along the whiteboard (short whoosh)
 
+Unless a scene's board() entry has face=False, the user's face sits in a rounded square at the bottom
+right (PIP, drawn by build.py over the scene), so the scene keeps that corner empty.
+
 Usage inside a scene function (see the API list in SKILL.md):
-    k = Sk(c, 'name', kw['prev_face'], kw['next_face'], tag=(3, 'Topic label'))
+    k = Sk(c, 'name', kw['prev_face'], kw['next_face'], tag=(3, 'Topic label'), face=kw.get('face', True))
     k.rect('box', x, y, w, h, t=T('word'), fill=BLUE_BG)
     k.text('lbl', x, y, 'hello', 48, t=T('hello'))
     return k.done()
@@ -32,6 +35,12 @@ CLAUDE, CLAUDE_BG = '#d97757', '#f9dccf'
 PAPER = '#ffffff'
 
 W, H = 1920, 1080
+
+# Face picture-in-picture: build.py puts the user's face in a rounded square at the bottom right of every
+# B-roll scene, unless its board() entry has face=False. Scenes that show it keep their content out of
+# the corner x > PIP_CLEAR[0] and y > PIP_CLEAR[1] (layout.py reports anything there as under_face).
+PIP = (1512, 672, 360, 360)          # x, y, w, h of the face square on the 1920x1080 canvas
+PIP_CLEAR = (1480, 640)              # PIP plus a 32 px gap
 
 # ---------------------------------------------------------------- rough.js bridge
 _node = None
@@ -90,12 +99,42 @@ const RISE=(s,t,o={})=>tl.fromTo(s,{opacity:0,y:o.y??30,filter:'blur(6px)'},{opa
 
 
 # ---------------------------------------------------------------- the per-scene builder
+def png_size(p):
+    """(width, height) of a PNG from its header (no PIL needed)."""
+    with open(p, 'rb') as f:
+        head = f.read(24)
+    if head[:8] != b'\x89PNG\r\n\x1a\n':
+        raise ValueError('%s is not a PNG' % p)
+    import struct
+    return struct.unpack('>II', head[16:24])
+
+
+class Shot:
+    """A placed screenshot: maps image pixels and shoot.py's measured boxes to canvas coordinates."""
+    def __init__(self, src, x, y, scale, boxes, w, h):
+        self.src, self.x, self.y, self.s, self.boxes, self.w, self.h = src, x, y, scale, boxes, w, h
+
+    def pt(self, px, py):
+        return round(self.x + px * self.s), round(self.y + py * self.s)
+
+    def r(self, key, pad=8):
+        b = self.boxes.get(key)
+        if not b:
+            b = next((v for k_, v in self.boxes.items() if v and k_.startswith(key)), None)
+        if not b:
+            raise KeyError('%s: no measured box %r (have %s); add it to "texts" in the shoot.py targets'
+                           % (self.src, key, sorted(self.boxes)))
+        x, y = self.pt(b[0], b[1])
+        return x - pad, y - pad, round(b[2] * self.s) + 2 * pad, round(b[3] * self.s) + 2 * pad
+
+
 class Sk:
     _whoosh = 0
 
-    def __init__(self, c, name, prev_face=False, next_face=False, tag=None):
+    def __init__(self, c, name, prev_face=False, next_face=False, tag=None, face=True):
         self.c, self.name = c, name
         self.prev_face, self.next_face = prev_face, next_face
+        self.face = face   # the face square covers the bottom-right corner (see PIP_CLEAR)
         self.seed = 1 + sum(ord(ch) for ch in name) * 37
         self.parts, self.jsl, self.cssl = [], [], []
         if tag:
@@ -140,10 +179,10 @@ class Sk:
 
     # -- shapes (x, y in canvas px)
     def rect(self, sid, x, y, w, h, t=None, d=0.5, **kw):
-        return self.svg(sid, self.g('rectangle', [x, y, w, h], **kw), t, d)
+        return self.svg(sid, self.g('rectangle', [x, y, w, h], **kw), t, d, ' data-k="rect"')   # data-k: layout.py
 
-    def ellipse(self, sid, cx, cy, w, h, t=None, d=0.5, **kw):
-        return self.svg(sid, self.g('ellipse', [cx, cy, w, h], **kw), t, d)
+    def ellipse(self, sid, cx, cy, w, h, t=None, d=0.5, k_='ellipse', **kw):
+        return self.svg(sid, self.g('ellipse', [cx, cy, w, h], **kw), t, d, ' data-k="%s"' % k_)
 
     def line(self, sid, x1, y1, x2, y2, t=None, d=0.35, **kw):
         return self.svg(sid, self.g('line', [x1, y1, x2, y2], **kw), t, d)
@@ -203,7 +242,7 @@ class Sk:
 
     def ring(self, sid, x, y, w, h, t=None, color=RED, sw=4, d=0.5):
         """Hand circle around a box (x, y, w, h)."""
-        return self.ellipse(sid, x + w / 2, y + h / 2, w * 1.18 + 30, h * 1.35 + 26, t, d, stroke=color, sw=sw, rough_=1.6)
+        return self.ellipse(sid, x + w / 2, y + h / 2, w * 1.18 + 30, h * 1.35 + 26, t, d, k_='ring', stroke=color, sw=sw, rough_=1.6)
 
     def mark(self, sid, x, y, w, h, t=None, color=YEL_BG, d=0.4):
         """Highlighter behind text: solid rough fill, wiped in."""
@@ -291,6 +330,25 @@ class Sk:
             self.jsl.append("tl.fromTo('#@@-%s',{opacity:0,clipPath:'inset(0 0 100%% 0)'},{opacity:1,clipPath:'inset(0 0 0%% 0)',duration:0.55,ease:'power2.out'},%.3f);"
                             % (sid, lt + (d * 0.5 if frame else 0)))
         return sid
+
+    def shot(self, sid, src, x, y, w=None, h=None, t=None, url=None, frame=True, d=0.5, bar=52):
+        """Screenshot in a browser frame, sized from the PNG itself: give w OR h (the frame's outer size, bar
+        included) and the other side follows, so the image is never cropped by object-fit. Returns a Shot:
+        shot.r('text') -> (x, y, w, h) canvas box of a text measured by shoot.py (<src minus .png>.json),
+        shot.pt(px, py) -> canvas point of an image pixel. Use them for rings / marks / arrows:
+            s = k.shot('sh', 'assets/img/side.png', 160, 100, w=900, url='site.com')
+            k.ring('r1', *s.r('Possible scam', pad=10), t=...)"""
+        iw, ih = png_size(root_path(src))
+        top = bar if frame else 0
+        if w is None and h is None:
+            raise ValueError('k.shot needs w or h')
+        if w is None:
+            w = round((h - top) * iw / ih)
+        h = round(w * ih / iw) + top
+        self.img(sid, src, x, y, w, h, t=t, url=url, frame=frame, d=d, bar=bar)
+        side = root_path(src)[:-4] + '.json'
+        boxes = json.load(open(side))['boxes'] if os.path.exists(side) else {}
+        return Shot(src, x, y + top, w / iw, boxes, w, h - top)
 
     def logo(self, sid, name, x, y, size, t=None, color=None, anim='pop'):
         """Brand logo. `name` = a simple-icons slug (claude, upwork, cloudflare, notion, github, ...; see
