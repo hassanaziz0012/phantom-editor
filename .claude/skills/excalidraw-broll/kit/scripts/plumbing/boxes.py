@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Screenshot pages and measure where given texts sit on them (for drawing highlights).
+"""SUPERSEDED: use shoot.py targets with "texts" (crops at capture, writes <name>.json, read by k.shot()).
+Screenshot pages and measure where given texts sit on them (for drawing highlights).
 
 Usage: python3 boxes.py targets.json IMG_DIR BOXES_JSON
   targets.json: {"name": {"url": "https://...", "texts": ["Headline text", "a phrase"]}}
