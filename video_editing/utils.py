@@ -408,6 +408,7 @@ def run_ffmpeg_with_progress(
     total_duration: float,
     description: str = "Encoding",
     stderr_line_callback: Callable[[str], None] | None = None,
+    raise_on_error: bool = False,
 ) -> None:
     """
     Run ffmpeg with a progress bar.
@@ -420,6 +421,8 @@ def run_ffmpeg_with_progress(
             it is produced (e.g. ``VideoQCCollector.handle_line``). stderr is
             always drained on a background thread so it can never fill the pipe
             and stall ffmpeg, even without a callback.
+        raise_on_error: Raise ``subprocess.CalledProcessError`` when ffmpeg fails
+            instead of exiting the process, so the caller can fall back.
     """
     # Insert -progress pipe:1 before the output file
     output_idx = -1
@@ -530,6 +533,8 @@ def run_ffmpeg_with_progress(
             print_error(f"[ERROR] ffmpeg failed with exit code {process.returncode}")
             if stderr_lines:
                 print_error("\n".join(stderr_lines[-40:]))
+            if raise_on_error:
+                raise subprocess.CalledProcessError(process.returncode, progress_cmd)
             sys.exit(process.returncode)
         
         print()  # New line after progress bar
