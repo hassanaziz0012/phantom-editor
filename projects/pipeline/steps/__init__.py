@@ -10,6 +10,7 @@ from projects.pipeline.steps.transcribe import transcribe
 from projects.pipeline.steps.verify import verify_final
 
 REVIEW_STEP = 6
+ENCODE_STEP = 4
 
 
 def build_steps(ctx: PipelineContext) -> list[Step]:
@@ -39,7 +40,7 @@ def build_steps(ctx: PipelineContext) -> list[Step]:
             process_audio, outputs=lambda o: (o.processed_audio,),
         ),
         Step(
-            4, "Final Encode & Multiplex", "Final Encode & Multiplex (Single Pass)",
+            ENCODE_STEP, "Final Encode & Multiplex", "Final Encode & Multiplex (Single Pass)",
             f"Encode video + processed audio{' + BGM' if args.bgm else ''} -> final.mp4",
             raw.encode_final, outputs=lambda o: (o.final,),
         ),

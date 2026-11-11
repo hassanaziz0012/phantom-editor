@@ -74,6 +74,8 @@ class RunSummary:
     inline_video_qc: bool = False
     # False when Step 5 found final.mp4 truncated or stuck on one frame.
     encode_integrity_ok: bool = True
+    # Which encoder made final.mp4 on this run (empty when Step 4 was skipped).
+    encoder: str = ""
     output_files: list[str] = field(default_factory=list)
     total_execution_time: float = 0.0
 
@@ -147,10 +149,12 @@ def write_summary(summary: RunSummary, review_step_index: int, output_dir: Path)
     if summary.cuts:
         cuts_line = f"Cuts (cuts.txt): {', '.join(format_cut(c) for c in summary.cuts)}\n"
 
+    encoder_line = f"Encoder: {summary.encoder}\n" if summary.encoder else ""
+
     md = f"""# phantom pipeline: {summary.project_title}
 BGM: {summary.bgm_track or "none"}
 Input: {summary.raw_input_filename} ({summary.resolution}, {fps_str}fps) -> final.mp4 ({format_timestamp(summary.final_duration)})
-{cuts_line}{steps_line}
+{encoder_line}{cuts_line}{steps_line}
 
 ## Review flags
 {review_body}
