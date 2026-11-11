@@ -109,6 +109,20 @@ def extract_speech(ctx: PipelineContext) -> None:
     require_output(output)
 
 
+def _drop_stale_face_copy(ctx: PipelineContext) -> None:
+    """Delete final-face.mp4 once final.mp4 has been re-encoded.
+
+    The excalidraw-broll skill replaces final.mp4 with its B-roll cut and keeps
+    the face-only original as final-face.mp4. A fresh encode makes final.mp4
+    face-only again, so that copy belongs to a cut that no longer exists and
+    would otherwise be used as the face source of the next B-roll build.
+    """
+    face_copy = ctx.outputs.final.with_name(f"final-face{ctx.outputs.final.suffix}")
+    if face_copy.is_file():
+        face_copy.unlink()
+        print_info(f"Removed {face_copy.name}: it was the face-only copy of the previous {ctx.outputs.final.name}.")
+
+
 def encode_final(ctx: PipelineContext) -> None:
     """Step 4: encode the trimmed video and mux the processed audio (+ BGM) in one pass."""
     if not is_valid_file(ctx.outputs.processed_audio):
@@ -175,6 +189,7 @@ def encode_final(ctx: PipelineContext) -> None:
     run_ffmpeg_with_progress(cmd, duration, "Final Encode & Multiplex", stderr_line_callback=qc.handle_line)
     qc.finalize(duration)
     require_output(ctx.outputs.final)
+    _drop_stale_face_copy(ctx)
 
     ctx.summary.video_flags = [VideoFlag.from_json(g["type"], g) for g in qc.glitches]
     ctx.summary.inline_video_qc = True
