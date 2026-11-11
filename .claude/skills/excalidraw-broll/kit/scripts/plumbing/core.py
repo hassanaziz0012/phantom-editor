@@ -31,9 +31,12 @@ CFG = dict(
     caption_anim=None,    # fn(sel, t, dur) -> js; default plain opacity in/out
     sfx_nudge=None,
     underlay='',      # raw html placed in the root before the scene hosts (e.g. the face <video>)
+    overlay='',       # raw html placed in the root after the scene hosts (e.g. a picture-in-picture <video>)
+    main_js='',       # js added to the main timeline `tl` in index.html (animates underlay / overlay clips)
 )
 
 SCENES, SFX, CAPTIONS = [], [], []
+HOSTS = []   # (sid, t0, dur, fn name) of every B-roll scene, filled by build()
 
 
 def setup(**kw):
@@ -217,8 +220,8 @@ def write_captions():
         '\n'.join(groups), '\n'.join(js), ' data-layout-allow-caption-zone'))
 
 
-def write_index(hosts, audio):
-    _write('index.html', """<!doctype html>
+def write_index(hosts, audio, rel='index.html', total=None, main_js=None):
+    _write(rel, """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -237,12 +240,16 @@ html,body{margin:0;width:%(w)dpx;height:%(h)dpx;overflow:hidden;background:%(bg)
 %(audio)s
 </div>
 <script>
-window.__timelines["main"] = gsap.timeline({ paused: true });
+(()=>{
+const tl = gsap.timeline({ paused: true });
+%(main_js)s
+window.__timelines["main"] = tl;
+})();
 </script>
 </body>
 </html>
-""" % dict(w=CFG['width'], h=CFG['height'], head=CFG['head'], bg=CFG['bg'], total=CFG['total'],
-           hosts='\n'.join(hosts), audio='\n'.join(audio)))
+""" % dict(w=CFG['width'], h=CFG['height'], head=CFG['head'], bg=CFG['bg'], total=CFG['total'] if total is None else total,
+           hosts='\n'.join(hosts), audio='\n'.join(audio), main_js=CFG['main_js'] if main_js is None else main_js))
 
 
 def _audio_clips():
@@ -268,6 +275,46 @@ def _audio_clips():
     return out
 
 
+def _host(sid, start, dur, label):
+    return ('<div id="%s" data-composition-id="%s" data-composition-src="compositions/%s.html" data-start="%.3f" '
+            'data-duration="%.3f" data-track-index="1" data-track-kind="graphics" data-width="%d" data-height="%d" '
+            'style="z-index:1" data-label="%s"></div>' % (sid, sid, sid, start, dur, CFG['width'], CFG['height'], label))
+
+
+def audio_events():
+    """Everything the film's soundtrack needs, for mixing it with ffmpeg instead of in the browser:
+    {'total', 'voice': [file, vol], 'bgm': [file, vol, fade_in] or None, 'sfx': [[file, start, slot, vol], ...]}"""
+    total, fps = CFG['total'], CFG['fps']
+    ev = dict(total=total, voice=[CFG['voice'], CFG['voice_volume']],
+              bgm=[CFG['bgm'], CFG['bgm_volume'], CFG['bgm_fade_in']] if CFG['bgm'] else None, sfx=[])
+    if SFX:
+        peaks = json.load(open(path(CFG['peaks'])))
+        nudge = 1.0 / fps if CFG['sfx_nudge'] is None else CFG['sfx_nudge']
+        for name, hit, vol in sorted(SFX, key=lambda x: x[1]):
+            p = peaks[name]
+            start = max(0.0, hit - p['peak'] + nudge)
+            slot = min(math.floor(p['duration'] * fps) / fps, total - start)
+            if slot > 0:
+                ev['sfx'].append([p['file'], round(start, 3), round(slot, 3), vol])
+    return ev
+
+
+def write_packed(rel, windows, underlay, total):
+    """A second root composition with only the given windows of the film, back to back (no audio, no overlay).
+    windows: [(a, z, o)] film span a..z is placed at o in the packed file. Hosts are shifted, scenes unchanged."""
+    hosts = []
+    for sid, t0, dur, label in HOSTS:
+        for a, z, o in windows:
+            if a - 1e-6 <= t0 and t0 + dur <= z + 1e-6:
+                hosts.append(_host(sid, o + t0 - a, dur, label))
+                break
+        else:
+            if any(t0 < z and t0 + dur > a for a, z, _ in windows):
+                raise ValueError('scene %s (%.3f-%.3f) is not inside one render window' % (sid, t0, t0 + dur))
+            # else: outside every window (a RENDER_SPAN test render): left out
+    write_index([underlay] + hosts, [], rel=rel, total=total, main_js='')
+
+
 def build(only=None):
     """Write every scene (or only the ids in `only`), captions and index.html."""
     if CFG['total'] is None:
@@ -275,6 +322,7 @@ def build(only=None):
     os.makedirs(path('compositions'), exist_ok=True)
     SCENES.sort(key=lambda s: s['t'])
     hosts = []
+    HOSTS.clear()
     for i, sc in enumerate(SCENES):
         sid = 's%02d' % (i + 1)
         t0 = sc['t']
@@ -286,16 +334,17 @@ def build(only=None):
         body, css, js = sc['fn'](Ctx(sid, t0, dur), **sc['kw'])
         if only is None or sid in only:
             write_scene(sid, body, css, js)
-        hosts.append('<div id="%s" data-composition-id="%s" data-composition-src="compositions/%s.html" data-start="%.3f" '
-                     'data-duration="%.3f" data-track-index="1" data-track-kind="graphics" data-width="%d" data-height="%d" '
-                     'style="z-index:1" data-label="%s"></div>'
-                     % (sid, sid, sid, t0, dur, CFG['width'], CFG['height'], sc['fn'].__name__))
+        HOSTS.append((sid, t0, dur, sc['fn'].__name__))
+        hosts.append(_host(sid, t0, dur, sc['fn'].__name__))
     if CAPTIONS:
       hosts.append('<div id="captions" data-composition-id="captions" data-composition-src="compositions/captions.html" '
                  'data-start="0" data-duration="%.3f" data-track-index="2" data-track-kind="captions" data-width="%d" '
                  'data-height="%d" style="z-index:5"></div>' % (CFG['total'], CFG['width'], CFG['height']))
-    write_index([CFG['underlay']] + hosts, _audio_clips())
+    write_index([CFG['underlay']] + hosts + [CFG['overlay']], _audio_clips())
     if CAPTIONS:
         write_captions()
-    _write('scene-list.txt', ''.join('s%02d %7.2f %s\n' % (i + 1, sc['t'], sc['fn'].__name__ if sc['fn'] else 'FACE') for i, sc in enumerate(SCENES)))
+    # 4th column 'noface': a B-roll scene registered with face=False (no picture-in-picture over it)
+    _write('scene-list.txt', ''.join('s%02d %7.2f %s%s\n' % (i + 1, sc['t'], sc['fn'].__name__ if sc['fn'] else 'FACE',
+                                                           ' noface' if sc['kw'].get('face') is False else '')
+                                     for i, sc in enumerate(SCENES)))
     print('scenes', len(SCENES), 'sfx', len(SFX), 'captions', len(CAPTIONS), 'total %.2fs' % CFG['total'])
