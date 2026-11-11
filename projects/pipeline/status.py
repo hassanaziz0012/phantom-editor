@@ -39,6 +39,10 @@ def print_overview(ctx: PipelineContext, steps: list[Step], plan: dict[int, str 
         print_warning(" Resolution check: >1080p, downscaled to 1080p during the final encode")
     else:
         print_info(f" Resolution:       {ctx.summary.resolution}")
+    if args.encoder == "colab":
+        print_info(" Encoder:          Colab T4 GPU (NVENC), falls back to local x264")
+    else:
+        print_info(" Encoder:          local x264")
     if args.force:
         print_warning(" Force re-run:     --force option enabled (re-executing all steps)")
 

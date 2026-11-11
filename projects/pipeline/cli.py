@@ -7,12 +7,13 @@ from pathlib import Path
 
 from video_editing.utils import get_video_info, print_error, print_info, print_success, print_warning
 
+from projects.pipeline.colab import ColabEncoder
 from projects.pipeline.common import PipelineError
 from projects.pipeline.context import Outputs, PipelineContext, Scripts
 from projects.pipeline.cuts import CUTS_FILENAME, load_cuts
 from projects.pipeline.runner import PipelineRunner, plan_steps
 from projects.pipeline.status import confirm_execution, print_overview
-from projects.pipeline.steps import REVIEW_STEP, build_steps
+from projects.pipeline.steps import ENCODE_STEP, REVIEW_STEP, build_steps
 from projects.pipeline.summary import RunSummary, format_duration, write_summary
 
 RULE = "=" * 60
@@ -44,6 +45,11 @@ def parse_cli_args() -> argparse.Namespace:
     parser.add_argument("-f", "--force", action="store_true",
                         help="Force re-execution of all pipeline steps, ignoring existing step files.")
     parser.add_argument("--skip-review", action="store_true", help="Skip audio and video inspection review step.")
+    parser.add_argument(
+        "--encoder", choices=("colab", "local"), default="colab",
+        help="Where Step 4 encodes final.mp4: 'colab' (free Colab T4 GPU, NVENC; the default) or "
+             "'local' (x264 on this machine). 'colab' falls back to 'local' if the T4 is unavailable.",
+    )
     parser.add_argument(
         "--clean-intermediates", action="store_true",
         help="Delete the intermediate raw-audio.wav after final.mp4 is verified.",
@@ -156,8 +162,13 @@ def main() -> None:
         sys.exit(e.exit_code)
 
     steps = build_steps(ctx)
-    print_overview(ctx, steps, plan_steps(steps, ctx))
+    plan = plan_steps(steps, ctx)
+    print_overview(ctx, steps, plan)
     confirm_execution(args.yes)
+    if args.encoder == "colab" and plan.get(ENCODE_STEP, "") is None:
+        # Start the VM and the raw upload now so they overlap Steps 1-3.
+        ctx.colab = ColabEncoder(ctx.main_video)
+        ctx.colab.start()
 
     print()
     print_info("Starting video processing pipeline...")
@@ -174,6 +185,8 @@ def main() -> None:
         print_error("Processing cancelled by user.")
         exit_code = 130
     finally:
+        if ctx.colab is not None:
+            ctx.colab.stop()
         finish_summary(ctx, time.perf_counter() - start)
     if exit_code:
         sys.exit(exit_code)

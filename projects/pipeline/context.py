@@ -8,6 +8,7 @@ from pathlib import Path
 from video_editing.utils import VideoInfo
 
 from shared.paths import REPO_ROOT
+from projects.pipeline.colab import ColabEncoder
 from projects.pipeline.common import PipelineError
 from projects.pipeline.summary import RunSummary
 
@@ -85,6 +86,8 @@ class PipelineContext:
     # The project's cuts.txt (if any) and the ranges it removes.
     cuts_file: Path | None = None
     cuts: list[tuple[float, float]] = field(default_factory=list)
+    # Set with --encoder colab when Step 4 will run: the T4 session that encodes it.
+    colab: ColabEncoder | None = None
 
     @property
     def needs_downscale(self) -> bool:

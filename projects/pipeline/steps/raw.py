@@ -16,9 +16,12 @@ Ranges listed in the project's cuts.txt (bad takes) are removed from the speech
 intervals before snapping, so they are cut by this same encode.
 """
 
+from pathlib import Path
+
 from video_editing.utils import VideoQCCollector, print_info, print_warning, run_ffmpeg_with_progress
 from video_editing.trim_silences import get_silence_trim_expressions, get_speech_intervals
 
+from projects.pipeline.colab import ENCODER_LABEL, ColabUnavailable
 from projects.pipeline.common import PipelineError, is_valid_file, require_output
 from projects.pipeline.context import PipelineContext
 from projects.pipeline.cuts import subtract_cuts
@@ -123,6 +126,23 @@ def _drop_stale_face_copy(ctx: PipelineContext) -> None:
         print_info(f"Removed {face_copy.name}: it was the face-only copy of the previous {ctx.outputs.final.name}.")
 
 
+def _encode_on_colab(ctx: PipelineContext, build_cmd, bgm_file: Path | None, duration: float,
+                     description: str) -> VideoQCCollector | None:
+    """Run the encode on the Colab T4. Returns its QC collector, or None to encode locally."""
+    if ctx.colab is None:
+        return None
+    qc = VideoQCCollector()
+    extra_inputs = [ctx.outputs.processed_audio] + ([bgm_file] if bgm_file is not None else [])
+    try:
+        ctx.colab.encode(build_cmd, extra_inputs, ctx.outputs.final, duration, description, qc.handle_line)
+    except ColabUnavailable as e:
+        print_warning(f"Colab encode unavailable ({e}); encoding locally with x264 instead.")
+        ctx.colab.stop()
+        return None
+    ctx.summary.encoder = ENCODER_LABEL
+    return qc
+
+
 def encode_final(ctx: PipelineContext) -> None:
     """Step 4: encode the trimmed video and mux the processed audio (+ BGM) in one pass."""
     if not is_valid_file(ctx.outputs.processed_audio):
@@ -153,12 +173,10 @@ def encode_final(ctx: PipelineContext) -> None:
         f"[v_qc]{INLINE_QC_FILTER}[v_qc_out]"
     )
 
-    input_args = ["-i", str(ctx.main_video), "-i", str(ctx.outputs.processed_audio)]
     if bgm_file is not None:
         # Loop the BGM for the whole video; amix duration=first stops it at the
         # end of the speech. Both tracks go stereo first so the mono voice
         # does not collapse the music's stereo image.
-        input_args += ["-stream_loop", "-1", "-i", str(bgm_file)]
         filter_complex += (
             ";[1:a]aresample=48000,aformat=channel_layouts=stereo[main_a];"
             f"[2:a]aresample=48000,volume={ctx.args.volume}/100,aformat=channel_layouts=stereo[music];"
@@ -172,21 +190,31 @@ def encode_final(ctx: PipelineContext) -> None:
         audio_map = "1:a:0"
         channels = "1"
 
-    # blackdetect reports at info level, so this encode can't use -loglevel error.
-    cmd = [
-        *ffmpeg_cmd("info"), *input_args,
-        "-filter_complex", filter_complex,
-        "-map", "[v_enc]", "-map", audio_map,
-        "-fps_mode", "cfr", *X264_ARGS, *AAC_ARGS, "-ac", channels,
-    ]
-    if duration > 0:
-        cmd += ["-t", f"{duration:.3f}"]
-    cmd += ["-movflags", "+faststart", str(ctx.outputs.final),
-            "-map", "[v_qc_out]", "-f", "null", "-"]
+    def build_cmd(paths: dict[Path, str], output: str, video_args: list[str], main_input_args: list[str]) -> list[str]:
+        """The encode's ffmpeg argv, with each local input mapped through ``paths``."""
+        input_args = [*main_input_args, "-i", paths[ctx.main_video], "-i", paths[ctx.outputs.processed_audio]]
+        if bgm_file is not None:
+            input_args += ["-stream_loop", "-1", "-i", paths[bgm_file]]
+        # blackdetect reports at info level, so this encode can't use -loglevel error.
+        cmd = [
+            *ffmpeg_cmd("info"), *input_args,
+            "-filter_complex", filter_complex,
+            "-map", "[v_enc]", "-map", audio_map,
+            "-fps_mode", "cfr", *video_args, *AAC_ARGS, "-ac", channels,
+        ]
+        if duration > 0:
+            cmd += ["-t", f"{duration:.3f}"]
+        return cmd + ["-movflags", "+faststart", output, "-map", "[v_qc_out]", "-f", "null", "-"]
 
-    qc = VideoQCCollector()
-    print(f"Executing: {' '.join(cmd)}")
-    run_ffmpeg_with_progress(cmd, duration, "Final Encode & Multiplex", stderr_line_callback=qc.handle_line)
+    description = "Final Encode & Multiplex"
+    qc = _encode_on_colab(ctx, build_cmd, bgm_file, duration, description)
+    if qc is None:
+        local_paths = {p: str(p) for p in (ctx.main_video, ctx.outputs.processed_audio, bgm_file) if p is not None}
+        cmd = build_cmd(local_paths, str(ctx.outputs.final), X264_ARGS, [])
+        qc = VideoQCCollector()
+        print(f"Executing: {' '.join(cmd)}")
+        run_ffmpeg_with_progress(cmd, duration, description, stderr_line_callback=qc.handle_line)
+        ctx.summary.encoder = "local (libx264)"
     qc.finalize(duration)
     require_output(ctx.outputs.final)
     _drop_stale_face_copy(ctx)
