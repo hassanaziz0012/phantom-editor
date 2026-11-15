@@ -105,6 +105,14 @@ def parse_schedule(value: str) -> datetime:
 # ==============================================================================
 async def open_clean_editor(page: Page) -> None:
     """Opens dev.to/new logged in, with any autosaved unsaved form discarded."""
+    # The editor restores the last unsaved /new form from localStorage a second or so
+    # after it renders, and writes the form back as the page unloads, so removing the
+    # key and reloading doesn't clear it. Old tags then fill all 4 slots mid-run and
+    # disable the tag input. Removing the key before the page's own scripts run does.
+    await page.add_init_script(
+        "if (location.pathname === '/new') { try { localStorage.removeItem(%r); } catch (e) {} }" % DRAFT_STORAGE_KEY
+    )
+
     print(f"Navigating to {NEW_POST_URL}...")
     await page.goto(NEW_POST_URL, wait_until="domcontentloaded")
 
@@ -113,19 +121,7 @@ async def open_clean_editor(page: Page) -> None:
 
     # The title textarea is server-rendered and gets replaced when the editor app
     # hydrates, so wait for the app-rendered body field before touching anything
-    body_box = page.locator("#article_body_markdown")
-    await body_box.wait_for(state="visible", timeout=30000)
-
-    # The editor restores the last unsaved /new form from localStorage, so drop it
-    # and reload to start from an empty form instead of merging into old content
-    had_draft = await page.evaluate(
-        "(key) => { const had = localStorage.getItem(key) !== null; localStorage.removeItem(key); return had; }",
-        DRAFT_STORAGE_KEY,
-    )
-    if had_draft:
-        print("Discarding the editor's autosaved unsaved form...")
-        await page.reload(wait_until="domcontentloaded")
-        await body_box.wait_for(state="visible", timeout=30000)
+    await page.locator("#article_body_markdown").wait_for(state="visible", timeout=30000)
 
 
 async def add_tags(page: Page, tags: List[str]) -> None:
