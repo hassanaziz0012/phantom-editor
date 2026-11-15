@@ -6,7 +6,7 @@ description: Use when the user asks to create Excalidraw-style (hand-drawn, whit
 # Excalidraw B-roll for a talking-head video
 
 The user records videos that are only their face talking to camera. This skill turns the face-only `final.mp4` into
-a B-roll cut: **60-70% of the runtime is full-screen, light, Excalidraw-style B-roll** made with
+a B-roll cut: **about 80% of the runtime is full-screen, light, Excalidraw-style B-roll** made with
 HyperFrames, and the rest is the user's face, full screen. **During B-roll the user's face stays on screen
 in a rounded square at the bottom right** (picture-in-picture), so viewers see both. The audio is the
 original voice plus quiet BGM and SFX. There are no captions.
@@ -29,7 +29,7 @@ scenes that are **unique to this video**. Reference build: "7 practical, high RO
   Projects live in `~/Videos/YT Projects/<name>/`. Match a loose name with `ls`.
 - Every B-roll scene shows the face square unless its board entry says `{'face': False}` (see *The face
   square*). Keep the bottom-right corner of those scenes empty.
-- B-roll share is 60-70%. Use quiet BGM (`Hello World.mp3` from `~/Videos/Asset Library/BGM`, or pass
+- B-roll share is about 80% (80-85%; the user asked for this default in Nov 2026). Use quiet BGM (`Hello World.mp3` from `~/Videos/Asset Library/BGM`, or pass
   another file name to setup.sh) and SFX. No captions.
 - **Real assets first.** Whenever a scene would be better showing a real website, app, screenshot, UI,
   file or video, get the real thing. A drawn illustration is the backup for when the real asset can't be
@@ -85,7 +85,7 @@ limits).
    simple-icons slugs; nothing to download.
 4. **Write `broll/scripts/scenes.py`** from the template that is already there: `board()` plus one function
    per scene. Then run `python3 scripts/build.py && python3 scripts/tools.py share`. share prints the
-   B-roll % and flags scenes shorter than 2.3 s. Adjust the board until the split is 60-70%.
+   B-roll % and flags scenes shorter than 2.3 s. Adjust the board until the split is about 80% (80-85%).
 5. **Review**: first the geometry, by script: `python3 scripts/plumbing/layout.py` (about 15 s; pass scene
    ids like `s05 s12` to re-check only those). It opens every B-roll scene in a browser and reads where
    each element really lands, across the whole scene. Fix everything it prints: `off_canvas`,
@@ -105,8 +105,13 @@ limits).
    rebuilds the film with ffmpeg (face gaps from face.mp4, face square from pip.mp4, voice + BGM + SFX).
    It waits for the face encode, delivers the result as `<project>/final.mp4` (the face-only original
    becomes `final-face.mp4`), prints duration and loudness, writes `research/final-sheet.jpg` (24 frames)
-   and prints a timing table per stage (wait-face, build, chrome, assemble, verify, sheet, deliver), also
+   and prints a timing table per stage (wait-face, build, chrome, assemble, verify, qc, sheet, deliver), also
    appended to `research/render-timings.log`. Read the sheet once. If something is wrong, fix and re-render.
+   **QC** (`scripts/plumbing/qc.py`, ~1.5 min) checks every frame of the cut before delivery: black frames,
+   the face frozen outside B-roll, and the face a frame off `face.mp4` at each B-roll cut (a stutter). On a
+   failure render.sh does NOT deliver: it prints the film times, keeps `renders/broll.mp4`, writes
+   `research/qc.txt`, and exits 1. Report it to the user and find the cause; `QC_FORCE=1` delivers anyway
+   (only when the user says so). Run it by hand on any cut: `cd <broll> && python3 $KIT/scripts/plumbing/qc.py ../final.mp4`.
    Measured on the Reddit-jobs video (7 min, 86% B-roll): chrome 522 s (370 s of packed B-roll, ~43 s of
    video per minute), assemble ~290 s (about 1.5x realtime), total ~14.5 min (the old all-in-Chrome render
    took 48 min). Time scales with B-roll seconds + film length. `--test FROM TO` renders just that span to `renders/test.mp4` (not delivered) with its own
@@ -122,8 +127,8 @@ limits).
 
 ## Storyboard rules
 
-The hook treatment and the 60-70% B-roll share are defaults for when the user says nothing. If they ask
-for something else for this video (a raw intro, 80% B-roll, much less B-roll), do that instead and scale
+The hook treatment and the ~80% B-roll share are defaults for when the user says nothing. If they ask
+for something else for this video (a raw intro, 60% B-roll, much less B-roll), do that instead and scale
 the other rules to fit. `tools.py share` only reports the split; it is not a target to hit then.
 
 - **The hook (first 10 s) is the most heavily edited part of the video.** By default, don't leave it as
@@ -133,10 +138,12 @@ the other rules to fit. `tools.py share` only reports the split; it is not a tar
   short as 1.5 s and B-roll scenes 2.3-4 s. Give these scenes the strongest pictures in the video (the
   big number, the real screenshot, the before/after), one bold element each, landing on its word with an
   SFX hit. Check the first 10 s on its own in the review step.
-- **Face** (about 30-40%): personal stories ("like me", "as you can see"), jokes and swearing, rants and
-  opinions, "I might get hate for this", the like/subscribe ask (always face), the outro. Outside the
-  hook, face segments last at least about 2.5 s.
-- **B-roll** (60-70%): anything that explains, lists, compares, shows a product, a process, a number, or
+- **Face** (about 20%): the like/subscribe ask (always face), the outro, punchlines ("it's not even close"),
+  jokes and swearing, and the sharpest bits of a rant. That is not enough to keep every opinion on the face:
+  most opinions, personal stories and "comment below" asks get a picture too (a balance scale, a comment box,
+  a grid of refused requests), with the face square still showing. Outside the hook, face segments last at
+  least about 2.5 s.
+- **B-roll** (about 80%): anything that explains, lists, compares, shows a product, a process, a number, or
   a prompt. Consecutive B-roll scenes pan from one to the next, so long B-roll stretches are fine.
 - Decide per B-roll scene whether the face square stays (the default) or goes (`{'face': False}`), see
   *The face square*.
@@ -249,7 +256,22 @@ client names, chat history) and crop or skip it. List what you used and cropped 
   sketchy browser frame, sizes the other side from the PNG so nothing is cropped, and returns a Shot.
   Put rings, rects and marks on measured boxes: `k.ring('r', *s.r('Possible scam'), t=...)`; `s.pt(px, py)`
   maps any image pixel. Never place them by eye (that cost a fix round in the Reddit-jobs video).
-  `k.img(...)` is the low-level version (you size it; object-fit crops a wrong aspect).
+  `k.img(...)` is the low-level version (you size it; object-fit crops a wrong aspect). For images with no
+  measured json (Chrome shots), `s.r_img(px, py, pw, ph, pad=)` maps an image-pixel box to a canvas box.
+- **Scroll through a live site / show interactions** (landing pages, sliders, scroll animations): record it with
+  `python3 scripts/plumbing/record.py assets/video/x.mp4 https://site steps.json` (CDP screencast, sharp, 1 s
+  keyframes; steps: wait / scroll to selector / scrollby / drag across a selector / click / hover; prints when each
+  step starts, so time the steps to the transcript). Play it with `k.video(sid, src, x, y, w, t=, dur=, url=)` inside
+  the browser frame (w=1320 at (110, 90) fills the space left of the face square). Drag fractions must be inside
+  the element (0.01-0.99): a drag starting exactly on its edge does nothing.
+- **X/Twitter posts**: x.com itself gets a login wall headless, but the official embed page doesn't. Add one
+  shoot.py target per tweet (light theme, matches the paper; `texts` gives measured boxes for rings):
+  `"tw": {"url": "https://platform.twitter.com/embed/Tweet.html?id=<ID>&theme=light&dnt=true", "view": "560x1200",
+  "element": "css=article", "texts": ["phrase to ring"]}`. Read the shots once: the embed cuts long tweets at
+  "Show more". Only for those, use Claude in Chrome: set `document.documentElement.style.zoom=1.25`, scroll the
+  `article` under the sticky header, pause videos at ~1.2 s, hover the mouse off the tweet, then `computer zoom`
+  the article region with `save_to_disk` and NO `scale` (scale also shrinks the saved file). Crop with ffmpeg at
+  the timestamp line.
 
 ## API cheat sheet (`scenes.py`)
 
@@ -275,6 +297,7 @@ k.text(sid, x, y, 'text\nlines', size, t=, color=, w=None, align='l', anim='writ
 k.box(sid, x, y, w, h, 'label', size, t=, stroke=, fill=, anim='draw'|'pop', shape='rectangle'|'ellipse', code=)
 s = k.shot(sid, 'assets/img/x.png', x, y, w=None, h=None, t=None, url=None)  # s.r('text') -> (x,y,w,h), s.pt(px,py)
 k.img(sid, 'assets/img/x.png', x, y, w, h, t=None, url='site.com/path', bar=52)
+k.video(sid, 'assets/video/rec.mp4', x, y, w, t=, dur=, url=)   # screen recording in a browser frame
 k.logo(sid, 'simpleicons-slug', x, y, size, t=, color=None)
 k.raw(html)  k.js(code)  k.L(t_abs) -> scene time   k.g(op, args, **style) -> svg group for k.svg(sid, inner, t)
 return k.done()
@@ -357,3 +380,18 @@ Gotchas so the next run inherits the fix.
   the source size, and 1080p frames under every B-roll scene came to 4 GB, twice the PLAN_TOO_LARGE cap.
   This now only matters for previews: render.sh renders render.html, which has no face square and only
   the face footage inside B-roll windows (the paper slide edges).
+- simple-icons dropped some brands (`openai`). Fetch the old icon into `assets/logos/<name>.svg` from
+  `https://cdn.jsdelivr.net/npm/simple-icons@9.21.0/icons/<name>.svg`; `k.logo` picks it up.
+- `k.video` clips sit inside a scene composition with scene-local `data-start`; `tools.py check` warns
+  `nested_media_start_basis_ambiguous`, which is expected (verified in the packed render, Fable 5.2 video).
+- Root-level clip times (face clips, scene hosts, face squares) go through `core.clip_span(t0, t1)` and
+  `core.media_start(t)`, never a hand-written `"%.3f"`. Edges rounded to ms on their own landed just after their
+  frame: back-to-back face clips left one frame no clip covered (a black flash at a window start: Chinese-models
+  10:51 and 7:14, end-of-session 0:37). HyperFrames also floors the media time, so a media start rounded down
+  (621.333 for 621.3333) showed the previous frame: the face inside a window ran a frame behind face.mp4, a
+  stutter at the cut. build.py fails with "covered by no clip" if render.html still has an uncovered frame.
+- `tools.py check` reports `multiple_root_compositions` (index.html + render.html). Expected: build.py writes
+  both on purpose and render.sh passes `-c render.html` (Chinese-models video, Nov 2026).
+- Speech-to-text splits brand names into separate words ("open AI", "deep seek") and keeps symbols on numbers
+  ("90%"). Before the first build, check every in-scene `A()`/`at()` phrase against its scene window (one
+  short script over `board()` + `inspect.getsource`), not by trial-and-error builds.
