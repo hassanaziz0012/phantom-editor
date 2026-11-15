@@ -275,10 +275,54 @@ def _audio_clips():
     return out
 
 
+def _edge_ms(t):
+    """A clip edge at time t, in whole ms: snapped to the nearest frame, then 0.3-1 ms BEFORE that frame.
+    HyperFrames shows a clip while start <= t < start + duration and picks a video frame with
+    floor((t - start) * fps). Edges rounded to the nearest ms on their own (%.3f) land up to 0.5 ms AFTER
+    their frame: back-to-back clips then left one frame that no clip covered (the black page showed: a black
+    flash at a window start, Nov 2026), and a late start shows the previous video frame. Up to 8 ms early is
+    safe (tested)."""
+    fps = CFG['fps']
+    k = round(t * fps)
+    return max(0, -(-k * 1000 // fps) - 1)
+
+
+def clip_span(t0, t1):
+    """data-start / data-duration attributes for a clip on t0..t1. Clips that meet share one edge exactly."""
+    s, e = _edge_ms(t0), _edge_ms(t1)
+    return 'data-start="%d.%03d" data-duration="%d.%03d"' % (s // 1000, s % 1000, (e - s) // 1000, (e - s) % 1000)
+
+
+def media_start(t):
+    """data-media-start value for source time t: its frame plus a quarter frame. HyperFrames floors the media
+    time, so 621.333 (%.3f of the frame at 621.3333) showed the frame before it (tested, Nov 2026)."""
+    fps = CFG['fps']
+    return '%.4f' % ((round(t * fps) + 0.25) / fps)
+
+
+def check_cover(rel, frames, tracks=('0', '1')):
+    """Fail if a frame of root composition `rel` has no clip on these tracks: it would render the black page."""
+    fps = CFG['fps']
+    spans = sorted((float(m.group(1)), float(m.group(1)) + float(m.group(2))) for m in re.finditer(
+        r'<(?:video|div) [^>]*?data-start="([\d.]+)" data-duration="([\d.]+)"[^>]*?data-track-index="(\d+)"',
+        open(path(rel)).read()) if m.group(3) in tracks)
+    holes, j, reach = [], 0, -1.0
+    for n in range(frames):
+        t = n / fps
+        while j < len(spans) and spans[j][0] <= t:
+            reach = max(reach, spans[j][1])
+            j += 1
+        if not t < reach:
+            holes.append('%.3f' % t)
+    if holes:
+        raise SystemExit('%s: %d frame(s) covered by no clip (black frames) at %s' % (rel, len(holes), ', '.join(holes[:10])))
+
+
 def _host(sid, start, dur, label):
-    return ('<div id="%s" data-composition-id="%s" data-composition-src="compositions/%s.html" data-start="%.3f" '
-            'data-duration="%.3f" data-track-index="1" data-track-kind="graphics" data-width="%d" data-height="%d" '
-            'style="z-index:1" data-label="%s"></div>' % (sid, sid, sid, start, dur, CFG['width'], CFG['height'], label))
+    return ('<div id="%s" data-composition-id="%s" data-composition-src="compositions/%s.html" %s '
+            'data-track-index="1" data-track-kind="graphics" data-width="%d" data-height="%d" '
+            'style="z-index:1" data-label="%s"></div>' % (sid, sid, sid, clip_span(start, start + dur),
+                                                         CFG['width'], CFG['height'], label))
 
 
 def audio_events():
@@ -312,7 +356,8 @@ def write_packed(rel, windows, underlay, total):
             if any(t0 < z and t0 + dur > a for a, z, _ in windows):
                 raise ValueError('scene %s (%.3f-%.3f) is not inside one render window' % (sid, t0, t0 + dur))
             # else: outside every window (a RENDER_SPAN test render): left out
-    write_index([underlay] + hosts, [], rel=rel, total=total, main_js='')
+    # root length on the same edge as the last clip, so Chrome renders no frame past the last window
+    write_index([underlay] + hosts, [], rel=rel, total=_edge_ms(total) / 1000.0, main_js='')
 
 
 def build(only=None):
@@ -334,8 +379,9 @@ def build(only=None):
         body, css, js = sc['fn'](Ctx(sid, t0, dur), **sc['kw'])
         if only is None or sid in only:
             write_scene(sid, body, css, js)
-        HOSTS.append((sid, t0, dur, sc['fn'].__name__))
-        hosts.append(_host(sid, t0, dur, sc['fn'].__name__))
+        end = SCENES[i + 1]['t'] if i + 1 < len(SCENES) else CFG['total']   # unrounded: hosts meet exactly
+        HOSTS.append((sid, t0, end - t0, sc['fn'].__name__))
+        hosts.append(_host(sid, t0, end - t0, sc['fn'].__name__))
     if CAPTIONS:
       hosts.append('<div id="captions" data-composition-id="captions" data-composition-src="compositions/captions.html" '
                  'data-start="0" data-duration="%.3f" data-track-index="2" data-track-kind="captions" data-width="%d" '

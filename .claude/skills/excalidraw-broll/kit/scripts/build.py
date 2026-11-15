@@ -62,9 +62,9 @@ for i, (t, fn, _) in enumerate(board):
 vids = []
 for j, (a, z) in enumerate(merged):
     a, z = round(a * FPS) / FPS, round(z * FPS) / FPS
-    vids.append('<video id="face%02d" class="clip" src="assets/video/face.mp4" muted playsinline data-start="%.3f" '
-                'data-duration="%.3f" data-media-start="%.3f" data-track-index="0" style="position:absolute;left:0;'
-                'top:0;width:1920px;height:1080px;object-fit:cover;z-index:0"></video>' % (j, a, z - a, a))
+    vids.append('<video id="face%02d" class="clip" src="assets/video/face.mp4" muted playsinline %s '
+                'data-media-start="%s" data-track-index="0" style="position:absolute;left:0;'
+                'top:0;width:1920px;height:1080px;object-fit:cover;z-index:0"></video>' % (j, core.clip_span(a, z), core.media_start(a)))
 core.CFG['underlay'] = '\n'.join(vids)
 
 # Face picture-in-picture: one clip per run of back-to-back B-roll scenes that show it (face=False in a board
@@ -87,8 +87,8 @@ for a, z in runs:
     if z - a < 1.5:   # too short to pop in and out
         continue
     pid = 'pip%02d' % len(pips)
-    pips.append('<video id="%s" class="clip pip" src="assets/video/pip.mp4" muted playsinline data-start="%.3f" '
-                'data-duration="%.3f" data-media-start="%.3f" data-track-index="3"></video>' % (pid, a, z - a, a))
+    pips.append('<video id="%s" class="clip pip" src="assets/video/pip.mp4" muted playsinline %s '
+                'data-media-start="%s" data-track-index="3"></video>' % (pid, core.clip_span(a, z), core.media_start(a)))
     pjs.append("tl.fromTo('#%s',{opacity:0,scale:0.35},{opacity:1,scale:1,duration:0.5,ease:'back.out(1.6)'},%.3f);"
                "tl.to('#%s',{opacity:0,scale:0.4,duration:0.28,ease:'power3.in'},%.3f);" % (pid, a + 0.3, pid, z - 0.55))
 core.CFG['overlay'] = '\n'.join(pips)
@@ -122,11 +122,12 @@ for a, z in wins:
         x0, x1 = max(a, fa), min(z, fz)
         if x1 - x0 > 1e-6:
             under.append('<video id="face%02d" class="clip" src="assets/video/face.mp4" muted playsinline '
-                         'data-start="%.3f" data-duration="%.3f" data-media-start="%.3f" data-track-index="0" '
+                         '%s data-media-start="%s" data-track-index="0" '
                          'style="position:absolute;left:0;top:0;width:1920px;height:1080px;object-fit:cover;z-index:0">'
-                         '</video>' % (len(under), o + x0 - a, x1 - x0, x0))
+                         '</video>' % (len(under), core.clip_span(o + x0 - a, o + x1 - a), core.media_start(x0)))
     o = fr(o + z - a)
 core.write_packed('render.html', packed, '\n'.join(under), max(o, 1.0 / FPS))
+core.check_cover('render.html', round(o * FPS))   # a frame no face clip / scene covers renders black
 import json  # noqa: E402
 json.dump(dict(fps=FPS, total=round(TOTAL, 3), span=span, packed_total=round(o, 3), windows=packed,
                pip_runs=[[round(fr(a), 3), round(fr(z), 3)] for a, z in runs if fr(z) - fr(a) >= 1.5],
