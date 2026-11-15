@@ -117,6 +117,11 @@ class Shot:
     def pt(self, px, py):
         return round(self.x + px * self.s), round(self.y + py * self.s)
 
+    def r_img(self, px, py, pw, ph, pad=0):
+        """Canvas box (x, y, w, h) of an image-pixel box, for assets with no measured json (e.g. Chrome shots)."""
+        x, y = self.pt(px, py)
+        return x - pad, y - pad, round(pw * self.s) + 2 * pad, round(ph * self.s) + 2 * pad
+
     def r(self, key, pad=8):
         b = self.boxes.get(key)
         if not b:
@@ -330,6 +335,19 @@ class Sk:
             self.jsl.append("tl.fromTo('#@@-%s',{opacity:0,clipPath:'inset(0 0 100%% 0)'},{opacity:1,clipPath:'inset(0 0 0%% 0)',duration:0.55,ease:'power2.out'},%.3f);"
                             % (sid, lt + (d * 0.5 if frame else 0)))
         return sid
+
+    def video(self, sid, src, x, y, w, t, dur, vw=1440, vh=900, url=None, media_start=0.0, bar=52):
+        """A screen recording (scripts/plumbing/record.py) playing inside the sketchy browser frame.
+        w = frame width; the height follows from vw x vh. t = absolute time the frame lands; the video starts
+        playing 0.25 s later and runs `dur` seconds (from media_start). Returns (x, y, w, h) of the video area."""
+        h = round(w * vh / vw) + bar
+        self.img(sid, 'assets/img/blank.png', x, y, w, h, t=t, url=url, bar=bar)
+        lt = self.L(t) + 0.25
+        dur = min(dur, self.c.dur - lt)
+        self.parts.append('<video id="@@-%s-v" class="clip" src="%s" muted playsinline data-start="%.3f" data-duration="%.3f" '
+                          'data-media-start="%.3f" data-track-index="5" style="position:absolute;left:%dpx;top:%dpx;width:%dpx;'
+                          'height:%dpx;object-fit:cover;z-index:2"></video>' % (sid, src, lt, dur, media_start, x, y + bar, w, h - bar))
+        return (x, y + bar, w, h - bar)
 
     def shot(self, sid, src, x, y, w=None, h=None, t=None, url=None, frame=True, d=0.5, bar=52):
         """Screenshot in a browser frame, sized from the PNG itself: give w OR h (the frame's outer size, bar
