@@ -25,6 +25,8 @@ BORDER, RAD = 4, 40
 X264 = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '15', '-pix_fmt', 'yuv420p', '-g', '30',
         '-x264-params', 'aq-mode=3:aq-strength=0.8:deblock=1,1', '-colorspace', 'bt709', '-color_primaries', 'bt709',
         '-color_trc', 'bt709']
+if os.environ.get('FFMPEG_THREADS'):   # cap CPU: encoder + filter graph threads
+    X264 = ['-threads', os.environ['FFMPEG_THREADS'], '-filter_complex_threads', os.environ['FFMPEG_THREADS']] + X264
 
 
 def run(cmd):
@@ -113,34 +115,41 @@ def main(packed, out):
     ax, ay = px + pw, py + ph                  # the square's bottom-right corner stays put while it scales
     v = ['[0:v]setpts=PTS-STARTPTS[face]',
          "[1:v]setpts='(%s)/TB'[pk]" % remap,
-         "[face][pk]overlay=eof_action=pass:repeatlast=0:enable='%s'[base0]" % enable,
-         '[2:v]scale=%d:%d,format=rgba[pv]' % (360 - 2 * BORDER, 360 - 2 * BORDER),
-         '[pv][4:v]alphamerge[pm]',
-         '[3:v][pm]overlay=%d:%d:shortest=1:format=auto[pd]' % (M + BORDER, M + BORDER)]
+         "[face][pk]overlay=eof_action=pass:repeatlast=0:enable='%s'[base0]" % enable]
+    a_args, a_lines, a_out = audio_graph(plan['audio'], 2)
+    # Face square: every run gets its OWN short inputs (pip.mp4 seeked to the run, decor + mask looped for its
+    # length). One [pd]split=N + trims made ffmpeg queue raw RGBA frames for every not-yet-reached run: ~10 GB
+    # by minute 5 of an 11 min film, and the laptop froze twice (Chinese-models video, Nov 2026).
     runs = [r for r in plan['pip_runs'] if r[1] > s0 and r[0] < s1]
-    if runs:
-        v.append('[pd]split=%d%s' % (len(runs), ''.join('[q%d]' % i for i in range(len(runs)))) if len(runs) > 1
-                 else '[pd]null[q0]')
+    pip_args, k = [], 2 + len(a_args) // 2
     cur = 'base0'
     for i, (a, z) in enumerate(runs):
+        dur = z - a
+        # seek a quarter frame early: a is rounded to ms, and an accurate seek to 651.767 drops the frame at
+        # 651.7667, so the square started one frame ahead of the voice
+        pip_args += ['-ss', '%.4f' % (a - 0.25 / fps), '-t', '%.3f' % dur, '-i', PIP,
+                     '-loop', '1', '-framerate', str(fps), '-t', '%.3f' % dur, '-i', DECO,
+                     '-loop', '1', '-framerate', str(fps), '-t', '%.3f' % dur, '-i', MASK]
         sx = scale_expr(a, z)
-        v.append("[q%d]trim=start=%.3f:end=%.3f,fade=t=in:st=%.3f:d=0.19:alpha=1,fade=t=out:st=%.3f:d=0.28:alpha=1,"
+        v.append('[%d:v]scale=%d:%d,format=rgba[pv%d]' % (k, 360 - 2 * BORDER, 360 - 2 * BORDER, i))
+        v.append('[pv%d][%d:v]alphamerge[pm%d]' % (i, k + 2, i))
+        v.append("[%d:v][pm%d]overlay=%d:%d:shortest=1:format=auto,setpts=PTS-STARTPTS+%.3f/TB,"
+                 "fade=t=in:st=%.3f:d=0.19:alpha=1,fade=t=out:st=%.3f:d=0.28:alpha=1,"
                  "scale=w='2*trunc(%d*(%s)/2)':h='2*trunc(%d*(%s)/2)':eval=frame[p%d]"
-                 % (i, a, z, a + 0.3, z - 0.55, CAN, sx, CAN, sx, i))
+                 % (k + 1, i, M + BORDER, M + BORDER, a, a + 0.3, z - 0.55, CAN, sx, CAN, sx, i))
         v.append("[%s][p%d]overlay=x='%d-%d*overlay_w/%d':y='%d-%d*overlay_h/%d':eof_action=pass:format=auto[b%d]"
                  % (cur, i, ax, M + pw, CAN, ay, M + ph, CAN, i))
         cur = 'b%d' % i
+        k += 3
     v.append('[%s]trim=start=%.3f:end=%.3f,setpts=PTS-STARTPTS[vout]' % (cur, s0, s1))
-    # ---- audio (inputs from 5 on)
-    a_args, a_lines, a_out = audio_graph(plan['audio'], 5)
+    # ---- audio (inputs 2.. ; built above, before the face-square inputs)
     a_lines.append('%satrim=start=%.3f:end=%.3f,asetpts=PTS-STARTPTS[afin]' % (a_out, s0, s1))
     graph = ';\n'.join(v + a_lines)
     os.makedirs('renders', exist_ok=True)
     with open('renders/assemble-graph.txt', 'w') as f:
         f.write(graph)
     cmd = ['ffmpeg', '-v', 'error', '-y', '-nostdin', '-progress', 'research/assemble-progress.txt',
-           '-i', FACE, '-i', packed, '-i', PIP,
-           '-loop', '1', '-framerate', str(fps), '-i', DECO, '-loop', '1', '-framerate', str(fps), '-i', MASK] + a_args + [
+           '-i', FACE, '-i', packed] + a_args + pip_args + [
            '-/filter_complex', 'renders/assemble-graph.txt', '-map', '[vout]', '-map', '[afin]', '-r', str(fps)] + X264 + [
            '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-t', '%.3f' % (s1 - s0), out]
     run(cmd)
