@@ -26,6 +26,9 @@ phantom meta titles [<project_path>] [--traffic <search|browse|both>] [--channel
 # List a project's generated titles, or approve one by rank or with your own text
 phantom meta approve-title <project> [<rank_or_title>]
 
+# Keep a Needs Repackaging video's title & thumbnail and move it back to Uploaded (--undo flags it again)
+phantom meta skip-repackage <project> [--undo]
+
 # List the resources the video promises to link (metadata.json "resources", URLs left blank for you)
 phantom meta resources [<project_path>] [arguments]
 
