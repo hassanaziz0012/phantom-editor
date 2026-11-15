@@ -90,7 +90,7 @@ phantom projects status --json
 | **7** | **Ready to Schedule** | `final.mp4` + complete `metadata.json` (all required keys) + thumbnail image present. | Ready for YouTube upload (`phantom publish yt`) or set publishDate in `metadata.json`. |
 | **8** | **Scheduled** | Ready to Schedule, with a `publishDate` in `metadata.json`. An unfinished project with a `publishDate` stays at its real stage, with the date added to its next step. | Upload video to YouTube (`phantom publish yt`), which schedules it to go public on that date. |
 | **9** | **Uploaded** | `metadata.json` contains a valid YouTube URL. | 🎉 Pipeline complete! |
-| **10** | **Needs Repackaging** | 48h after publish, its first 2 days' CTR was below the channel's 28-day CTR. | Rework the title & thumbnail on YouTube. |
+| **10** | **Needs Repackaging** | 48h after publish, its first 2 days' CTR was below the channel's 28-day CTR. | Rework the title & thumbnail on YouTube, or skip it with `phantom meta skip-repackage <project>`. |
 
 Projects that were recorded before a thumbnail existed still advance by their files (stages 4–6), with "design thumbnail" added to their next step; they can't reach **Ready to Schedule** without one.
 
@@ -100,7 +100,7 @@ Once an uploaded video has been public for 48 hours, `status` reads its analytic
 
 The video's CTR over its first 2 Pacific-time days since publish (the publish day and the day after) is compared with the channel's long-form CTR over the last 28 days, the number on the Videos card of Studio's Content tab (see `phantom yt channel-stats`). If it's lower, the video moves to **Needs Repackaging**. Impressions, views, and average view duration are stored on both sides for reference, under `video` and `channel_28d`. The video's average view duration is Studio's since-publish figure at check time, since Studio's average isn't simply watch time divided by views and can't be recomputed for the 2-day window. Shorts aren't checked, since the channel stats cover long-form videos.
 
-While a video needs repackaging, every `status` run compares its live YouTube title with the `metadata.json` title and its live thumbnail with every local `thumbnail*` image (by perceptual hash, since YouTube re-encodes thumbnails). Once either differs, the change is recorded under `performanceCheck.repackaged` and the video goes back to **Uploaded**. So when you repackage, change the title and thumbnail on YouTube but leave `metadata.json` and the local thumbnails as the originals. To run the check again, delete the `performanceCheck` key. See `youtube_api/performance_check.py`.
+While a video needs repackaging, every `status` run compares its live YouTube title with the `metadata.json` title and its live thumbnail with every local `thumbnail*` image (by perceptual hash, since YouTube re-encodes thumbnails). Once either differs, the change is recorded under `performanceCheck.repackaged` and the video goes back to **Uploaded**. So when you repackage, change the title and thumbnail on YouTube but leave `metadata.json` and the local thumbnails as the originals. To keep the original title and thumbnail instead, run `phantom meta skip-repackage <project>`: it sets `performanceCheck.repackagingSkipped` and the video goes back to **Uploaded** (`--undo` flags it again). To run the check again, delete the `performanceCheck` key. See `youtube_api/performance_check.py`.
 
 ### Sample Terminal Output
 

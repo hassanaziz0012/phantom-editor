@@ -22,7 +22,8 @@ Stages:
   9. Uploaded          - Video uploaded to YouTube (metadata.json has valid YT URL). Complete!
  10. Needs Repackaging - 48h after publish, its first days' CTR was below the channel's 28-day CTR.
                          Needs a new title & thumbnail; goes back to Uploaded once the title or
-                         thumbnail on YouTube no longer matches metadata.json / the local thumbnails.
+                         thumbnail on YouTube no longer matches metadata.json / the local thumbnails,
+                         or once repackaging is skipped with `phantom meta skip-repackage`.
 
 Projects recorded without a thumbnail still advance by their files, with "design thumbnail" added
 to their next step until one exists.
@@ -49,6 +50,8 @@ from video_editing.utils import COLOR_BLUE, COLOR_BOLD, COLOR_GREEN, COLOR_RED, 
 from youtube_api.video_id import extract_video_id, is_valid_yt_url
 
 PERFORMANCE_CHECK_KEY = "performanceCheck"
+# Set under performanceCheck by `phantom meta skip-repackage` (metadata/skip_repackage.py)
+REPACKAGING_SKIPPED_KEY = "repackagingSkipped"
 
 COLOR_CYAN = "\033[96m"
 COLOR_MAGENTA = "\033[95m"
@@ -475,11 +478,20 @@ def analyze_project(project_dir: Path) -> VideoProject:
     check = project.performance_check or {}
 
     # Stage 10: Needs Repackaging (uploaded, the 48h performance check found its CTR below the
-    # channel's 28-day CTR, and its YouTube title & thumbnail still match the originals)
-    if project.yt_url and check.get("needs_repackaging") and not check.get("repackaged"):
+    # channel's 28-day CTR, its YouTube title & thumbnail still match the originals, and
+    # repackaging wasn't skipped with `phantom meta skip-repackage`)
+    if (
+        project.yt_url
+        and check.get("needs_repackaging")
+        and not check.get("repackaged")
+        and not check.get(REPACKAGING_SKIPPED_KEY)
+    ):
         project.stage_num = 10
         project.stage_name = "Needs Repackaging"
-        project.next_step = f"Rework the title & thumbnail: {describe_performance_check(project.performance_check)}"
+        project.next_step = (
+            f"Rework the title & thumbnail (or `phantom meta skip-repackage`): "
+            f"{describe_performance_check(project.performance_check)}"
+        )
         project.status_color = COLOR_RED
 
     # Stage 9: Uploaded (metadata.json contains a valid YouTube URL)
@@ -498,6 +510,8 @@ def analyze_project(project_dir: Path) -> VideoProject:
                 f" Repackaged ({describe_repackaging(check['repackaged'])}) after a below-average "
                 f"performance check: {describe_performance_check(check)}"
             )
+        elif check.get(REPACKAGING_SKIPPED_KEY):
+            check_info = f" Repackaging skipped after a below-average performance check: {describe_performance_check(check)}"
         elif check:
             check_info = f" Performance check passed: {describe_performance_check(check)}"
         else:
