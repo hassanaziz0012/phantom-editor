@@ -8,9 +8,15 @@
 #   chrome     HyperFrames renders render.html: only the B-roll windows, no face square, no audio
 #   assemble   assemble.py (ffmpeg): face gaps from face.mp4 + packed B-roll + face square + voice/BGM/SFX
 #   verify     duration + loudness
+#   qc         qc.py on the cut: black frames, a frozen face, the face a frame off at B-roll cuts. A failure stops
+#              delivery (renders/broll.mp4 is kept; see research/qc.txt). QC_FORCE=1 delivers anyway.
 #   sheet      research/final-sheet.jpg (24 frames across the film) for one spot-check Read
 #   deliver    ../final.mp4 (the face-only original is kept as ../final-face.mp4)
 # Progress at any time: python3 <kit>/progress.py "<project>/broll"  (or cat research/progress.txt)
+# Load (env): RENDER_WORKERS=N caps Chrome workers (default auto); FFMPEG_THREADS=N caps assemble's ffmpeg;
+#   REUSE_PACKED=1 skips Chrome when renders/packed.mp4 already has the plan's packed length (resume after a
+#   crash in assemble). For a gentle render on this 4-core laptop wrap it in a CPU quota:
+#   systemd-run --user --scope -p CPUQuota=200% -p MemoryMax=10G nice -n 19 env RENDER_WORKERS=2 FFMPEG_THREADS=2 bash render.sh ...
 set -euo pipefail
 B="$(cd "$1" && pwd)"; cd "$B"
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,18 +60,28 @@ rm -f renders/.progress.json
     && mv research/progress.tmp research/progress.txt; done ) &
 PROG=$!
 echo "progress: python3 $KIT/progress.py \"$B\"   (or cat \"$B/research/progress.txt\")"
-npx hyperframes render -c render.html -o renders/packed.mp4 --quality delivery --crf 12 --quiet > research/render.log 2>&1 \
-  || { echo "RENDER FAILED, see research/render.log"; rg -i "error|fail" research/render.log | tail -5; exit 1; }
+PK=renders/packed.mp4; [ -n "$TEST" ] && PK=renders/packed-test.mp4   # a test never clobbers the full packed render
+HAVE=$( [ -f "$PK" ] && ffprobe -v error -show_entries format=duration -of csv=p=0 "$PK" || echo 0)
+if [ "${REUSE_PACKED:-}" = 1 ] && python3 -c "import sys;sys.exit(abs($HAVE-$PACKED)>0.2)"; then
+  echo "reusing $PK ($HAVE s)"
+else
+  npx hyperframes render -c render.html -o "$PK" --quality delivery --crf 12 --quiet \
+      -w "${RENDER_WORKERS:-auto}" > research/render.log 2>&1 \
+    || { echo "RENDER FAILED, see research/render.log"; rg -i "error|fail" research/render.log | tail -5; exit 1; }
+fi
 
 stage assemble
 OUT=renders/broll.mp4; [ -n "$TEST" ] && OUT=renders/test.mp4
-python3 "$KIT/scripts/plumbing/assemble.py" renders/packed.mp4 "$OUT"
+python3 "$KIT/scripts/plumbing/assemble.py" "$PK" "$OUT"
 kill $PROG 2>/dev/null || true
 
 stage verify
 D=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT")
 echo "duration $D s (expected $FILM s; face-only video: $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$SRC") s)"
 ffmpeg -nostats -i "$OUT" -af ebur128=peak=true -f null - 2>&1 | rg -A14 Summary | rg "I:|Peak:"
+
+stage qc
+QC=0; python3 "$KIT/scripts/plumbing/qc.py" "$OUT" || QC=$?
 
 stage sheet
 SHEET=research/final-sheet.jpg; [ -n "$TEST" ] && SHEET=research/test-sheet.jpg
@@ -83,8 +99,15 @@ ffmpeg -v error -y -pattern_type glob -i 'research/fin/*.png' -vf tile=4x6 -fram
 
 if [ -n "$TEST" ]; then
   report
+  [ "$QC" = 0 ] || echo "QC FAILED (test render): see $B/research/qc.txt"
   echo "test render: $B/$OUT  (not delivered)  sheet: $B/$SHEET"
   exit 0
+fi
+
+if [ "$QC" != 0 ] && [ "${QC_FORCE:-}" != 1 ]; then
+  report
+  echo "QC FAILED: not delivered. Cut: $B/$OUT  problems: $B/research/qc.txt  (QC_FORCE=1 to deliver anyway)"
+  exit 1
 fi
 
 stage deliver
