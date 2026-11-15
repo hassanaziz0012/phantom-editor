@@ -132,7 +132,8 @@ PROBE = r"""
   }
   for (const svg of cam.querySelectorAll('svg')) {
     if (svg.closest('.lg')) continue;
-    const g = svg.querySelector('.o') ? svg.querySelectorAll('.o, .f') : [svg];
+    const kids = svg.querySelectorAll('g > *, circle, line, path, rect, ellipse, polygon, polyline');
+    const g = svg.querySelector('.o') ? svg.querySelectorAll('.o, .f') : (kids.length ? kids : [svg]);   // raw svgs (gauge needle) are full-canvas boxes
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const e of g) {
       const r = e.getBoundingClientRect();
