@@ -206,3 +206,58 @@ def card(k, sid, x, y, w, h, t=None, stroke=INK, fill='#fff', fs='solid', seed=0
     g += k.g('line', [x + 14, y + h * 0.62, x + 14 + (w - 28) * (0.4 + 0.4 * ((seed * 53) % 10) / 10), y + h * 0.62],
              stroke=LGREY, sw=3.5, rough_=0.5)
     k.svg(sid, g, t, d)
+
+
+def robot(k, sid, cx, cy, s=1.0, t=None, color=INK, fill=CLAUDE_BG, d=0.5):
+    """The AI agent as a little robot standing at (cx, cy) = hip centre; ~230*s tall, ~150*s wide."""
+    g = k.g('line', [cx, cy - 205 * s, cx, cy - 178 * s], stroke=color, sw=3)
+    g += k.g('ellipse', [cx, cy - 212 * s, 16 * s, 16 * s], stroke=color, sw=2.4, fill=CLAUDE, fs='solid')
+    g += k.g('rectangle', [cx - 58 * s, cy - 178 * s, 116 * s, 80 * s], stroke=color, sw=3, fill=fill, fs='solid')
+    g += k.g('ellipse', [cx - 24 * s, cy - 140 * s, 20 * s, 20 * s], stroke=color, sw=2.4, fill=color, fs='solid')
+    g += k.g('ellipse', [cx + 24 * s, cy - 140 * s, 20 * s, 20 * s], stroke=color, sw=2.4, fill=color, fs='solid')
+    g += k.g('line', [cx - 18 * s, cy - 114 * s, cx + 18 * s, cy - 114 * s], stroke=color, sw=2.4)
+    g += k.g('rectangle', [cx - 48 * s, cy - 92 * s, 96 * s, 92 * s], stroke=color, sw=3, fill=fill, fs='hachure')
+    g += k.g('line', [cx - 48 * s, cy - 76 * s, cx - 82 * s, cy - 30 * s], stroke=color, sw=3)
+    g += k.g('line', [cx + 48 * s, cy - 76 * s, cx + 82 * s, cy - 30 * s], stroke=color, sw=3)
+    g += k.g('line', [cx - 24 * s, cy, cx - 24 * s, cy + 34 * s], stroke=color, sw=3)
+    g += k.g('line', [cx + 24 * s, cy, cx + 24 * s, cy + 34 * s], stroke=color, sw=3)
+    k.svg(sid, g, t, d)
+
+
+def envelope(k, sid, x, y, w=150, h=100, t=None, color=INK, fill='#fff', d=0.4):
+    """Closed envelope (an email); top-left at (x, y)."""
+    g = k.g('rectangle', [x, y, w, h], stroke=color, sw=2.6, fill=fill, fs='solid')
+    g += k.g('line', [x, y, x + w / 2, y + h * 0.55], stroke=color, sw=2.4)
+    g += k.g('line', [x + w, y, x + w / 2, y + h * 0.55], stroke=color, sw=2.4)
+    k.svg(sid, g, t, d)
+
+
+def folder(k, sid, x, y, w=160, h=120, t=None, color=ORANGE, fill=YEL_BG, d=0.4):
+    """Folder icon; top-left of the tab at (x, y)."""
+    g = k.g('polygon', [[[x, y], [x + w * 0.38, y], [x + w * 0.46, y + h * 0.16], [x + w, y + h * 0.16],
+                         [x + w, y + h], [x, y + h]]], stroke=color, sw=2.6, fill=fill, fs='hachure')
+    g += k.g('line', [x, y + h * 0.3, x + w, y + h * 0.3], stroke=color, sw=2)
+    k.svg(sid, g, t, d)
+
+
+def magnifier(k, sid, cx, cy, r=70, t=None, color=INK, d=0.45):
+    """Magnifying glass; lens centre (cx, cy), handle to the bottom right (~1.9*r long overall)."""
+    g = k.g('ellipse', [cx, cy, 2 * r, 2 * r], stroke=color, sw=4, fill='#e7f5ff', fs='solid')
+    g += k.g('line', [cx + r * 0.72, cy + r * 0.72, cx + r * 1.65, cy + r * 1.65], stroke=color, sw=9, rough_=0.6)
+    k.svg(sid, g, t, d)
+
+
+def monitor(k, sid, x, y, w, h, t=None, color=INK, fill=None, d=0.5):
+    """Desktop monitor; screen is (x, y, w, h), the stand hangs below to y + h + 0.22*h."""
+    g = k.g('rectangle', [x, y, w, h], stroke=color, sw=3.5, fill=fill, fs='solid' if fill else 'hachure')
+    g += k.g('line', [x + w / 2, y + h, x + w / 2, y + h * 1.16], stroke=color, sw=4)
+    g += k.g('line', [x + w / 2 - w * 0.16, y + h * 1.18, x + w / 2 + w * 0.16, y + h * 1.18], stroke=color, sw=4)
+    k.svg(sid, g, t, d)
+
+
+def shield(k, sid, cx, y, w=240, t=None, color=GREEN, fill='#b2f2bb', d=0.5):
+    """Shield (protection, resilience); top centre at (cx, y), ~1.2*w tall."""
+    h = w * 1.2
+    pts = [[cx - w / 2, y + h * 0.1], [cx, y], [cx + w / 2, y + h * 0.1], [cx + w / 2, y + h * 0.5],
+           [cx, y + h], [cx - w / 2, y + h * 0.5]]
+    k.svg(sid, k.g('polygon', [pts], stroke=color, sw=3.5, fill=fill, fs='hachure'), t, d)
