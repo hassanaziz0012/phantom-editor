@@ -11,8 +11,8 @@ since-publish average at check time rather than one computed for the window.
 The video's side covers its first WINDOW_DAYS Pacific-time days since publish (the
 publish day plus the day after). Both of those days have finished 48 hours after
 publish, whatever time the video went out, so every video is judged on the same window.
-The video's and the channel's numbers come live from YouTube Studio in one Chrome
-session; the public API only supplies publish times.
+The video's and the channel's numbers come live from YouTube Studio (over HTTP, in one
+batch); the public API only supplies publish times.
 
 Used by `phantom projects status`, which stores each result in the project's
 metadata.json under "performanceCheck". Each check also refreshes the channel stats

@@ -4,12 +4,12 @@ Channel Stats
 =============
 Your channel's long-form performance over the last 28 days: impressions, click-through
 rate, views, average view duration, watch time, and subscribers. These are the numbers
-on the Videos card of YouTube Studio's Content tab, read live through the logged-in
-Chrome on port 9222 (see studio_analytics.py).
+on the Videos card of YouTube Studio's Content tab, read live from Studio over HTTP
+(see studio_analytics.py).
 
 Every fetch is saved to cache/channel_stats.json: the latest snapshot, plus one snapshot
 per day as history, so any script can reuse the channel's averages and track how they
-change without opening Chrome:
+change without asking Studio again:
 
     from youtube_api.channel_stats import get_channel_stats, get_channel_history
 

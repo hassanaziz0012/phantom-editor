@@ -872,7 +872,7 @@ def main():
         "--no-analytics",
         action="store_true",
         help="Skip the 48h performance check and repackaging check of uploaded videos "
-             "(the performance check opens YouTube Studio in Chrome).",
+             "(the performance check reads YouTube Studio).",
     )
     args = parser.parse_args()
 

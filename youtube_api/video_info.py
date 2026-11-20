@@ -6,8 +6,8 @@ Shows quick details about any YouTube video: a direct thumbnail URL, basic stats
 and an outlier score (how its views compare to the channel's recent median).
 
 For videos on your own channel it also shows live owner-only analytics (impressions,
-CTR, views, watch time) as lifetime totals and day by day, read from YouTube Studio in
-the logged-in Chrome on port 9222. Videos on other channels never open Chrome.
+CTR, views, watch time) as lifetime totals and day by day, read live from YouTube Studio
+over HTTP (see studio_analytics.py). Videos on other channels never contact Studio.
 
 The channel baseline (its last 50 uploads) is cached in youtube_api/cache/baselines.json
 for 24 hours, so repeat lookups on the same channel cost a single API call.
@@ -332,7 +332,7 @@ def get_owner_analytics(video: Video) -> dict:
     Live Studio analytics for the video, or a status explaining why there are none:
     "ok", "not_owner", or "error".
     """
-    # Only a video on the cached channel (or the first run, before it's known) opens Chrome.
+    # Only a video on the cached channel (or the first run, before it's known) asks Studio.
     my_channel_id = studio_analytics.get_cached_channel_id()
     if my_channel_id and my_channel_id != video.channel_id:
         return {"status": "not_owner"}
@@ -403,7 +403,7 @@ def main() -> None:
     video = videos[0]
 
     with ThreadPoolExecutor(max_workers=1) as pool:
-        # Studio takes a few seconds in Chrome, so it runs while the baseline is fetched.
+        # Studio takes a few seconds, so it runs while the baseline is fetched.
         owner_job = pool.submit(get_owner_analytics, video)
 
         # The score is a nice-to-have; an API error here shouldn't hide the video's details.

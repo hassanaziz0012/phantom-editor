@@ -6,36 +6,29 @@ impressions, click-through rate, views, watch time, and subscribers, as lifetime
 and day by day. Also the channel's long-form totals over the last 28 days, the same
 numbers as the Videos card on Studio's Content tab.
 
-The public APIs lag two to three days behind, so this asks Studio itself. It opens the
-video's analytics page in the logged-in Chrome on port 9222 (the p9222 profile), copies
-the auth headers and context from Studio's first API request, and makes one get_cards
-call for exactly the metrics it needs. Totals are live; daily rows cover finished days.
-Several videos and the channel totals can share one Studio session, one get_cards call each.
+The public APIs lag two to three days behind, so this asks Studio itself: one get_cards
+call per video (and one for the channel) for exactly the metrics it needs, over plain
+HTTP through the saved Studio session (youtube_api/studio/session.py; `phantom studio
+login` creates it, and it re-imports itself from the p9222 Chrome if it ever expires).
+Totals are live; daily rows cover finished days.
 
 The logged-in channel's ID is cached in cache/my_channel.json, so videos on other
-channels are recognized without opening Chrome.
+channels are recognized without a request.
 """
 
-import asyncio
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError, async_playwright
-
-
-from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
+from youtube_api.studio.session import Studio, StudioError
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-# The Chrome profile on port 9222 that's logged into the channel; only used if Chrome isn't running yet
 CHANNEL_CACHE_FILE = Path(__file__).resolve().parent / "cache" / "my_channel.json"
-ANALYTICS_URL      = "https://studio.youtube.com/video/{video_id}/analytics/tab-reach_viewers/period-default"
-CHANNEL_URL        = "https://studio.youtube.com/channel/{channel_id}/analytics/tab-content/period-default"
-GET_CARDS_PATH     = "/youtubei/v1/yta_web/get_cards?alt=json"
-REQUEST_TIMEOUT_MS = 30000
+MAX_WORKERS        = 6      # get_cards calls in parallel; Studio takes ~2s each
 MAX_DAILY_ROWS     = 5000   # The day table is sorted by its first metric, so fetch every day and sort locally
 
 # Studio metric -> key in our output, and how Studio reports its values
@@ -58,17 +51,8 @@ CHANNEL_METRICS = {
     )
 }
 
-# Request headers the browser sets itself; fetch() refuses or ignores them
-BROWSER_HEADERS = {"cookie", "content-length", "accept-encoding", "user-agent", "origin", "referer", "priority"}
-
-FETCH_JS = """async ([path, headers, body]) => {
-    const response = await fetch(path, {method: "POST", headers, body, credentials: "include"});
-    return [response.status, await response.text()];
-}"""
-
-
-class StudioError(Exception):
-    """Raised when Studio can't be reached or doesn't return analytics."""
+# StudioError (re-exported from youtube_api.studio.session) is raised when Studio can't be
+# reached or doesn't return analytics.
 
 
 # ── Channel ownership ─────────────────────────────────────────────────────────
@@ -95,14 +79,6 @@ def _cache_channel_id(channel_id: str) -> None:
 
 
 # ── Studio request ────────────────────────────────────────────────────────────
-
-def _is_studio_api_request(request) -> bool:
-    # Studio's first authorized API call carries the context get_cards needs (client, delegation)
-    if "/youtubei/v1/" not in request.url or "authorization" not in request.headers:
-        return False
-    body = request.post_data_buffer
-    return body is not None and b"delegationContext" in body
-
 
 def _build_cards_request(video_id: str, context: dict) -> dict:
     card = {"autoUpdateInterval": "ANALYTICS_AUTO_UPDATE_INTERVAL_NEVER",
@@ -154,52 +130,25 @@ def _build_channel_cards_request(channel_id: str, context: dict) -> dict:
     }
 
 
-async def _scrape(
-    landing_url: str, channel_id: str, requests: dict[str, Callable[[dict], dict]], port: int,
-) -> tuple[str, dict[str, dict]]:
+def _scrape(channel_id: str, requests: dict[str, Callable[[dict], dict]]) -> tuple[str, dict[str, dict]]:
     """
-    Open Studio at landing_url, then make one get_cards call per entry in requests (each
-    builds its body from Studio's context). Returns (logged-in channel ID, raw response
-    per key), with no responses when channel_id isn't the logged-in channel.
+    One get_cards call per entry in requests (each builds its body from Studio's context).
+    Returns (logged-in channel ID, response per key), with no responses when channel_id
+    isn't the logged-in channel.
     """
-    async with async_playwright() as p:
-        context = await get_cdp_browser_context(p, profile_path=PROFILE_DIR, port=port)
-        page = await get_clean_page(context)
-        try:
-            try:
-                async with page.expect_request(_is_studio_api_request, timeout=REQUEST_TIMEOUT_MS) as info:
-                    await page.goto(landing_url, wait_until="commit")
-                request = await info.value
-            except PlaywrightTimeoutError:
-                if "accounts.google.com" in page.url:
-                    raise StudioError("the p9222 Chrome profile isn't logged into YouTube Studio.")
-                raise StudioError(f"Studio didn't load in {REQUEST_TIMEOUT_MS // 1000}s ({page.url}).")
+    studio = Studio()
+    if studio.channel_id != channel_id:
+        return studio.channel_id, {}
+    context = studio.context()
 
-            studio_context = json.loads(request.post_data_buffer)["context"]
-            logged_in_channel_id = studio_context["user"]["delegationContext"]["externalChannelId"]
-            if logged_in_channel_id != channel_id:
-                return logged_in_channel_id, {}
-            headers = {
-                name: value for name, value in (await request.all_headers()).items()
-                if not name.startswith((":", "sec-")) and name not in BROWSER_HEADERS
-            }
-            results = {}
-            for key, build in requests.items():
-                body = json.dumps(build(studio_context))
-                results[key] = await page.evaluate(FETCH_JS, [GET_CARDS_PATH, headers, body])
-        finally:
-            await page.close()
+    def fetch(build):
+        body = build(context)
+        body.pop("context", None)   # Studio.call adds its own
+        return studio.call("yta_web/get_cards", body)
 
-    responses = {}
-    for key, (status, text) in results.items():
-        if status != 200:
-            try:
-                message = json.loads(text)["error"]["message"]
-            except (ValueError, KeyError, TypeError):
-                message = text[:200]
-            raise StudioError(f"Studio returned HTTP {status} for {key}: {message}")
-        responses[key] = json.loads(text)
-    return logged_in_channel_id, responses
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {key: pool.submit(fetch, build) for key, build in requests.items()}
+    return studio.channel_id, {key: f.result() for key, f in futures.items()}
 
 
 # ── Parsing ───────────────────────────────────────────────────────────────────
@@ -241,9 +190,7 @@ def _parse_cards(response: dict) -> tuple[dict, list[dict]]:
 CHANNEL_KEY = "channel"   # Never a video ID, which is always 11 characters
 
 
-def fetch_studio(
-    channel_id: str, video_ids: list[str] = (), channel_totals: bool = False, port: int = CDP_PORT,
-) -> Optional[dict]:
+def fetch_studio(channel_id: str, video_ids: list[str] = (), channel_totals: bool = False) -> Optional[dict]:
     """
     One Studio session for any number of videos on channel_id plus, optionally, the
     channel's long-form totals over the last 28 days. Returns None when channel_id isn't
@@ -258,10 +205,7 @@ def fetch_studio(
     if not requests:
         return {"videos": {}, "channel": None}
 
-    landing_url = (
-        ANALYTICS_URL.format(video_id=video_ids[0]) if video_ids else CHANNEL_URL.format(channel_id=channel_id)
-    )
-    logged_in_channel_id, responses = asyncio.run(_scrape(landing_url, channel_id, requests, port))
+    logged_in_channel_id, responses = _scrape(channel_id, requests)
     _cache_channel_id(logged_in_channel_id)
     if logged_in_channel_id != channel_id:
         return None
@@ -281,10 +225,10 @@ def fetch_studio(
     return {"videos": videos, "channel": channel}
 
 
-def fetch_studio_analytics(video_id: str, video_channel_id: str, port: int = CDP_PORT) -> Optional[dict]:
+def fetch_studio_analytics(video_id: str, video_channel_id: str) -> Optional[dict]:
     """
     Live totals plus one row per finished day for a video on the logged-in channel, or None
     when the video belongs to another channel. CTR is a percentage (4.2 means 4.2%).
     """
-    result = fetch_studio(video_channel_id, [video_id], port=port)
+    result = fetch_studio(video_channel_id, [video_id])
     return None if result is None else result["videos"][video_id]
