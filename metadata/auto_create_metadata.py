@@ -359,7 +359,7 @@ def main():
     parser.add_argument(
         "--profile",
         default=None,
-        help="BrowserLLM browser profile to use (default: BrowserLLM's default).",
+        help="BrowserLLM browser profile to start with (default: p9222). On a usage limit it moves on to p9223, p9224, then p9225.",
     )
 
     args = parser.parse_args()

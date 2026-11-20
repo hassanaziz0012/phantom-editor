@@ -28,8 +28,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 
-from agentic.ask_browserllm import ask_browserllm, load_prompt, parse_json_response
+from agentic.ask_browserllm import load_prompt, parse_json_response
 from metadata import utils
+from metadata.utils import ask_browserllm
 from metadata.read_metadata import write_metadata_json
 from metadata.recommendations.embed_my_videos import (
     DEFAULT_INPUT_PATH as DEFAULT_VIDEOS_JSON,

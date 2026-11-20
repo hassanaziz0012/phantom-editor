@@ -6,6 +6,7 @@ Shared utilities for metadata generation and BrowserLLM/Claude interactions.
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -13,10 +14,11 @@ from typing import Any
 from agentic.ask_browserllm import (
     PROMPTS_DIR,
     REPO_ROOT,
-    ask_browserllm,
+    BrowserLLMUsageLimitError,
     load_prompt,
     parse_json_response,
 )
+from agentic.ask_browserllm import ask_browserllm as _ask_browserllm
 from shared.srt import parse_srt_to_timestamped_transcript
 from shared.terminal import highlight_json
 
@@ -31,6 +33,61 @@ __all__ = [
     "find_captions_file",
     "highlight_json",
 ]
+
+
+# BrowserLLM profiles tried in order when one hits its usage limit. None is BrowserLLM's own
+# default profile (p9222), so a caller that passes no profile behaves as before until it's limited.
+FALLBACK_PROFILES: list[str | None] = [None, "p9223", "p9224", "p9225"]
+
+_limited_profiles: set[str | None] = set()
+_limited_lock = threading.Lock()
+
+
+def _profile_order(profile: str | None) -> list[str | None]:
+    """The profiles to try for a call: the requested one, then the later ones in the chain."""
+    if profile == "p9222":
+        profile = None
+    if profile in FALLBACK_PROFILES:
+        return FALLBACK_PROFILES[FALLBACK_PROFILES.index(profile):]
+    return [profile, *FALLBACK_PROFILES[1:]]
+
+
+def _profile_label(profile: str | None) -> str:
+    return profile or "p9222 (default)"
+
+
+def ask_browserllm(*args: Any, profile: str | None = None, **kwargs: Any) -> Any:
+    """agentic's ask_browserllm, moving to the next BrowserLLM profile on a usage limit.
+
+    Order is p9222, p9223, p9224, p9225. A profile that hit its limit is remembered for the rest
+    of the run, so the parallel metadata steps skip it instead of each rediscovering it. When
+    every profile is limited the last BrowserLLMUsageLimitError is raised.
+    """
+    last_error: BrowserLLMUsageLimitError | None = None
+    order = _profile_order(profile)
+    for candidate in order:
+        with _limited_lock:
+            if candidate in _limited_profiles:
+                continue
+        try:
+            return _ask_browserllm(*args, profile=candidate, **kwargs)
+        except BrowserLLMUsageLimitError as e:
+            last_error = e
+            with _limited_lock:
+                _limited_profiles.add(candidate)
+            remaining = [c for c in order[order.index(candidate) + 1:]]
+            if remaining:
+                print(f"⚠️  BrowserLLM profile {_profile_label(candidate)} hit its usage limit; "
+                      f"switching to {_profile_label(remaining[0])}.")
+    if last_error is None:
+        # Every profile was already marked limited by an earlier call
+        raise BrowserLLMUsageLimitError(
+            f"All BrowserLLM profiles are at their usage limit: {', '.join(_profile_label(c) for c in order)}."
+        )
+    raise BrowserLLMUsageLimitError(
+        f"All BrowserLLM profiles are at their usage limit ({', '.join(_profile_label(c) for c in order)}). "
+        f"Last error: {last_error}"
+    )
 
 
 def load_metadata_json(path: Path) -> dict[str, Any]:
