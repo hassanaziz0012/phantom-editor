@@ -101,14 +101,9 @@ def get_youtube_service(
         try:
             creds = Credentials.from_authorized_user_file(str(token_file))
             if creds:
-                has_read_scope = any(
-                    s in (creds.scopes or [])
-                    for s in (
-                        "https://www.googleapis.com/auth/youtube.readonly",
-                        "https://www.googleapis.com/auth/youtube",
-                        "https://www.googleapis.com/auth/youtube.force-ssl",
-                    )
-                )
+                # commentThreads.list over OAuth only accepts youtube.force-ssl;
+                # tokens without it 403, so fall back to the API key instead.
+                has_read_scope = "https://www.googleapis.com/auth/youtube.force-ssl" in (creds.scopes or [])
                 if has_read_scope:
                     if creds.expired and creds.refresh_token:
                         creds.refresh(Request())
