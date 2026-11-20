@@ -14,7 +14,8 @@ and the measured boxes stay exact (write straight into assets/img):
                "scroll": "Remote region",                        # scroll so this is near the top
                "element": "css=aside",                           # shoot only this element (+ "pad": 24 css px)
                "clip": [x, y, w, h],                             # or an explicit page-css-px crop
-               "texts": ["Possible scam", "Paid", "css=.price"]}}  # measure these
+               "texts": ["Possible scam", "Paid", "css=.price"],  # measure these
+               "wait": 3}}                                       # seconds to wait after load (animated heroes)
   Selectors: "css=..." is CSS, anything else is the first element containing that text.
 Every target writes <name>.png and <name>.json: {"w", "h", "boxes": {text: [x, y, w, h] in image px or null}}.
 In scenes, k.shot() places the image and reads that json, so rings and marks land on the measured boxes.
@@ -94,6 +95,8 @@ async def shoot_one(b, out, n, t):
                               user_agent=UA)
     try:
         p = await open_page(ctx, t['url'])
+        if 'wait' in t:   # seconds: let intro animations / lazy content finish before anything else
+            await p.wait_for_timeout(int(float(t['wait']) * 1000))
         for c in t.get('click', []):
             try:
                 await loc(p, c).click(timeout=4000)
