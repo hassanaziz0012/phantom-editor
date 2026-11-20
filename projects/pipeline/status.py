@@ -43,6 +43,12 @@ def print_overview(ctx: PipelineContext, steps: list[Step], plan: dict[int, str 
         print_info(" Encoder:          Colab T4 GPU (NVENC), falls back to local x264")
     else:
         print_info(" Encoder:          local x264")
+    if args.relight:
+        from projects.pipeline.steps import ENCODE_STEP
+        if plan.get(ENCODE_STEP, "") is None:
+            print_info(" Face relight:     ON (Colab T4 during Step 4; plain encode if it fails)")
+        else:
+            print_warning(" Face relight:     requested, but Step 4 won't run (final.mp4 exists); pass -f to re-encode")
     if args.force:
         print_warning(" Force re-run:     --force option enabled (re-executing all steps)")
 

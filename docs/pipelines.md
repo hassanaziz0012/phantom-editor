@@ -156,7 +156,7 @@ It takes a single pre-composed recording (e.g. an OBS recording with scene switc
 | 1 | Transcription (`transcribe_cloud.py`) | Background thread |
 | 2 | Silence trim | Silero VAD + audio-only extraction -> `raw-audio.wav` |
 | 3 | Audio processing (`process_audio.sh`) | DeepFilterNet + loudnorm -> `processed-audio.wav` |
-| 4 | Final output | Single-pass encode + mux (+ BGM mixed inline, black-frame QC inline) -> `final.mp4` |
+| 4 | Final output | Single-pass encode + mux (+ BGM mixed inline, black-frame QC inline) -> `final.mp4`. Runs on a free Colab T4 (NVENC) by default; with `--relight` the face is relit there too |
 | 5 | Verify | Structural check that `final.mp4` is not truncated or stuck on one frame |
 | 6 | Review (`audio_review.py`) | Audio review (black frames were checked in Step 4) |
 | 7 | Metadata (`auto_create_metadata.py`) | Transcribes `final.mp4` -> `trimmed.srt`, then generates everything from it; background thread, overlapping Step 6 |
@@ -171,6 +171,12 @@ To cut bad takes, put a `cuts.txt` next to the raw video with one `START-END` ra
 ```
 
 The ranges are removed from the speech intervals before Steps 2 and 4 cut, so they cost no extra encode. They are listed in the pre-run overview and in `summary.md`. A malformed line stops the run before anything is processed. All metadata (description, tweet, chapters) is generated from `trimmed.srt`, so cut takes never reach it.
+
+### Face Relight (`--relight`)
+
+Makes the talking head look lit by a soft key light in a dimmer room: the face gets a skin-only retouch (pores and natural shine kept), a gentle key light and sharper eyes, and the room is dimmed and desaturated. An AI matte (RobustVideoMatting) finds the person, but it is only used through a wide, feathered light-falloff map, so nothing changes sharply at the outline and matte errors never show as edges. No background blur, no colour cast. Posters and other faces on the wall are ignored: only matte regions connected to the tracked face or the body count.
+
+It runs inside Step 4 on the Colab T4: the cut timeline is decoded with NVDEC, `remote/relight.py` processes the frames, and the usual NVENC encode (audio, BGM, black-frame QC) takes them. The script, its models and mediapipe are installed over `colab exec` while the raw video uploads. On a free T4 it runs at about 80 fps for 1080p (2.7x realtime: a 17-minute recording takes ~6.5 minutes). If the relight fails, Step 4 retries as a plain Colab encode.
 
 ### Smart Resumption
 
@@ -189,6 +195,8 @@ A step is skipped when its output file already exists and is valid. Step 2 also 
 | `status.py` | Pre-run overview and confirmation prompt |
 | `summary.py` | `RunSummary`, review flags and the `summary.md` report |
 | `ffmpeg.py`, `common.py` | Shared FFmpeg presets and helpers (`PipelineError`, output validation) |
+| `colab.py` | Step 4 on a Colab T4: VM start, raw upload overlapping Steps 1-3, NVENC encode, download; relight setup |
+| `remote/relight.py` | Face relight script that runs on the VM only (torch, mediapipe, RobustVideoMatting) |
 
 ### CLI Options
 
@@ -203,6 +211,8 @@ phantom projects process <raw_video> [options]
 | `--bgm` | `--bgm-track` | str | `None` | Background music track name or file path. |
 | `--volume` | | int (1–100) | `10` | Volume percentage for background music. |
 | `--skip-review` | | flag | `False` | Skip audio and video inspection review step. |
+| `--encoder` | | `colab`/`local` | `colab` | Where Step 4 encodes: a free Colab T4 (NVENC), or local x264. `colab` falls back to `local` if the T4 is unavailable. |
+| `--relight` | | flag | `False` | Relight the face during Step 4 on the Colab T4 (see below). 1080p only; needs `--encoder colab`. |
 | `--clean-intermediates` | | flag | `False` | Delete the Step 2 intermediate (`raw-audio.wav`) once `final.mp4` exists. |
 | `--yes` | `-y` | flag | `False` | Skip interactive confirmation prompts and run automatically. |
 | `--force` | `-f` | flag | `False` | Force re-execution of all pipeline steps regardless of cached files. |

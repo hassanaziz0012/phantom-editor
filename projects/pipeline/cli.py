@@ -51,11 +51,20 @@ def parse_cli_args() -> argparse.Namespace:
              "'local' (x264 on this machine). 'colab' falls back to 'local' if the T4 is unavailable.",
     )
     parser.add_argument(
+        "--relight", action="store_true",
+        help="Relight the face during Step 4 on the Colab T4: cleaner, brighter face and a softly dimmed, "
+             "muted room (AI matte with a feathered light falloff). 1080p only; needs --encoder colab. "
+             "Falls back to a plain Colab encode if the relight fails; stops with an error (no local "
+             "fallback) if Colab itself is unavailable.",
+    )
+    parser.add_argument(
         "--clean-intermediates", action="store_true",
         help="Delete the intermediate raw-audio.wav after final.mp4 is verified.",
     )
 
     args = parser.parse_args()
+    if args.relight and args.encoder != "colab":
+        parser.error("--relight runs on the Colab T4 GPU; it can't be combined with --encoder local")
     if not get_main_input(args):
         print_error("Error: Input raw video file is required.")
         parser.print_help()
@@ -167,7 +176,7 @@ def main() -> None:
     confirm_execution(args.yes)
     if args.encoder == "colab" and plan.get(ENCODE_STEP, "") is None:
         # Start the VM and the raw upload now so they overlap Steps 1-3.
-        ctx.colab = ColabEncoder(ctx.main_video)
+        ctx.colab = ColabEncoder(ctx.main_video, relight=args.relight)
         ctx.colab.start()
 
     print()

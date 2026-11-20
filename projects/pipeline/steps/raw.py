@@ -14,6 +14,10 @@ lead-in into the output and shifted every cut.)
 
 Ranges listed in the project's cuts.txt (bad takes) are removed from the speech
 intervals before snapping, so they are cut by this same encode.
+
+With --relight, Step 4 on Colab splits into decode -> face relight -> encode on
+the VM (see colab.py and remote/relight.py); the cut, audio mix, BGM and inline
+QC are the same.
 """
 
 from pathlib import Path
@@ -21,7 +25,7 @@ from pathlib import Path
 from video_editing.utils import VideoQCCollector, print_info, print_warning, run_ffmpeg_with_progress
 from video_editing.trim_silences import get_silence_trim_expressions, get_speech_intervals
 
-from projects.pipeline.colab import ENCODER_LABEL, ColabUnavailable
+from projects.pipeline.colab import ColabUnavailable, RelightFailed
 from projects.pipeline.common import PipelineError, is_valid_file, require_output
 from projects.pipeline.context import PipelineContext
 from projects.pipeline.cuts import subtract_cuts
@@ -38,6 +42,11 @@ SAMPLES_PER_FRAME = AUDIO_RATE // FPS
 # *input*, where static screen recordings look frozen. Real encoder stalls are
 # caught on the finished file by Step 5.
 INLINE_QC_FILTER = "scale=320:-2:flags=fast_bilinear,blackdetect=d=0.1:pic_th=0.98:pix_th=0.10"
+
+# The face relight is tuned for (and only tested on) 1080p frames.
+RELIGHT_SIZE = (1920, 1080)
+# The relight works in BT.709 limited range; tag both its raw frames and the output so.
+BT709_TAGS = ["-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
 
 
 def _detect_speech(ctx: PipelineContext) -> list[tuple[float, float]]:
@@ -126,20 +135,39 @@ def _drop_stale_face_copy(ctx: PipelineContext) -> None:
         print_info(f"Removed {face_copy.name}: it was the face-only copy of the previous {ctx.outputs.final.name}.")
 
 
-def _encode_on_colab(ctx: PipelineContext, build_cmd, bgm_file: Path | None, duration: float,
+def _encode_on_colab(ctx: PipelineContext, build_cmd, relight_cmds, bgm_file: Path | None, duration: float,
                      description: str) -> VideoQCCollector | None:
-    """Run the encode on the Colab T4. Returns its QC collector, or None to encode locally."""
+    """Run the encode on the Colab T4. Returns its QC collector, or None to encode locally.
+
+    Under --relight an unusable Colab raises PipelineError instead: a local encode can't relight.
+
+    With ``relight_cmds`` it first tries the face relight; if that fails it retries
+    as a plain Colab encode, with a fresh QC collector so no partial flags leak in.
+    """
     if ctx.colab is None:
         return None
-    qc = VideoQCCollector()
     extra_inputs = [ctx.outputs.processed_audio] + ([bgm_file] if bgm_file is not None else [])
     try:
+        if relight_cmds is not None:
+            qc = VideoQCCollector()
+            try:
+                ctx.colab.encode(build_cmd, extra_inputs, ctx.outputs.final, duration, description, qc.handle_line,
+                                 relight_cmds=relight_cmds)
+                ctx.summary.encoder = ctx.colab.label
+                return qc
+            except RelightFailed as e:
+                print_warning(f"Face relight failed ({e}); encoding on Colab without it.")
+        qc = VideoQCCollector()
         ctx.colab.encode(build_cmd, extra_inputs, ctx.outputs.final, duration, description, qc.handle_line)
     except ColabUnavailable as e:
-        print_warning(f"Colab encode unavailable ({e}); encoding locally with x264 instead.")
         ctx.colab.stop()
+        if relight_cmds is not None:
+            # --relight only runs on the T4; a silent local encode would drop it.
+            raise PipelineError(f"Colab encode failed ({e}), so the face relight can't run. Re-run to try "
+                                "Colab again, or drop --relight to accept a local x264 encode.") from e
+        print_warning(f"Colab encode unavailable ({e}); encoding locally with x264 instead.")
         return None
-    ctx.summary.encoder = ENCODER_LABEL
+    ctx.summary.encoder = ctx.colab.label
     return qc
 
 
@@ -166,18 +194,11 @@ def encode_final(ctx: PipelineContext) -> None:
         print_warning(f"Video resolution {info.width}x{info.height} exceeds 1080p; downscaling to 1080p.")
         video_filter += ",scale=1920:1080:flags=bicubic"
 
-    # [v_enc] feeds the encoder; [v_qc] runs blackdetect on the same decoded
-    # frames, so black-frame QC needs no separate pass over the output.
-    filter_complex = (
-        f"[0:v]{video_filter},split=2[v_enc][v_qc];"
-        f"[v_qc]{INLINE_QC_FILTER}[v_qc_out]"
-    )
-
     if bgm_file is not None:
         # Loop the BGM for the whole video; amix duration=first stops it at the
         # end of the speech. Both tracks go stereo first so the mono voice
         # does not collapse the music's stereo image.
-        filter_complex += (
+        audio_filter = (
             ";[1:a]aresample=48000,aformat=channel_layouts=stereo[main_a];"
             f"[2:a]aresample=48000,volume={ctx.args.volume}/100,aformat=channel_layouts=stereo[music];"
             "[main_a][music]amix=inputs=2:duration=first:dropout_transition=0[out_a]"
@@ -189,10 +210,21 @@ def encode_final(ctx: PipelineContext) -> None:
         # made the AAC encode ~3.4x slower for no audible difference.
         audio_map = "1:a:0"
         channels = "1"
+        audio_filter = ""
 
-    def build_cmd(paths: dict[Path, str], output: str, video_args: list[str], main_input_args: list[str]) -> list[str]:
-        """The encode's ffmpeg argv, with each local input mapped through ``paths``."""
-        input_args = [*main_input_args, "-i", paths[ctx.main_video], "-i", paths[ctx.outputs.processed_audio]]
+    def build_cmd(paths: dict[Path, str], output: str, video_args: list[str], main_input_args: list[str],
+                  video_input: list[str] | None = None, vf: str = video_filter) -> list[str]:
+        """The encode's ffmpeg argv, with each local input mapped through ``paths``.
+
+        ``video_input`` replaces the source video input (the relight feeds raw frames on
+        stdin, already cut, so it passes ``vf="null"``).
+        """
+        # [v_enc] feeds the encoder; [v_qc] runs blackdetect on the same decoded
+        # frames, so black-frame QC needs no separate pass over the output.
+        filter_complex = f"[0:v]{vf},split=2[v_enc][v_qc];[v_qc]{INLINE_QC_FILTER}[v_qc_out]{audio_filter}"
+        if video_input is None:
+            video_input = ["-i", paths[ctx.main_video]]
+        input_args = [*main_input_args, *video_input, "-i", paths[ctx.outputs.processed_audio]]
         if bgm_file is not None:
             input_args += ["-stream_loop", "-1", "-i", paths[bgm_file]]
         # blackdetect reports at info level, so this encode can't use -loglevel error.
@@ -206,11 +238,36 @@ def encode_final(ctx: PipelineContext) -> None:
             cmd += ["-t", f"{duration:.3f}"]
         return cmd + ["-movflags", "+faststart", output, "-map", "[v_qc_out]", "-f", "null", "-"]
 
+    out_size = (1920, 1080) if ctx.needs_downscale else (info.width, info.height)
+
+    def relight_cmds(paths: dict[Path, str], output: str, video_args: list[str]):
+        """Remote decode (cut timeline -> raw NV12 on stdout) and encode (raw NV12 on stdin) argvs."""
+        w, h = out_size
+        decode = [
+            "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", "-hwaccel", "cuda",
+            "-i", paths[ctx.main_video], "-map", "0:v:0", "-vf", video_filter, "-fps_mode", "passthrough",
+        ]
+        if duration > 0:
+            decode += ["-t", f"{duration:.3f}"]
+        decode += ["-f", "rawvideo", "-pix_fmt", "nv12", "-"]
+        raw_in = ["-f", "rawvideo", "-pix_fmt", "nv12", "-video_size", f"{w}x{h}", "-framerate", str(FPS),
+                  *BT709_TAGS, "-i", "-"]
+        encode = build_cmd(paths, output, [*video_args, *BT709_TAGS], [], video_input=raw_in, vf="null")
+        return decode, encode, round(duration * FPS), f"{w}x{h}"
+
+    use_relight = bool(getattr(ctx.args, "relight", False))
+    if use_relight and out_size != RELIGHT_SIZE:
+        print_warning(f"Face relight supports 1920x1080 output only (this is {out_size[0]}x{out_size[1]}); "
+                      "encoding without it.")
+        use_relight = False
+
     description = "Final Encode & Multiplex"
-    qc = _encode_on_colab(ctx, build_cmd, bgm_file, duration, description)
+    qc = _encode_on_colab(ctx, build_cmd, relight_cmds if use_relight else None, bgm_file, duration, description)
     if qc is None:
         local_paths = {p: str(p) for p in (ctx.main_video, ctx.outputs.processed_audio, bgm_file) if p is not None}
         cmd = build_cmd(local_paths, str(ctx.outputs.final), X264_ARGS, [])
+        if use_relight:
+            print_warning("Face relight needs the Colab T4; this local encode is not relit.")
         qc = VideoQCCollector()
         print(f"Executing: {' '.join(cmd)}")
         run_ffmpeg_with_progress(cmd, duration, description, stderr_line_callback=qc.handle_line)
