@@ -48,6 +48,7 @@ nav:
   - Video Quality Review: review.md
   - Platform Integrations:
     - YouTube API: youtube-api.md
+    - YouTube Studio: studio.md
     - Twitter: twitter.md
     - LinkedIn: linkedin.md
     - Substack: substack.md

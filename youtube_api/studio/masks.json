@@ -1,0 +1,500 @@
+{
+ "list_videos": {
+  "allRestrictions": {
+   "all": true
+  },
+  "alteredContentSettings": {
+   "all": true
+  },
+  "audienceRestriction": {
+   "all": true
+  },
+  "channelId": true,
+  "collaboration": {
+   "all": true
+  },
+  "contentOwnershipModelSettings": {
+   "all": true
+  },
+  "contentType": true,
+  "description": true,
+  "descriptionDetails": {
+   "all": true
+  },
+  "descriptionFormattedString": {
+   "all": true
+  },
+  "downloadUrl": true,
+  "draftStatus": true,
+  "features": {
+   "all": true
+  },
+  "inlineEditProcessingStatus": true,
+  "isPaygated": true,
+  "lengthSeconds": true,
+  "livestream": {
+   "all": true
+  },
+  "mfkSettings": {
+   "all": true
+  },
+  "monetization": {
+   "all": true
+  },
+  "origin": true,
+  "permissions": {
+   "all": true
+  },
+  "podcastRssMetadata": {
+   "all": true
+  },
+  "premiere": {
+   "all": true
+  },
+  "privacy": true,
+  "privateShare": {
+   "all": true
+  },
+  "publicLivestream": {
+   "all": true
+  },
+  "publicMetrics": {
+   "all": true
+  },
+  "publicPremiere": {
+   "all": true
+  },
+  "publicShorts": {
+   "all": true
+  },
+  "regionalInfos": {
+   "all": true
+  },
+  "releaseInfo": {
+   "all": true
+  },
+  "remix": {
+   "isSource": true
+  },
+  "responseStatus": {
+   "all": true
+  },
+  "scheduledPublishingDetails": {
+   "all": true
+  },
+  "selfCertification": {
+   "all": true
+  },
+  "shareUrl": true,
+  "shorts": {
+   "all": true
+  },
+  "smartDraft": {
+   "all": true
+  },
+  "sponsorsOnly": {
+   "all": true
+  },
+  "status": true,
+  "statusDetails": {
+   "all": true
+  },
+  "superfansOnly": {
+   "all": true
+  },
+  "thumbnailDetails": {
+   "all": true
+  },
+  "thumbnailEditorState": {
+   "all": true
+  },
+  "timeCreatedSeconds": true,
+  "timePublishedSeconds": true,
+  "title": true,
+  "titleDetails": {
+   "all": true
+  },
+  "titleFormattedString": {
+   "all": true
+  },
+  "tvfilmMetadata": {
+   "all": true
+  },
+  "unlistedExpired": true,
+  "videoCreatorExperiment": {
+   "all": true
+  },
+  "videoDurationMs": true,
+  "videoId": true,
+  "videoLinkageShortsAttribution": {
+   "all": true
+  },
+  "videoPrechecks": {
+   "all": true
+  },
+  "videoResolutions": {
+   "all": true
+  },
+  "videoStreamUrl": true,
+  "videoTrailers": {
+   "all": true
+  },
+  "visibility": {
+   "all": true
+  },
+  "watchUrl": true
+ },
+ "playlists": {
+  "commentCount": true,
+  "courseMetadata": {
+   "all": true
+  },
+  "description": true,
+  "lastTimeUpdated": {
+   "all": true
+  },
+  "playlistId": true,
+  "playlistPermissions": {
+   "all": true
+  },
+  "playlistThumbnail": {
+   "all": true
+  },
+  "podcastMetadata": {
+   "all": true
+  },
+  "stationBroadcastMetadata": {
+   "all": true
+  },
+  "title": true,
+  "videosCount": true,
+  "viewCount": true,
+  "visibilitySetting": true,
+  "watchUrl": true
+ },
+ "post_entities": {
+  "channelMask": {
+   "channelHandle": true,
+   "channelId": true,
+   "title": true
+  },
+  "playlistMask": {
+   "attributionData": {
+    "all": true
+   },
+   "playlistId": true,
+   "playlistThumbnail": {
+    "all": true
+   },
+   "title": true,
+   "videosCount": true
+  },
+  "videoMask": {
+   "channelId": true,
+   "lengthSeconds": true,
+   "origin": true,
+   "permissions": {
+    "all": true
+   },
+   "publicLivestream": {
+    "all": true
+   },
+   "publicMetrics": {
+    "all": true
+   },
+   "publicPremiere": {
+    "all": true
+   },
+   "sponsorsOnly": {
+    "all": true
+   },
+   "status": true,
+   "thumbnailDetails": {
+    "all": true
+   },
+   "timePublishedSeconds": true,
+   "title": true,
+   "videoId": true
+  }
+ },
+ "video_details": {
+  "academicLearning": {
+   "all": true
+  },
+  "activeBrandDealVideoLinks": {
+   "all": true
+  },
+  "ageRestriction": true,
+  "allRestrictions": {
+   "all": true
+  },
+  "allowEmbed": true,
+  "allowRatings": true,
+  "alteredContentSettings": {
+   "all": true
+  },
+  "audienceRestriction": {
+   "all": true
+  },
+  "audioLanguage": {
+   "all": true
+  },
+  "autoChapterSettings": {
+   "all": true
+  },
+  "autoPlacesMentionedSettings": {
+   "all": true
+  },
+  "autoProductsSettings": {
+   "all": true
+  },
+  "brandDealVideoLink": {
+   "all": true
+  },
+  "category": true,
+  "channelId": true,
+  "claimDetails": {
+   "all": true
+  },
+  "collaboration": {
+   "all": true
+  },
+  "commentFilter": true,
+  "commentSettings": {
+   "all": true
+  },
+  "commentsDisabledInternally": true,
+  "contentOwnershipModelSettings": {
+   "all": true
+  },
+  "contentType": true,
+  "copyrightSummary": {
+   "all": true
+  },
+  "creatorInitiatedVideoChannelLinks": {
+   "all": true
+  },
+  "crowdsourcingEnabled": true,
+  "dateRecorded": {
+   "all": true
+  },
+  "defaultCommentSortOrder": true,
+  "description": true,
+  "descriptionDetails": {
+   "all": true
+  },
+  "descriptionFormattedString": {
+   "all": true
+  },
+  "downloadUrl": true,
+  "draftStatus": true,
+  "episode": {
+   "all": true
+  },
+  "features": {
+   "all": true
+  },
+  "files": {
+   "all": true
+  },
+  "gameTitle": {
+   "all": true
+  },
+  "genres": {
+   "all": true
+  },
+  "googleAdsVideoLinks": {
+   "all": true
+  },
+  "inlineEditProcessingStatus": true,
+  "isPaygated": true,
+  "issues": {
+   "all": true
+  },
+  "learningConceptSettings": {
+   "all": true
+  },
+  "lengthSeconds": true,
+  "license": true,
+  "liveChat": {
+   "all": true
+  },
+  "livestream": {
+   "all": true
+  },
+  "location": {
+   "all": true
+  },
+  "manualPlacesMentionedPlaces": {
+   "all": true
+  },
+  "metadataLanguage": {
+   "all": true
+  },
+  "mfkSettings": {
+   "all": true
+  },
+  "monetization": {
+   "all": true
+  },
+  "music": {
+   "all": true
+  },
+  "origin": true,
+  "originalFilename": true,
+  "ownedClaimDetails": {
+   "all": true
+  },
+  "paidPoliticalContent": {
+   "all": true
+  },
+  "paidProductPlacement": true,
+  "paidProductPlacementContentRestrictions": {
+   "all": true
+  },
+  "paidProductPlacementDecision": {
+   "all": true
+  },
+  "permissions": {
+   "all": true
+  },
+  "podcastRssMetadata": {
+   "all": true
+  },
+  "premiere": {
+   "all": true
+  },
+  "privacy": true,
+  "privateShare": {
+   "all": true
+  },
+  "productAutotaggingSettings": {
+   "all": true
+  },
+  "productSelection": {
+   "all": true
+  },
+  "publicLivestream": {
+   "all": true
+  },
+  "publicMetrics": {
+   "all": true
+  },
+  "publicPremiere": {
+   "all": true
+  },
+  "publicShorts": {
+   "all": true
+  },
+  "publishing": {
+   "all": true
+  },
+  "regionalInfos": {
+   "all": true
+  },
+  "releaseInfo": {
+   "all": true
+  },
+  "remix": {
+   "all": true
+  },
+  "responseStatus": {
+   "all": true
+  },
+  "scheduledCreatorVisibility": {
+   "all": true
+  },
+  "scheduledPublishingDetails": {
+   "all": true
+  },
+  "selfCertification": {
+   "all": true
+  },
+  "shareUrl": true,
+  "shorts": {
+   "all": true
+  },
+  "smartDraft": {
+   "all": true
+  },
+  "sponsorsOnly": {
+   "all": true
+  },
+  "status": true,
+  "statusDetails": {
+   "all": true
+  },
+  "suggestions": {
+   "all": true
+  },
+  "superfansOnly": {
+   "all": true
+  },
+  "tags": {
+   "all": true
+  },
+  "thumbnailDetails": {
+   "all": true
+  },
+  "thumbnailEditorState": {
+   "all": true
+  },
+  "timeCreatedSeconds": true,
+  "timePublishedSeconds": true,
+  "title": true,
+  "titleDetails": {
+   "all": true
+  },
+  "titleFormattedString": {
+   "all": true
+  },
+  "tvType": {
+   "all": true
+  },
+  "tvfilmMetadata": {
+   "all": true
+  },
+  "uncaptionedReason": true,
+  "unlistedExpired": true,
+  "videoAdvertiserSpecificAgeGates": {
+   "all": true
+  },
+  "videoArtworkEditorState": {
+   "all": true
+  },
+  "videoAutoSummarySettings": {
+   "all": true
+  },
+  "videoCreatorExperiment": {
+   "all": true
+  },
+  "videoDurationMs": true,
+  "videoEditorProject": {
+   "videoDimensions": {
+    "all": true
+   },
+   "videoEditEligibility": {
+    "all": true
+   }
+  },
+  "videoId": true,
+  "videoLinkageShortsAttribution": {
+   "all": true
+  },
+  "videoPrechecks": {
+   "all": true
+  },
+  "videoResolutions": {
+   "all": true
+  },
+  "videoStreamUrl": true,
+  "videoTrailers": {
+   "all": true
+  },
+  "viewCountIsHidden": true,
+  "visibility": {
+   "all": true
+  },
+  "watchUrl": true
+ }
+}
