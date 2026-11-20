@@ -11,6 +11,13 @@
   python3 scripts/tools.py snaptimes [BACK]  comma list: each B-roll scene's end - BACK (default 0.6 s), for
                                              `npx hyperframes snapshot --at ...` (every element should be on screen)
   python3 scripts/tools.py check             run `hyperframes check` and print only errors/warnings, one line each
+  python3 scripts/tools.py anchors           before the first build: every A()/at() phrase in scenes.py, checked
+                                             against its scene window. Prints NOT FOUND, BEFORE (matched before the
+                                             scene), AFTER (past its end) and LATE (in the last 0.8 s, where the exit
+                                             animation starts). Silent = all good. Loop offsets like 0.15 * i are ignored
+  python3 scripts/tools.py montage IMG... [--out research/montage.jpg] [--cols 3]
+                                             one grid of screenshots (each fit into 640x400) to check content and
+                                             privacy in a single Read
   python3 scripts/tools.py compare NEW.mp4 REF.mp4
                                              frame-by-frame SSIM (at 320x180, ~1 min for 7 min of video): mean,
                                              frames under 0.95 and the worst moments. Use it after changing the
@@ -93,6 +100,55 @@ def main(argv):
                     if f.get('severity') in ('error', 'warning'):
                         print('%-8s %-22s %8s %-16s %s' % (f['severity'], f.get('code'), f.get('time', ''),
                                                           f.get('selector', ''), (f.get('message') or '')[:110]))
+    elif cmd == 'anchors':
+        import inspect
+        sys.path.insert(0, os.path.join(ROOT, 'scripts'))
+        from plumbing.anchors import load, T
+        load(os.path.join(ROOT, 'research/words.txt'))
+        import scenes
+        b = scenes.board()
+        end = words()[-1][0] + 1.0
+        pat = re.compile(r"""\b(A|at)\(c, (["'])(.+?)\2(?:, (-?[\d.]+)\))?""")
+        for i, (t0, fn, kw) in enumerate(b):
+            if fn is None or getattr(fn, '__module__', '') != 'scenes':
+                continue
+            t1 = b[i + 1][0] if i + 1 < len(b) else end
+            for m in pat.finditer(inspect.getsource(fn)):
+                kind, ph, off = m.group(1), m.group(3), float(m.group(4) or 0)
+                try:
+                    tt = T(ph, after=t0 - 0.6)
+                except Exception:
+                    tt = None
+                tag = '%-14s [%7.2f-%7.2f] %-30r' % (fn.__name__, t0, t1, ph)
+                if tt is None:
+                    print(tag, 'NOT FOUND in this scene or later')
+                    continue
+                el = tt + off if kind == 'A' else max(tt + off, t0 + 0.5)
+                if tt > t1:
+                    print(tag, 'AFTER: matched at %.2f, past the scene end' % tt)
+                elif el > t1 - 0.8:
+                    print(tag, 'LATE: lands at %.2f, %.2f s before the end (needs >= 0.8)' % (el, t1 - el))
+                elif tt < t0 - 0.6:
+                    print(tag, 'BEFORE: matched at %.2f' % tt)
+    elif cmd == 'montage':
+        args, out, cols = argv[1:], os.path.join(ROOT, 'research/montage.jpg'), 3
+        if '--out' in args:
+            j = args.index('--out'); out = args[j + 1]; del args[j:j + 2]
+        if '--cols' in args:
+            j = args.index('--cols'); cols = int(args[j + 1]); del args[j:j + 2]
+        n = len(args)
+        cols = max(1, min(cols, n))
+        ins, chains, lay = [], '', []
+        for k, a in enumerate(args):
+            ins += ['-i', a]
+            chains += '[%d]scale=640:400:force_original_aspect_ratio=decrease,pad=640:400:-1:-1:white[v%d];' % (k, k)
+            lay.append('%d_%d' % (640 * (k % cols), 400 * (k // cols)))
+        if n == 1:
+            fc = chains + '[v0]null'
+        else:
+            fc = chains + ''.join('[v%d]' % k for k in range(n)) + 'xstack=inputs=%d:layout=%s:fill=white' % (n, '|'.join(lay))
+        subprocess.run(['ffmpeg', '-v', 'error', '-y'] + ins + ['-filter_complex', fc, '-frames:v', '1', out], check=True)
+        print(out)
     elif cmd == 'compare':
         import tempfile
         log = tempfile.mktemp(suffix='.ssim')
