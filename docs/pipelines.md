@@ -61,7 +61,7 @@ phantom projects status --pending
 phantom projects status --finished
 phantom projects status --repackage
 
-# Skip the 48h performance check (it opens YouTube Studio in Chrome)
+# Skip the 48h performance check (it reads YouTube Studio)
 phantom projects status --no-analytics
 
 # Show concise one-line summary
@@ -96,7 +96,7 @@ Projects that were recorded before a thumbnail existed still advance by their fi
 
 ### 48h Performance Check
 
-Once an uploaded video has been public for 48 hours, `status` reads its analytics live from YouTube Studio (through the logged-in Chrome on port 9222, like `phantom yt info`) and stores them in `metadata.json` under `performanceCheck`, along with the full `yt info` payload. The check runs once per video; later runs use the stored result, so `status` stays instant.
+Once an uploaded video has been public for 48 hours, `status` reads its analytics live from YouTube Studio (over HTTP with the saved Studio session, like `phantom yt info`; see [YouTube Studio](studio.md)) and stores them in `metadata.json` under `performanceCheck`, along with the full `yt info` payload. The check runs once per video; later runs use the stored result, so `status` stays instant.
 
 The video's CTR over its first 2 Pacific-time days since publish (the publish day and the day after) is compared with the channel's long-form CTR over the last 28 days, the number on the Videos card of Studio's Content tab (see `phantom yt channel-stats`). If it's lower, the video moves to **Needs Repackaging**. Impressions, views, and average view duration are stored on both sides for reference, under `video` and `channel_28d`. The video's average view duration is Studio's since-publish figure at check time, since Studio's average isn't simply watch time divided by views and can't be recomputed for the 2-day window. Shorts aren't checked, since the channel stats cover long-form videos.
 
