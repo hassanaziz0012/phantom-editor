@@ -23,6 +23,7 @@ cp -r "$KIT/scripts/plumbing" "$KIT"/scripts/{sketch.py,doodles.py,blocks.py,bui
 ln -sfn "$KIT/node" "$B/scripts/node"
 cp "$KIT"/assets/fonts/*.woff2 "$B/assets/fonts/"
 cp -n "$KIT"/assets/sfx/* "$B/assets/sfx/" 2>/dev/null || true
+cp -n "$KIT"/assets/img/* "$B/assets/img/" 2>/dev/null || true   # blank.png: transparent placeholder k.video draws its frame with
 
 DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$SRC")
 
