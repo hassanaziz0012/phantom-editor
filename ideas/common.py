@@ -132,9 +132,21 @@ def parse_ideas_response(response_text: str) -> List[Dict[str, Any]]:
     confidence_score / best_formats when given). Handles raw JSON, markdown code
     fences, or a JSON array embedded in prose.
     """
+    data = extract_json_list(response_text)
+    if data is not None:
+        return _validate_ideas_list(data)
+    if not response_text.strip():
+        return []
+
+    logger.warning("Could not parse a JSON list of ideas from the response. Returning raw text as a single entry.")
+    return [{"source": "BrowserLLM Raw Response", "idea": response_text.strip()}]
+
+
+def extract_json_list(response_text: str) -> Optional[List[Any]]:
+    """The JSON array in an LLM response (raw, in a code fence, or inside prose), or None."""
     text = response_text.strip()
     if not text:
-        return []
+        return None
 
     candidates = [text]
     # JSON inside markdown code fences ```json ... ``` or ``` ... ```
@@ -150,10 +162,8 @@ def parse_ideas_response(response_text: str) -> List[Dict[str, Any]]:
         except ValueError:
             continue
         if isinstance(data, list):
-            return _validate_ideas_list(data)
-
-    logger.warning("Could not parse a JSON list of ideas from the response. Returning raw text as a single entry.")
-    return [{"source": "BrowserLLM Raw Response", "idea": text}]
+            return data
+    return None
 
 
 def _validate_ideas_list(data: List[Any]) -> List[Dict[str, Any]]:

@@ -61,6 +61,7 @@ COMMANDS=(
 
     "ideas;from-comments,generate-from-comments;r;py ideas.comments.generate_ideas;<video> [--limit <int>] [--order <relevance|time>] [--no-export] [--json]"
     "ideas;from-outlier,generate-from-outlier;r;py ideas.generate_from_outlier;<video> [--no-export] [--fresh-summary] [--json]"
+    "ideas;from-x,from-feed;;py ideas.from_x;[--no-export] [--profile <name>]"
     "ideas;export;;py ideas.export_ideas_to_sheet;[--file <path> | --idea <text>] [arguments]"
     "ideas;archive;;py ideas.archive_reviewed_ideas;[--dry-run]"
 

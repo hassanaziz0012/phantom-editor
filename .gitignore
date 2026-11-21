@@ -32,6 +32,7 @@ node_modules
 cache
 metadata/recommendations/my_videos.json
 data/studio
+data/x
 metadata/recommendations/my_videos_embeddings.npy
 *.npy
 
