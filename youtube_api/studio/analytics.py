@@ -105,6 +105,28 @@ def time_range(period: str) -> dict:
 
 # ── Tables ────────────────────────────────────────────────────────────────────
 
+# Studio's internal TRAFFIC_SOURCE_TYPE values and the names its UI shows for them.
+# SUBSCRIBER in particular is "Browse features" (home feed, subscriptions feed, Watch later),
+# not "subscribers only". Rows keep the raw value for --filter and get a traffic_source column too.
+TRAFFIC_SOURCE_NAMES = {
+    "SUBSCRIBER":               "Browse features",
+    "YT_RELATED":               "Suggested videos",
+    "YT_SEARCH":                "YouTube search",
+    "EXT_URL":                  "External",
+    "UNKNOWN_MOBILE_OR_DIRECT": "Direct or unknown",
+    "PLAYLIST":                 "Playlists",
+    "YT_PLAYLIST_PAGE":         "Playlist page",
+    "YT_CHANNEL":               "Channel pages",
+    "YT_OTHER_PAGE":            "Other YouTube features",
+    "NOTIFICATION":             "Notifications",
+    "END_SCREEN":               "End screens",
+    "ANNOTATION":               "Cards and annotations",
+    "SHORTS":                   "Shorts feed",
+    "NO_LINK_EMBEDDED":         "Embedded players",
+    "ADVERTISING":              "YouTube advertising",
+    "HASHTAGS":                 "Hashtag pages",
+}
+
 def _values(column: dict) -> tuple[str, list]:
     for kind, v in column.items():
         if isinstance(v, dict) and "values" in v:
@@ -131,7 +153,11 @@ def parse_table(table: dict) -> list[dict]:
     columns = []
     for col in table.get("dimensionColumns", []):
         kind, values = _values(col)
-        columns.append((col["dimension"]["type"].lower(), [_dimension_value(kind, v) for v in values]))
+        dim = col["dimension"]["type"]
+        parsed = [_dimension_value(kind, v) for v in values]
+        if dim == "TRAFFIC_SOURCE_TYPE":
+            columns.append(("traffic_source", [TRAFFIC_SOURCE_NAMES.get(v, v) for v in parsed]))
+        columns.append((dim.lower(), parsed))
     for col in table.get("metricColumns", []):
         kind, values = _values(col)
         metric = col["metric"]

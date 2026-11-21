@@ -141,6 +141,7 @@ It runs 8 requests in parallel (`--workers`) and takes about a minute. `_meta.js
 * Columns are Studio's metric names, lowercased.
 * Durations come in milliseconds and are converted to seconds, with a `_sec` suffix (`average_watch_time_sec`).
 * Percentages are 0–100: CTR (`video_thumbnail_impressions_vtr`) 4.2 means 4.2%.
+* Rows by `TRAFFIC_SOURCE_TYPE` also get a `traffic_source` column with the name Studio's UI shows. The raw values are internal: `SUBSCRIBER` is **Browse features** (home feed, subscriptions feed, Watch later), not subscribers only, and `YT_RELATED` is Suggested videos. Filter with the raw value (`--filter TRAFFIC_SOURCE_TYPE=SUBSCRIBER`).
 * `-` / `null` means Studio withheld the value, usually because there are too few viewers for privacy.
 
 ## Limits
