@@ -5,7 +5,30 @@ or a content type filter; Studio answers an unsupported query with HTTP 400.
 
 `phantom studio vocab` lists them. To refresh after a Studio update, re-extract the enum
 objects containing EXTERNAL_VIEWS and VIEWER_AGE from Studio's largest JS file.
+
+METRIC_NOTES explains the metrics whose names mislead; `query`, `report` and `vocab metrics`
+print them. Studio's own labels don't help here: it calls both VIEWS and EXTERNAL_VIEWS "Views".
 """
+
+# YouTube counts a public view from the first frame since 2026-08-24 (long-form and live; Shorts
+# earlier). The older, stricter count lives on as "engaged views". VIEWS returns that one; checked
+# 2026-11-22 against ENGAGED_VIEWS on this channel's videos, months, content types and sources.
+METRIC_NOTES = {
+    "EXTERNAL_VIEWS": "Public views, what Studio and YouTube show as \"Views\". Counts every start since 2026-08-24 (Shorts earlier), so it isn't comparable with older periods.",
+    "VIEWS": "Engaged views (same numbers as ENGAGED_VIEWS): viewers who stayed past the opening seconds. NOT the public view count; that is EXTERNAL_VIEWS.",
+    "ENGAGED_VIEWS": "Viewers who stayed past the opening seconds. The old stricter view count, comparable across all dates.",
+    "EXTERNAL_WATCH_TIME": "Watch time of all public views (EXTERNAL_VIEWS).",
+    "WATCH_TIME": "Watch time of engaged views only (same as ENGAGED_WATCH_TIME).",
+    "ENGAGED_WATCH_TIME": "Watch time of engaged views only.",
+    "AVERAGE_WATCH_TIME": "Average view duration per ENGAGED view (WATCH_TIME / VIEWS), not EXTERNAL_WATCH_TIME / EXTERNAL_VIEWS.",
+    "AVERAGE_WATCH_PERCENTAGE": "Average % of the video watched per ENGAGED view.",
+    "VIDEO_THUMBNAIL_IMPRESSED_VIEWS": "Engaged views that came from a thumbnail impression.",
+    "VIDEO_THUMBNAIL_IMPRESSIONS_VTR": "Thumbnail CTR: engaged views from impressions / impressions.",
+    "SHORTS_FEED_IMPRESSIONS_VTR": "Stayed to watch vs swiped away in the Shorts feed.",
+    "CO_VIEWED_EXTERNAL_VIEWS": "Public views plus people watching together on TV. Frozen since 2026-11-16, when EXTERNAL_VIEWS began including co-views.",
+    "CO_VIEW_RATE": "Viewers per view on shared screens; public views / this = views without co-viewing.",
+    "SUBSCRIBERS_NET_CHANGE": "Subscribers gained minus lost.",
+}
 
 METRICS = (
     "VIEWS", "SPAM_VIEWS", "NON_VIEW_PLAYBACKS", "WATCH_TIME", "LISTEN_TIME", "AVERAGE_WATCH_TIME",
