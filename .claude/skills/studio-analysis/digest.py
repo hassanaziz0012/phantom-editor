@@ -77,6 +77,9 @@ def main():
         f"Failed parts: {', '.join(meta.get('errors', {})) or 'none'}.\n")
     add("Units: `_sec` = seconds, `min` = minutes, percentages 0–100, CTR = impressions click-through rate. "
         "`-` = withheld by Studio (too few viewers) or not applicable, not zero.\n")
+    add("**Views** (`views`, `external_views`, `d2`/`d7`/`d28`) are public views. YouTube counts them from the first frame "
+        "since 2026-08-24 (Shorts earlier; stricter before), so they jump there: don't compare them across that date, use "
+        "`ENGAGED_VIEWS`. CTR, `avg %` and `avg min` are per engaged view (stayed past the opening seconds).\n")
     counts = {}
     for v in content:
         counts[v["type"]] = counts.get(v["type"], 0) + 1
@@ -222,7 +225,7 @@ def main():
     fun = load(d, "funnel_28d") or []
     add("Channel funnel, last 28 days:\n")
     add(table(fun, [("surface", "surface"), ("video_thumbnail_impressions", "impr"), ("video_thumbnail_impressions_vtr", "CTR"),
-                    ("video_thumbnail_impressed_views", "views from impr")]))
+                    ("video_thumbnail_impressed_views", "engaged views from impr")]))
     for period in ("28d", "lifetime"):
         tr = load(d, f"report_traffic_{period}") or []
         total = sum(r.get("external_views") or 0 for r in tr) or 1
