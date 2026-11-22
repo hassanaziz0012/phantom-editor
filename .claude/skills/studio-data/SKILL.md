@@ -40,6 +40,7 @@ Only do this when the question is about ONE specific video. Questions about the 
 | comments, unanswered comments | `comments --json` (add `--unanswered`, `--video <id>`) |
 | thumbnail / title A/B test (Test & Compare) | `videos --json -n 20`, read the video's `experiment` field |
 | one video's details, lifetime totals | `video <id> --analytics` |
+| engaged views, or views compared across 2026-08-24 (counting changed) | `query -d VIDEO -m EXTERNAL_VIEWS,ENGAGED_VIEWS --json` (or `-d MONTH`) |
 | a breakdown no report covers (e.g. one video's daily views) | `query -d DIMS -m METRICS ... --json` (see below) |
 | analyse/audit the channel, "what's working", "why are views down", recommendations, strategy | Don't answer from single commands: use the **studio-analysis** skill (Opus agent) |
 | just save all the raw data | `dump` (writes JSON files to `data/studio/<date_time>/`) |
@@ -56,6 +57,7 @@ A report can be scoped to videos: `report traffic -v <id> -p lifetime --json`. A
   * `typical`, `funnel`, `audience`, `retention --channel`: only `7d`, `28d`, `60d`, `90d`, `365d`, `lifetime`.
   * There is no `30d`: use `28d`. "This year" = `2026` for report/query. "All time" = `lifetime`.
 * **Typical ranges** exist only for 28 days (channel) or since publish (video), and only for views, watch time, average view duration and subscribers. Empty elsewhere is expected; use `previous_period` instead.
+* **Views vs engaged views:** "views" means `external_views` (the public count). `query`'s `VIEWS` is NOT that: it returns engaged views (stayed past the opening seconds), same as `ENGAGED_VIEWS`. Average view duration and CTR are per engaged view. `external_views` counts from the first frame since 2026-08-24, so compare across that date with `ENGAGED_VIEWS`. `query` and `report` print what their metrics mean after the output.
 * **Units:** `_sec` fields are seconds. Percentages are 0–100. CTR is `video_thumbnail_impressions_vtr` (4.2 = 4.2%).
 * **Missing data:** `-` / `null` means Studio withheld it (too few viewers), not zero. `not_enough_data` is a real answer: report it, don't retry.
 * **Login errors** (401/403, "not logged in"): run `phantom studio login`, then retry once.

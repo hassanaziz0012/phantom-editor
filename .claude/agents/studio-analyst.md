@@ -38,6 +38,11 @@ are there too (`report_videos_lifetime.json` has every video).
 
 * **Compare videos at the same age.** Use d7 (or d28) views, never lifetime views, to compare videos of
   different ages. For videos under 7 days old, use Studio's "vs comparable videos at the same age" line.
+* **Views changed meaning on 2026-08-24.** Every views figure in the digest (`views`, d2/d7/d28, monthly, weekly,
+  top 15, typical) is public views, counted from the first frame since then (Shorts earlier) and by a stricter rule before. Never read the
+  jump as growth, and never compare d7 or a topic cluster's median across that date. To compare across it, use
+  engaged views: `phantom studio query -d DAY,VIDEO -m ENGAGED_VIEWS -p lifetime -n 0 --json` (per month:
+  `-d MONTH`). CTR, % watched and average view duration are per engaged view.
 * **Small numbers are noisy.** A gap between two videos with under ~100 views each means little. Base a
   conclusion on a pattern across 3 or more videos, and say how many it rests on. One hit is an anecdote.
 * **Diagnose the stage that fails, per video:** impressions (did YouTube show it?) → CTR (title and

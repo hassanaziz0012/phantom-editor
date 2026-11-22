@@ -142,6 +142,12 @@ It runs 8 requests in parallel (`--workers`) and takes about a minute. `_meta.js
 * Durations come in milliseconds and are converted to seconds, with a `_sec` suffix (`average_watch_time_sec`).
 * Percentages are 0–100: CTR (`video_thumbnail_impressions_vtr`) 4.2 means 4.2%.
 * Rows by `TRAFFIC_SOURCE_TYPE` also get a `traffic_source` column with the name Studio's UI shows. The raw values are internal: `SUBSCRIBER` is **Browse features** (home feed, subscriptions feed, Watch later), not subscribers only, and `YT_RELATED` is Suggested videos. Filter with the raw value (`--filter TRAFFIC_SOURCE_TYPE=SUBSCRIBER`).
+* **Views come in two kinds.** Since 2026-08-24 YouTube counts a public view from the first frame (Shorts did so earlier). The stricter older count is now "engaged views".
+    * `external_views` is the public count Studio shows as "Views". Use it for "how many views". It jumps at the change, so don't compare it across that date; use `engaged_views` for that.
+    * `views` equals `engaged_views`, and `watch_time_sec` equals `engaged_watch_time_sec`, despite Studio labelling both `VIEWS` and `EXTERNAL_VIEWS` "Views".
+    * Average view duration and CTR are per engaged view. `external_watch_time_sec / external_views` doesn't give `average_watch_time_sec`.
+    * The `views` of `phantom studio videos` is the public counter. It can differ by a view or two from summed `external_views` for new videos.
+* `query` and `report` print what their metrics mean on stderr (`METRIC_NOTES` in `vocab.py`), so `--json` stdout stays plain JSON. `vocab metrics` shows the notes too.
 * `-` / `null` means Studio withheld the value, usually because there are too few viewers for privacy.
 
 ## Limits
