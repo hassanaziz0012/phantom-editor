@@ -77,6 +77,15 @@ def emit(data, as_json: bool) -> None:
         print(json.dumps(data, indent=1, ensure_ascii=False))
 
 
+def emit_notes(metrics: list[str]) -> None:
+    """Explain the metrics just printed. On stderr, so stdout stays pure JSON or table."""
+    names = dict.fromkeys(m.rstrip("%") for m in metrics)
+    notes = [f"  {n.lower()}: {vocab.METRIC_NOTES[n]}" for n in names if n in vocab.METRIC_NOTES]
+    if notes:
+        sys.stdout.flush()
+        print("\nWhat the metrics mean:\n" + "\n".join(notes), file=sys.stderr)
+
+
 def _csv(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()] if value else []
 
@@ -166,6 +175,7 @@ def cmd_report(args):
     if args.name not in analytics.REPORTS:
         raise SystemExit(f"unknown report {args.name!r}; run `phantom studio reports` for the list")
     emit(analytics.report(Studio(), args.name, period=args.period, **_scope(args)), args.json)
+    emit_notes(analytics.REPORTS[args.name][2])
 
 
 def cmd_query(args):
@@ -175,6 +185,7 @@ def cmd_query(args):
         raise SystemExit("--metrics is required (see `phantom studio vocab metrics`)")
     emit(analytics.query(Studio(), dims, metrics, period=args.period or analytics.DEFAULT_PERIOD,
                          order_by=args.order.upper() if args.order else None, ascending=args.asc, **_scope(args)), args.json)
+    emit_notes(metrics)
 
 
 def cmd_retention(args):
@@ -232,7 +243,8 @@ def cmd_research(args):
 
 def cmd_vocab(args):
     if args.kind in (None, "metrics"):
-        print("\n".join(vocab.METRICS) if args.kind else "METRICS:\n  " + "\n  ".join(vocab.METRICS))
+        lines = [f"{m}  {vocab.METRIC_NOTES[m]}" if m in vocab.METRIC_NOTES else m for m in vocab.METRICS]
+        print("\n".join(lines) if args.kind else "METRICS:\n  " + "\n  ".join(lines))
     if args.kind in (None, "dimensions"):
         print("\n".join(vocab.DIMENSIONS) if args.kind else "\nDIMENSIONS:\n  " + "\n  ".join(vocab.DIMENSIONS))
 
