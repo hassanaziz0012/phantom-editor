@@ -4,7 +4,19 @@ import sys
 from pathlib import Path
 import requests
 
-from linkedin.authenticate import get_valid_access_token, get_member_urn
+from linkedin.authenticate import (
+    LINKEDIN_API_VERSION,
+    REQUEST_TIMEOUT,
+    get_valid_access_token,
+    get_member_urn,
+)
+
+_LITTLE_RESERVED = set('\\|{}@[]()<>#*_~')
+
+
+def escape_little_text(text):
+    """Backslash-escape LinkedIn little-text-format reserved characters."""
+    return "".join("\\" + c if c in _LITTLE_RESERVED else c for c in text)
 
 
 def upload_image_asset(access_token, author_urn, file_path):
@@ -12,7 +24,7 @@ def upload_image_asset(access_token, author_urn, file_path):
     headers = {
         "Authorization": f"Bearer {access_token}",
         "X-Restli-Protocol-Version": "2.0.0",
-        "LinkedIn-Version": "202604",
+        "LinkedIn-Version": LINKEDIN_API_VERSION,
         "Content-Type": "application/json"
     }
     
@@ -24,7 +36,7 @@ def upload_image_asset(access_token, author_urn, file_path):
         }
     }
     
-    reg_response = requests.post(register_url, json=register_payload, headers=headers)
+    reg_response = requests.post(register_url, json=register_payload, headers=headers, timeout=REQUEST_TIMEOUT)
     reg_response.raise_for_status()
     
     reg_data = reg_response.json()["value"]
@@ -34,7 +46,7 @@ def upload_image_asset(access_token, author_urn, file_path):
     # Step 2: Upload the binary image file
     with open(file_path, "rb") as f:
         upload_headers = {"Authorization": f"Bearer {access_token}"}
-        upload_response = requests.put(upload_url, data=f, headers=upload_headers)
+        upload_response = requests.put(upload_url, data=f, headers=upload_headers, timeout=REQUEST_TIMEOUT)
         upload_response.raise_for_status()
         
     return image_urn
@@ -54,14 +66,14 @@ def create_post(text_content, image_paths=None, link_details=None):
     headers = {
         "Authorization": f"Bearer {access_token}",
         "X-Restli-Protocol-Version": "2.0.0",
-        "LinkedIn-Version": "202604",
+        "LinkedIn-Version": LINKEDIN_API_VERSION,
         "Content-Type": "application/json"
     }
     
     # Construct the base post payload
     payload = {
         "author": author_urn,
-        "commentary": text_content,
+        "commentary": escape_little_text(text_content),
         "visibility": "PUBLIC",
         "lifecycleState": "PUBLISHED",
         "distribution": {
@@ -102,7 +114,7 @@ def create_post(text_content, image_paths=None, link_details=None):
     
     # Publish the post
     post_url = "https://api.linkedin.com/v2/posts"
-    response = requests.post(post_url, json=payload, headers=headers)
+    response = requests.post(post_url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT)
     
     if response.status_code == 201:
         print("Post created successfully!")
@@ -137,6 +149,8 @@ def main():
         parser.error("Must provide post text as argument, via -f/--file, or via stdin.")
 
     link_details = None
+    if args.url and args.images:
+        parser.error("--images and --url cannot be combined (LinkedIn posts take images or a link preview, not both).")
     if args.url:
         link_details = {
             "url": args.url,

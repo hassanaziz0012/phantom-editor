@@ -60,4 +60,5 @@ Automates publishing short-form Substack Notes with optional image or video atta
   - Attaches images or video via hidden file input elements.
   - Types the note text into the rich-text composer.
   - Monitors the *"Post"* button until uploads finish processing and clicks to publish.
-  - Automatically clicks the *Share* menu on the newly posted note, copies the share link to clipboard, and outputs the direct post URL.
+  - Fails if the composer doesn't close after posting.
+  - Finds the new note on your own profile (`substack.com/@<handle>`, from the `SUBSTACK_HANDLE` env var or the `substack.com/profile` redirect) and prints its URL. If it can't find your note, it prints a warning instead of a guessed link.

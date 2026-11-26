@@ -7,7 +7,8 @@ import requests
 CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
 CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
 REDIRECT_URI = "http://localhost:8080"
-LINKEDIN_API_VERSION = "202604" 
+LINKEDIN_API_VERSION = os.getenv("LINKEDIN_API_VERSION", "202604")
+REQUEST_TIMEOUT = 30  # seconds
 
 # Dynamic path to save the token file in the script's directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -39,7 +40,7 @@ def initialize_tokens():
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     
     print("\nExchanging code for 60-day access token...")
-    response = requests.post("https://www.linkedin.com/oauth/v2/accessToken", data=payload, headers=headers)
+    response = requests.post("https://www.linkedin.com/oauth/v2/accessToken", data=payload, headers=headers, timeout=REQUEST_TIMEOUT)
     
     if response.status_code == 200:
         data = response.json()
@@ -64,7 +65,13 @@ def get_valid_access_token():
     """
     if not os.path.exists(TOKEN_FILE):
         print(f"Token file '{TOKEN_FILE}' not found. Initializing setup loop...")
-        return initialize_tokens().get("access_token")
+        token_data = initialize_tokens()
+        if not token_data:
+            raise RuntimeError(
+                "LinkedIn authorization failed: the authorization code could not be exchanged "
+                "for an access token (see the error above). Re-run the setup and paste a fresh code."
+            )
+        return token_data["access_token"]
 
     with open(TOKEN_FILE, "r") as f:
         tokens = json.load(f)
@@ -94,7 +101,7 @@ def get_member_urn(access_token):
         "Authorization": f"Bearer {access_token}",
         "X-Restli-Protocol-Version": "2.0.0"
     }
-    response = requests.get("https://api.linkedin.com/v2/userinfo", headers=headers)
+    response = requests.get("https://api.linkedin.com/v2/userinfo", headers=headers, timeout=REQUEST_TIMEOUT)
     if response.status_code == 200:
         member_id = response.json().get("sub")
         return f"urn:li:person:{member_id}"

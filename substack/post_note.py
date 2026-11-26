@@ -31,6 +31,8 @@ Usage:
 
 import argparse
 import asyncio
+import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -49,13 +51,58 @@ SUBSTACK_URL = "https://substack.com/home"
 # ==============================================================================
 # Substack Note Publishing Workflow
 # ==============================================================================
+async def _find_own_note_url(page: Page, text: str) -> Optional[str]:
+    """
+    Link to the newest note on the logged-in user's own profile, or None.
+
+    The handle comes from SUBSTACK_HANDLE if set, otherwise from where
+    https://substack.com/profile redirects to when logged in. A note is only accepted if
+    it is on that profile and, when we have text, its card contains the start of our text.
+    """
+    handle = os.environ.get("SUBSTACK_HANDLE", "").strip().lstrip("@")
+    if handle:
+        profile_url = f"https://substack.com/@{handle}"
+        await page.goto(profile_url, wait_until="domcontentloaded")
+    else:
+        await page.goto("https://substack.com/profile", wait_until="domcontentloaded")
+        await page.wait_for_timeout(2000)
+        m = re.match(r"https://substack\.com/@([^/?#]+)", page.url)
+        if not m:
+            return None
+        handle = m.group(1)
+    own_prefix = f"https://substack.com/@{handle}".lower()
+    snippet = " ".join(text.split())[:30] if text else ""
+
+    for _ in range(10):
+        await page.wait_for_timeout(1500)
+        if not page.url.lower().startswith(own_prefix):
+            return None
+        cards = await page.evaluate(
+            """() => [...document.querySelectorAll('a[href*="/note/"]')].map(a => {
+                let el = a, txt = '';
+                for (let i = 0; i < 8 && el; i++, el = el.parentElement) {
+                    txt = el.innerText || '';
+                    if (txt.length > 40) break;
+                }
+                return {href: a.href, text: txt};
+            })"""
+        )
+        for card in cards:
+            if snippet and snippet not in " ".join(card["text"].split()):
+                continue
+            href = card["href"].split("?")[0]
+            if "/note/" in href:
+                return href
+    return None
+
+
 async def post_substack_note(
     text: str,
     image_paths: Optional[List[Union[str, Path]]] = None,
     video_path: Optional[Union[str, Path]] = None,
     headless: bool = False,
     page: Optional[Page] = None,
-) -> str:
+) -> Optional[str]:
     """
     Publishes a note to Substack and returns the direct link to the posted note.
 
@@ -64,7 +111,8 @@ async def post_substack_note(
     :param video_path: Optional file path to a local video to attach.
     :param headless: If starting a fresh Chrome instance, whether to run headless.
     :param page: Optional existing Playwright Page to use.
-    :return: Direct URL of the published Substack note.
+    :return: Direct URL of the published note, or None if it was posted but the link could not be verified.
+    :raises RuntimeError: if the note could not be posted.
     """
     if not text and not image_paths and not video_path:
         raise ValueError("Cannot post an empty note. Provide text, images, or video.")
@@ -96,159 +144,140 @@ async def post_substack_note(
         else:
             context = page.context
 
-        # Grant clipboard permissions on substack.com origin
         try:
-            await context.grant_permissions(["clipboard-read", "clipboard-write"], origin="https://substack.com")
-        except PlaywrightError as e:
-            print(f"Note: could not grant clipboard permissions ({e}); pasting media may not work.")
+            # Grant clipboard permissions on substack.com origin
+            try:
+                await context.grant_permissions(["clipboard-read", "clipboard-write"], origin="https://substack.com")
+            except PlaywrightError as e:
+                print(f"Note: could not grant clipboard permissions ({e}); pasting media may not work.")
 
-        print(f"Navigating to {SUBSTACK_URL}...")
-        await page.goto(SUBSTACK_URL, wait_until="domcontentloaded")
-        await page.wait_for_timeout(2500)
+            print(f"Navigating to {SUBSTACK_URL}...")
+            await page.goto(SUBSTACK_URL, wait_until="domcontentloaded")
+            await page.wait_for_timeout(2500)
 
-        # ----------------------------------------------------------------------
-        # Step 1: Open Composer Modal
-        # ----------------------------------------------------------------------
-        print("Looking for 'What\\'s on your mind?' compose prompt...")
-        # Role and accessibility-first selector for the inline composer prompt
-        prompt_btn = page.get_by_role("button", name="New post").filter(has_text="What's on your mind?")
-        if await prompt_btn.count() == 0:
-            prompt_btn = page.get_by_role("button", name="What's on your mind?")
-        if await prompt_btn.count() == 0:
-            prompt_btn = page.get_by_text("What's on your mind?").first
+            # ----------------------------------------------------------------------
+            # Step 1: Open Composer Modal
+            # ----------------------------------------------------------------------
+            print("Looking for 'What\\'s on your mind?' compose prompt...")
+            # Role and accessibility-first selector for the inline composer prompt
+            prompt_btn = page.get_by_role("button", name="New post").filter(has_text="What's on your mind?")
+            if await prompt_btn.count() == 0:
+                prompt_btn = page.get_by_role("button", name="What's on your mind?")
+            if await prompt_btn.count() == 0:
+                prompt_btn = page.get_by_text("What's on your mind?").first
 
-        if await prompt_btn.count() == 0:
-            raise RuntimeError("Could not find the 'What\\'s on your mind?' box. Ensure you are logged into Substack.")
+            if await prompt_btn.count() == 0:
+                raise RuntimeError("Could not find the 'What\\'s on your mind?' box. Ensure you are logged into Substack.")
 
-        await prompt_btn.scroll_into_view_if_needed()
-        await prompt_btn.click()
-        await page.wait_for_timeout(1000)
-
-        # ----------------------------------------------------------------------
-        # Step 2: Locate Modal Dialog
-        # ----------------------------------------------------------------------
-        dialog = page.get_by_role("dialog")
-        await dialog.wait_for(state="visible", timeout=10000)
-        print("Composer modal opened.")
-
-        # ----------------------------------------------------------------------
-        # Step 3: Handle Media Attachments (Images & Video)
-        # ----------------------------------------------------------------------
-        if resolved_images:
-            print(f"Attaching {len(resolved_images)} image(s)...")
-            img_input = dialog.locator('input[type="file"][accept*="image"]').first
-            if await img_input.count() == 0:
-                img_input = page.locator('input[type="file"][accept*="image"]').first
-
-            if await img_input.count() > 0:
-                await img_input.set_input_files([str(img) for img in resolved_images])
-                print("Image file(s) selected.")
-            else:
-                print("Warning: Image input element not found in modal.")
-
-        if resolved_video:
-            print(f"Attaching video: {resolved_video.name}...")
-            vid_input = dialog.locator('input[type="file"][accept*="video"]').first
-            if await vid_input.count() == 0:
-                vid_input = page.locator('input[type="file"][accept*="video"]').first
-
-            if await vid_input.count() > 0:
-                await vid_input.set_input_files(str(resolved_video))
-                print("Video file selected.")
-            else:
-                print("Warning: Video input element not found in modal.")
-
-        # ----------------------------------------------------------------------
-        # Step 4: Enter Note Text
-        # ----------------------------------------------------------------------
-        if text:
-            print("Entering note text...")
-            editor = dialog.get_by_role("textbox", name="What's on your mind?")
-            if await editor.count() == 0:
-                editor = dialog.get_by_role("textbox").first
-
-            await editor.click()
-            await editor.fill(text)
-            await page.wait_for_timeout(500)
-
-        # ----------------------------------------------------------------------
-        # Step 5: Wait for Uploads & Post Button to Enable
-        # ----------------------------------------------------------------------
-        post_btn = dialog.get_by_role("button", name="Post")
-        if await post_btn.count() == 0:
-            post_btn = dialog.locator('button[data-testid="composer-post"]').first
-
-        print("Waiting for media processing & Post button to enable...")
-        max_wait_seconds = 120
-        start_time = time.time()
-        is_ready = False
-
-        while time.time() - start_time < max_wait_seconds:
-            if await post_btn.count() > 0 and not await post_btn.is_disabled():
-                is_ready = True
-                break
+            await prompt_btn.scroll_into_view_if_needed()
+            await prompt_btn.click()
             await page.wait_for_timeout(1000)
 
-        if not is_ready:
-            raise TimeoutError("Post button remained disabled after timeout. Check file sizes or media processing.")
+            # ----------------------------------------------------------------------
+            # Step 2: Locate Modal Dialog
+            # ----------------------------------------------------------------------
+            dialog = page.get_by_role("dialog")
+            await dialog.wait_for(state="visible", timeout=10000)
+            print("Composer modal opened.")
 
-        print("Post button is active. Publishing note...")
-        await post_btn.click()
+            # ----------------------------------------------------------------------
+            # Step 3: Handle Media Attachments (Images & Video)
+            # ----------------------------------------------------------------------
+            if resolved_images:
+                print(f"Attaching {len(resolved_images)} image(s)...")
+                img_input = dialog.locator('input[type="file"][accept*="image"]').first
+                if await img_input.count() == 0:
+                    img_input = page.locator('input[type="file"][accept*="image"]').first
 
-        # Wait for modal dialog to dismiss
-        try:
-            await dialog.wait_for(state="hidden", timeout=15000)
-            print("Modal dismissed successfully.")
-        except Exception:
-            print("Note: Modal dismissal wait completed.")
+                if await img_input.count() > 0:
+                    await img_input.set_input_files([str(img) for img in resolved_images])
+                    print("Image file(s) selected.")
+                else:
+                    print("Warning: Image input element not found in modal.")
 
-        await page.wait_for_timeout(3000)
+            if resolved_video:
+                print(f"Attaching video: {resolved_video.name}...")
+                vid_input = dialog.locator('input[type="file"][accept*="video"]').first
+                if await vid_input.count() == 0:
+                    vid_input = page.locator('input[type="file"][accept*="video"]').first
 
-        # ----------------------------------------------------------------------
-        # Step 6: Extract Direct Note URL via Share -> Copy Link
-        # ----------------------------------------------------------------------
-        print("Extracting note link from the top of the feed...")
-        note_url = ""
+                if await vid_input.count() > 0:
+                    await vid_input.set_input_files(str(resolved_video))
+                    print("Video file selected.")
+                else:
+                    print("Warning: Video input element not found in modal.")
 
-        # Find the Share button on the topmost note
-        share_btn = page.get_by_role("button", name="Share").first
-        if await share_btn.count() > 0:
-            await share_btn.scroll_into_view_if_needed()
-            await share_btn.click()
-            await page.wait_for_timeout(1000)
+            # ----------------------------------------------------------------------
+            # Step 4: Enter Note Text
+            # ----------------------------------------------------------------------
+            if text:
+                print("Entering note text...")
+                editor = dialog.get_by_role("textbox", name="What's on your mind?")
+                if await editor.count() == 0:
+                    editor = dialog.get_by_role("textbox").first
 
-            # Click 'Copy link' in dropdown menu
-            copy_link_btn = page.get_by_role("menuitem", name="Copy link")
-            if await copy_link_btn.count() == 0:
-                copy_link_btn = page.get_by_role("button", name="Copy link")
-            if await copy_link_btn.count() == 0:
-                copy_link_btn = page.get_by_text("Copy link").first
+                await editor.click()
+                await editor.fill(text)
+                await page.wait_for_timeout(500)
 
-            if await copy_link_btn.count() > 0:
-                await copy_link_btn.click()
+            # ----------------------------------------------------------------------
+            # Step 5: Wait for Uploads & Post Button to Enable
+            # ----------------------------------------------------------------------
+            post_btn = dialog.get_by_role("button", name="Post")
+            if await post_btn.count() == 0:
+                post_btn = dialog.locator('button[data-testid="composer-post"]').first
+
+            print("Waiting for media processing & Post button to enable...")
+            max_wait_seconds = 120
+            start_time = time.time()
+            is_ready = False
+
+            while time.time() - start_time < max_wait_seconds:
+                if await post_btn.count() > 0 and not await post_btn.is_disabled():
+                    is_ready = True
+                    break
                 await page.wait_for_timeout(1000)
 
-                # Read link from clipboard
-                try:
-                    copied_text = await page.evaluate("() => navigator.clipboard.readText()")
-                    if copied_text and "substack.com" in copied_text:
-                        note_url = copied_text.strip()
-                except Exception as clip_err:
-                    print(f"Note on clipboard reading: {clip_err}")
+            if not is_ready:
+                raise TimeoutError("Post button remained disabled after timeout. Check file sizes or media processing.")
 
-        # Clean tab
-        if close_page_when_done:
-            await page.close()
+            print("Post button is active. Publishing note...")
+            await post_btn.click()
 
-        if note_url:
-            print("\n=======================================================")
-            print("🎉 Note published successfully!")
-            print(f"Direct Note URL: {note_url}")
-            print("=======================================================\n")
+            # Wait for modal dialog to dismiss; if it stays open the note was not posted
+            try:
+                await dialog.wait_for(state="hidden", timeout=15000)
+            except PlaywrightError:
+                raise RuntimeError(
+                    "The Substack composer did not close after clicking Post, so the note was probably not published."
+                )
+            print("Modal dismissed successfully.")
+            await page.wait_for_timeout(3000)
+
+            # ----------------------------------------------------------------------
+            # Step 6: Find the link to our own new note (never someone else's)
+            # ----------------------------------------------------------------------
+            print("Looking up the note on your own profile...")
+            note_url = None
+            try:
+                note_url = await _find_own_note_url(page, text)
+            except Exception as e:
+                print(f"Warning: could not look up the note link: {e}", file=sys.stderr)
+
+            if note_url:
+                print("\n=======================================================")
+                print("Note published successfully!")
+                print(f"Direct Note URL: {note_url}")
+                print("=======================================================\n")
+            else:
+                print("\nNote published, but its link could not be verified automatically.", file=sys.stderr)
             return note_url
-        else:
-            print("\nNote published, but direct link could not be copied automatically.")
-            return "https://substack.com/home"
+        finally:
+            if close_page_when_done:
+                try:
+                    await page.close()
+                except PlaywrightError:
+                    pass
 
 
 # ==============================================================================
