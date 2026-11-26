@@ -21,6 +21,9 @@ cp -r "$KIT/scripts/plumbing" "$KIT"/scripts/{sketch.py,doodles.py,blocks.py,bui
 [ -f "$B/scripts/scenes.py" ] || cp "$KIT/scripts/scenes.py" "$B/scripts/scenes.py"
 [ -d "$KIT/node/node_modules" ] || (cd "$KIT/node" && npm i --no-audit --no-fund >/dev/null)
 ln -sfn "$KIT/node" "$B/scripts/node"
+# transcript first: tools.py plan/find work from here on, while the media steps below still run (~2 min)
+python3 "$B/scripts/plumbing/srt_to_words.py" "$P/trimmed-1word.srt" "$B/research/words.txt" >/dev/null
+echo "words ready: $B/research/words.txt"
 cp "$KIT"/assets/fonts/*.woff2 "$B/assets/fonts/"
 cp -n "$KIT"/assets/sfx/* "$B/assets/sfx/" 2>/dev/null || true
 cp -n "$KIT"/assets/img/* "$B/assets/img/" 2>/dev/null || true   # blank.png: transparent placeholder k.video draws its frame with
@@ -56,7 +59,6 @@ if [ ! -f "$B/assets/video/pip.mp4" ]; then
 fi
 
 [ -f "$B/assets/audio/voice.m4a" ] || ffmpeg -y -v error -i "$SRC" -vn -c:a aac -b:a 192k "$B/assets/audio/voice.m4a"
-python3 "$B/scripts/plumbing/srt_to_words.py" "$P/trimmed-1word.srt" "$B/research/words.txt" >/dev/null
 
 # BGM looped with crossfades to the video length, faded out, -16 LUFS (played at volume 0.08 in build.py)
 if [ ! -f "$B/assets/audio/bgm.m4a" ]; then
