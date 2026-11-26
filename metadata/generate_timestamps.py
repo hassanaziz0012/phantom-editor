@@ -53,6 +53,7 @@ def generate_timestamps_for_project(
     target: str | Path | None = None,
     metadata_path: Path | None = None,
     profile: str | None = None,
+    save: bool = True,
 ) -> list[dict[str, str]]:
     """Generates timestamps and saves them to metadata.json for the targeted project."""
     target_path = Path(target).expanduser().resolve() if target else Path.cwd()
@@ -95,7 +96,8 @@ def generate_timestamps_for_project(
     metadata = utils.load_metadata_json(save_meta_path)
 
     metadata["timestamps"] = timestamps
-    write_metadata_json(save_meta_path, metadata)
+    if save:
+        write_metadata_json(save_meta_path, metadata)
 
     return timestamps
 

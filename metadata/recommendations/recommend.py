@@ -38,6 +38,8 @@ from metadata.recommendations.embed_my_videos import (
     MODEL_NAME as EMBEDDING_MODEL_NAME,
     build_embedding_text,
     fetch_embeddings_batch,
+    generate_video_embeddings,
+    video_ids_path_for,
     resolve_api_key,
 )
 
@@ -68,6 +70,7 @@ def get_current_video_info(
     target: Optional[str | Path] = None,
     metadata_path: Optional[Path] = None,
     description: Optional[str] = None,
+    save: bool = True,
 ) -> Tuple[Path, Path, Dict[str, Any], str, str, Optional[str]]:
     """
     Resolves project paths and extracts current video's title, description/summary, and video_id.
@@ -93,7 +96,7 @@ def get_current_video_info(
         logger.info("Description is missing in metadata.json. Generating from captions...")
         try:
             from metadata.auto_gen_desc import generate_description_for_project
-            description = generate_description_for_project(captions_path, metadata_path=save_meta_path)
+            description = generate_description_for_project(captions_path, metadata_path=save_meta_path, save=save)
             metadata["description"] = description
         except Exception as e:
             logger.warning("Could not auto-generate description from captions: %s", e)
@@ -150,17 +153,17 @@ def shortlist_candidate_videos(
 
     if not embeddings_npy_path.exists():
         logger.info("Embeddings matrix not found at %s. Generating...", embeddings_npy_path)
-        from metadata.recommendations.embed_my_videos import generate_video_embeddings
         dataset_embeddings = generate_video_embeddings(input_path=videos_json_path, output_path=embeddings_npy_path)
     else:
         dataset_embeddings = np.load(embeddings_npy_path)
-        if len(dataset_videos) != dataset_embeddings.shape[0]:
-            logger.info(
-                "Dataset count mismatch (%d videos in JSON vs %d rows in embeddings). Re-generating embeddings...",
-                len(dataset_videos),
-                dataset_embeddings.shape[0],
-            )
-            from metadata.recommendations.embed_my_videos import generate_video_embeddings
+        current_ids = [v.get("video_id") for v in dataset_videos]
+        ids_path = video_ids_path_for(embeddings_npy_path)
+        try:
+            saved_ids = json.loads(ids_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            saved_ids = None  # old cache without IDs: cannot trust the row order
+        if saved_ids != current_ids or len(dataset_videos) != dataset_embeddings.shape[0]:
+            logger.info("Embeddings are stale (video list changed or no saved video IDs). Re-generating embeddings...")
             dataset_embeddings = generate_video_embeddings(input_path=videos_json_path, output_path=embeddings_npy_path)
 
     # Compute Cosine Similarity
@@ -297,6 +300,7 @@ def recommend_videos_for_project(
     dry_run: bool = False,
     description: Optional[str] = None,
     profile: Optional[str] = None,
+    save: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Main pipeline function:
@@ -304,12 +308,13 @@ def recommend_videos_for_project(
     2. Embeds current title + summary.
     3. Finds top N similar videos from channel dataset.
     4. Uses Claude to select top 2-3 recommendations.
-    5. Saves to metadata.json.
+    5. Saves to metadata.json (unless ``save`` is False, as when the orchestrator saves).
     """
     project_dir, save_meta_path, metadata, title, description, current_video_id = get_current_video_info(
         target=target,
         metadata_path=metadata_path,
         description=description,
+        save=save,
     )
 
     print("\n" + "=" * 60)
@@ -349,7 +354,7 @@ def recommend_videos_for_project(
     # 4. Save recommendations to metadata.json
     metadata["recommendations"] = recommendations
 
-    if not dry_run:
+    if not dry_run and save:
         write_metadata_json(save_meta_path, metadata)
         logger.info("Saved %d recommendations to %s", len(recommendations), save_meta_path)
     else:

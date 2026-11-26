@@ -72,6 +72,7 @@ def generate_titles_for_project(
     channel_size: str = "small",
     thumbnail_concept: str = "none yet",
     profile: str | None = None,
+    save: bool = True,
 ) -> list[dict[str, Any]]:
     """Generates title candidates, writes titles.json, and saves the ranked list to metadata.json."""
     project_dir, default_meta_path, captions_path, title = utils.resolve_project_paths(target)
@@ -106,7 +107,8 @@ def generate_titles_for_project(
     metadata = utils.load_metadata_json(save_meta_path)
 
     metadata["titles"] = titles
-    write_metadata_json(save_meta_path, metadata)
+    if save:
+        write_metadata_json(save_meta_path, metadata)
 
     return titles
 

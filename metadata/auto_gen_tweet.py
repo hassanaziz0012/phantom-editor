@@ -41,6 +41,7 @@ def generate_tweet_for_project(
     target: str | Path | None = None,
     metadata_path: Path | None = None,
     profile: str | None = None,
+    save: bool = True,
 ) -> str:
     """Generates a promotional tweet template and saves it to metadata.json for the project."""
     project_dir, default_meta_path, captions_path, title = utils.resolve_project_paths(target)
@@ -73,7 +74,8 @@ def generate_tweet_for_project(
     metadata = utils.load_metadata_json(save_meta_path)
 
     metadata["tweetTemplate"] = tweet_template
-    write_metadata_json(save_meta_path, metadata)
+    if save:
+        write_metadata_json(save_meta_path, metadata)
 
     return tweet_template
 

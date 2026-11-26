@@ -98,6 +98,7 @@ def check_resource_links_for_project(
     target: str | Path | None = None,
     metadata_path: Path | None = None,
     profile: str | None = None,
+    save: bool = True,
 ) -> list[dict[str, str]]:
     """Finds the resources the video promises to link and saves them to metadata.json."""
     project_dir, default_meta_path, captions_path, title = utils.resolve_project_paths(target)
@@ -119,7 +120,8 @@ def check_resource_links_for_project(
 
     resources = merge_resources(found, metadata.get("resources"))
     metadata["resources"] = resources
-    write_metadata_json(save_meta_path, metadata)
+    if save:
+        write_metadata_json(save_meta_path, metadata)
 
     return resources
 

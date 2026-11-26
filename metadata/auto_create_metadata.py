@@ -171,7 +171,7 @@ def auto_create_metadata(
             # Define the AI generation tasks
             def run_description() -> str | None:
                 return retry_with_backoff(
-                    lambda: generate_description_for_project(captions_path, metadata_path=metadata_path, profile=profile),
+                    lambda: generate_description_for_project(captions_path, metadata_path=metadata_path, profile=profile, save=False),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Description generation",
@@ -179,7 +179,7 @@ def auto_create_metadata(
 
             def run_tweet() -> str | None:
                 return retry_with_backoff(
-                    lambda: generate_tweet_for_project(captions_path, metadata_path=metadata_path, profile=profile),
+                    lambda: generate_tweet_for_project(captions_path, metadata_path=metadata_path, profile=profile, save=False),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Tweet template generation",
@@ -191,7 +191,7 @@ def auto_create_metadata(
                 description = futures["description"].result() if "description" in futures else None
                 return retry_with_backoff(
                     lambda: recommend_videos_for_project(
-                        target=project_dir, metadata_path=metadata_path, description=description, profile=profile
+                        target=project_dir, metadata_path=metadata_path, description=description, profile=profile, save=False
                     ),
                     max_retries=3,
                     base_delay=2.0,
@@ -200,7 +200,7 @@ def auto_create_metadata(
 
             def run_timestamps() -> list[dict[str, str]] | None:
                 return retry_with_backoff(
-                    lambda: generate_timestamps_for_project(target=project_dir, metadata_path=metadata_path, profile=profile),
+                    lambda: generate_timestamps_for_project(target=project_dir, metadata_path=metadata_path, profile=profile, save=False),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Timestamps generation",
@@ -208,7 +208,7 @@ def auto_create_metadata(
 
             def run_titles() -> list[dict[str, Any]] | None:
                 return retry_with_backoff(
-                    lambda: generate_titles_for_project(captions_path, metadata_path=metadata_path, profile=profile),
+                    lambda: generate_titles_for_project(captions_path, metadata_path=metadata_path, profile=profile, save=False),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Titles generation",
@@ -216,7 +216,7 @@ def auto_create_metadata(
 
             def run_resources() -> list[dict[str, str]] | None:
                 return retry_with_backoff(
-                    lambda: check_resource_links_for_project(captions_path, metadata_path=metadata_path, profile=profile),
+                    lambda: check_resource_links_for_project(captions_path, metadata_path=metadata_path, profile=profile, save=False),
                     max_retries=3,
                     base_delay=2.0,
                     step_name="Resource links check",

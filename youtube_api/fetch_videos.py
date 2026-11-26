@@ -8,8 +8,9 @@ and organizes them into a list of structured Video objects.
 import os
 import sys
 import json
+import time
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -101,6 +102,23 @@ def get_uploads_playlist_id(youtube, channel_id: str) -> str:
         raise ValueError(f"Channel not found or no content details for ID: {channel_id!r}")
 
     return items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+
+CACHE_MAX_AGE_SECONDS = 24 * 3600
+
+
+def _cache_age_seconds(fetched_at_file: Path, cache_file: Path) -> float:
+    """Seconds since the cache was last refreshed (falls back to the cache file's mtime)."""
+    try:
+        fetched = datetime.fromisoformat(fetched_at_file.read_text(encoding="utf-8").strip())
+        if fetched.tzinfo is None:
+            fetched = fetched.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - fetched).total_seconds()
+    except Exception:
+        try:
+            return time.time() - cache_file.stat().st_mtime
+        except OSError:
+            return float("inf")
 
 
 def fetch_all_video_ids(youtube, uploads_playlist_id: str, cached_ids: Optional[set[str]] = None) -> tuple[list[str], bool]:
@@ -218,6 +236,9 @@ def fetch_channel_videos(
     if not str(cache_file).startswith(str(cache_dir.resolve()) + os.sep):
         raise ValueError(f"Unsafe channel ID provided: {channel_id}")
 
+    # Sidecar file holding when the cache was last refreshed (the cache file stays a plain list)
+    fetched_at_file = cache_file.with_name(cache_file.stem + ".fetched_at")
+
     # 2. Try loading cached videos
     cached_videos = []
     cached_ids = set()
@@ -263,9 +284,22 @@ def fetch_channel_videos(
         new_videos = fetch_video_details(youtube, new_video_ids)
         _log(f"      Fetched {len(new_videos)} videos from API")
 
+    # 4b. Cached stats freeze unless refreshed: re-fetch them when the cache is old
+    refreshed_videos = []
+    cache_age = _cache_age_seconds(fetched_at_file, cache_file)
+    if cached_videos and cache_age > CACHE_MAX_AGE_SECONDS:
+        _log(f"      Cache is {cache_age / 3600:.0f}h old, refreshing stats for {len(cached_videos)} cached videos …")
+        try:
+            refreshed_videos = fetch_video_details(youtube, [v.video_id for v in cached_videos])
+        except Exception as e:
+            _log(f"      Warning: Could not refresh cached stats ({e}). Using cached numbers.")
+
     # 5. Merge new videos and cached videos
     # Make sure we don't have duplicates, keeping the fresh/new versions if any conflicts occur.
+    # Cached videos missing from the refresh response (deleted/private) are kept as they were.
     all_videos_dict = {v.video_id: v for v in cached_videos}
+    for v in refreshed_videos:
+        all_videos_dict[v.video_id] = v
     for v in new_videos:
         all_videos_dict[v.video_id] = v
         
@@ -275,7 +309,7 @@ def fetch_channel_videos(
     all_videos.sort(key=lambda v: v.published_at, reverse=True)
 
     # 6. Save updated video list to JSON cache (unchanged when nothing new came back)
-    if not new_videos and cache_file.exists() and not fresh:
+    if not new_videos and not refreshed_videos and cache_file.exists() and not fresh:
         _log(f"Done! Returning {len(all_videos)} Video objects.\n")
         return all_videos
     try:
@@ -288,6 +322,8 @@ def fetch_channel_videos(
         except ValueError:
             rel_path = cache_file.name
         _log(f"      Saved {len(all_videos)} videos to cache: {rel_path}")
+        if new_videos or refreshed_videos or fresh or not fetched_at_file.exists():
+            fetched_at_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     except Exception as e:
         _log(f"      Warning: Failed to save cache to {cache_file.name} ({e})")
 
