@@ -19,9 +19,11 @@ and the measured boxes stay exact (write straight into assets/img):
   Selectors: "css=..." is CSS, anything else is the first element containing that text.
 Every target writes <name>.png and <name>.json: {"w", "h", "boxes": {text: [x, y, w, h] in image px or null}}.
 In scenes, k.shot() places the image and reads that json, so rings and marks land on the measured boxes.
+X/Twitter post URLs (x.com/<user>/status/<id>) are shot through the public embed automatically, cropped to the
+post: put them in the same targets.json, no Chrome needed.
 Plain "name=url" targets keep the old behaviour (<name>.png viewport + <name>-tall.png).
 """
-import asyncio, json, os, sys
+import asyncio, json, os, re, sys
 
 from playwright.async_api import async_playwright
 
@@ -41,7 +43,18 @@ def targets(args):
         raw = json.load(open(args[0]))
     else:
         raw = dict(a.split('=', 1) for a in args)
-    return {n: (v if isinstance(v, dict) else {'url': v}) for n, v in raw.items()}
+    return {n: x_embed(v if isinstance(v, dict) else {'url': v}) for n, v in raw.items()}
+
+
+def x_embed(t):
+    """An x.com / twitter.com post URL becomes its public embed (no login, no Chrome), cropped to the post."""
+    m = re.match(r'https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/[^/]+/status(?:es)?/(\d+)', t.get('url', ''))
+    if m:
+        t = dict(t, url='https://platform.twitter.com/embed/Tweet.html?id=%s&theme=light&dnt=true' % m.group(1))
+        t.setdefault('view', '560x1200')
+        t.setdefault('element', 'css=article')
+        t.setdefault('wait', 2)
+    return t
 
 
 async def open_page(ctx, url):
