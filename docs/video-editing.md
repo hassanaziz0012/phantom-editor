@@ -97,7 +97,5 @@ A shared utility module containing helper functions for subtitle/SRT parsing, ti
 - `parse_srt_to_timestamped_transcript(srt_path)`: Parses an SRT subtitle file into a formatted transcript with `[MM:SS]` or `[HH:MM:SS]` cues.
 - `format_srt_time(seconds)`: Converts float seconds to `HH:MM:SS,mmm` string format.
 - `parse_timestamp(val)`: Parses float seconds or `HH:MM:SS,mmm` strings into float seconds.
-- `slugify(text)`: Converts arbitrary text to a lowercase hyphenated filename-safe slug.
-- `get_google_doc_shorts(...)`: Connects to the Google Docs API using OAuth2 and parses headers (as titles) and normal text paragraphs (as bodies) for script metadata.
 
 

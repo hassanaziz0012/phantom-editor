@@ -10,7 +10,6 @@ dependencies = [
     "google-auth-httplib2>=0.3.1",
     "google-auth-oauthlib>=1.3.1",
     "groq>=1.5.0",
-    "instagrapi[video]>=2.16.0",
     "librosa>=1.0.0",
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.7.6",
@@ -18,17 +17,14 @@ dependencies = [
     "panns-inference>=0.1.1",
     "pillow>=12.2.0",
     "playwright>=1.58.0",
-    "playwright-stealth>=2.0.3",
-    "pyautogui>=0.9.54",
+    "pydantic>=2.0",
     "pygments>=2.20.0",
     "python-dotenv>=1.2.2",
-    "python-xlib>=0.33",
     "rapidfuzz>=3.14.5",
+    "requests>=2.31",
     "resend>=2.6.0",
-    "scipy>=1.17.1",
     "setuptools<70",
     "soundfile>=0.14.0",
-    "tiktok-uploader>=1.2.0",
     "torch>=2.12.1",
     "tqdm>=4.67.3",
 ]
@@ -56,7 +52,7 @@ dev-mode-dirs = ["."]
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "agentic", "broll_templates", "browser", "content", "devto", "emails", "hashnode", "ideas",
+    "agentic", "browser", "content", "devto", "emails", "ideas",
     "linkedin", "metadata", "projects", "reddit", "review", "shared", "skool", "substack",
     "twitter", "video_editing", "youtube_api",
 ]

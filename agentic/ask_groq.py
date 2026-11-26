@@ -16,8 +16,6 @@ from pydantic import BaseModel
 
 from agentic.schema_utils import build_messages, json_schema_response_format, parse_structured_response
 
-# Ensure environment variables are loaded
-
 T = TypeVar("T", bound=BaseModel)
 
 

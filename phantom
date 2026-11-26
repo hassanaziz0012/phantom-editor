@@ -42,8 +42,8 @@ COMMANDS=(
     "meta;recommend,recommendations;;py metadata.recommendations.recommend;[<project_path>] [arguments]"
     "meta;prepare-recommendations,prepare-yt-recommendations;;py metadata.recommendations.prepare_yt_recommendations;[<channel>] [--limit <int>] [--force] [--fresh] [--json]"
 
-    "publish;yt,youtube;;py youtube_api.upload_video;<video_path> [--playlist <playlist_id_or_name>] [--title <rank_or_title> | --keep-title]"
-    "publish;x,tweet,twitter;r;py twitter.post_tweet;[--image] [--substack] <tweet_content>"
+    "publish;yt,youtube;;py youtube_api.upload_video;<video_path> [--playlist <playlist_id_or_name>] [--title <rank_or_title> | --keep-title] [--set-thumbnail-for <video_id>]"
+    "publish;x,tweet,twitter;r;py twitter.post_tweet;[--image | --image-file <path>] [--substack] <tweet_content>"
     "publish;substack;;py substack.post_note;[<text>] [-f <file>] [-i <images>...] [-v <video>] [--headless]"
     "publish;linkedin;;py linkedin.new_post;[<text>] [-f <file>] [-i <images>...] [--url <url>]"
     "publish;devto;;py devto.post;<markdown_file> [-t <title>] [--tags <tags>...] [-c <cover>] [--canonical-url <url>] [--series <name>] [--schedule \"YYYY-MM-DD HH:MM\"] [--draft]"
@@ -91,11 +91,6 @@ COMMANDS=(
     "studio;research;k;py youtube_api.studio.cli;[--json]"
     "studio;vocab;k;py youtube_api.studio.cli;[metrics|dimensions]"
     "studio;dump;k;py youtube_api.studio.cli;[--out <dir>] [--periods <p>...] [--retention <int>] [--comments <int>] [--workers <int>]"
-
-    "broll;list;k;py broll_templates.broll;[<template>]"
-    "broll;find;k;py broll_templates.broll;<phrase> [--srt <word_srt>] [--after <timestamp>]"
-    "broll;render;k;py broll_templates.broll;<cue_file.json> [--srt <word_srt>] [--only <file>...] [--dry-run] [--force]"
-    "broll;clip;k;py broll_templates.broll;<template> -o <output.mp4> [--cue <phrase>] [--until <phrase>] [--var key=value...] [arguments]"
 
     "docs;open;;docs_open;"
 )

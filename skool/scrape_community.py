@@ -23,8 +23,6 @@ from urllib.parse import urljoin, urlparse
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 from pydantic import BaseModel, Field
 
-# Ensure repo root is in python path
-
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 
 # ==============================================================================

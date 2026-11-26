@@ -32,8 +32,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from playwright.async_api import async_playwright, Page
 from pydantic import BaseModel, Field
 
-# Ensure repo root is in python path for module imports
-
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 from reddit.navigate import goto_with_retries
 from reddit.reddit_json import collect_feed_items, decode_response, listing_data

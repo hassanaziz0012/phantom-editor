@@ -39,8 +39,6 @@ from typing import Any, Dict, List, Optional
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
-# Ensure repo root is in python path for module imports
-
 from reddit.reddit_json import (
     MAX_LISTING_PAGE,
     decode_response,

@@ -12,7 +12,7 @@ The project is structured into several modular directories, each responsible for
 
 Every top-level directory is a Python package, and the repo is installed into its venv in editable mode (`uv sync`), so modules import each other as `from metadata.utils import ...` with no `sys.path` changes. Run them through the `phantom` CLI, which loads `.env` once (see `shared/launch.py`). To run a module that has no `phantom` command: `uv run python -m shared.launch <module> [args]`, e.g. `uv run python -m shared.launch youtube_api.fetch_videos`. `./install.sh` links `phantom` into `~/.local/bin`.
 
-The YT Projects folder defaults to `~/Videos/YT Projects`; set `PHANTOM_PROJECTS_DIR` (in `.env` or the shell) to move it. The Chrome profile the browser automations share defaults to `~/Desktop/browser-profiles/p9222`; set `PHANTOM_CDP_PROFILE` to move it.
+The YT Projects folder defaults to `~/Videos/YT Projects`; set `PHANTOM_PROJECTS_DIR` (in `.env` or the shell) to move it. `phantom projects cleanup` archives finished projects to `~/Videos/YT Archive` by default; set `PHANTOM_ARCHIVE_DIR` to move that. The Chrome profile the browser automations share defaults to `~/Desktop/browser-profiles/p9222`; set `PHANTOM_CDP_PROFILE` to move it.
 
 ### 🎬 [Content Pipelines](pipelines.md)
 End-to-end orchestration for the 10-stage YouTube content lifecycle and single-pass video masking/trimming.
@@ -29,11 +29,6 @@ Tools for extracting, clean-up, and normalizing audio tracks.
 Automation scripts to handle video rendering, splitting, and effects.
 
 * **Main Scripts**: automated subtitle generation, rendering workflows, and timeline parsing.
-
-### 🎞️ [B-roll Templates](broll.md)
-Reusable HyperFrames B-roll clips timed to the video's word-level captions from a small cue file.
-
-* **Main Script**: `broll_templates/broll.py` (`phantom broll`)
 
 ### 🤖 [Filmora Automation](filmora-automation.md)
 Automating timeline composition and video editing workflows in Wondershare Filmora.

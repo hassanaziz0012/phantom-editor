@@ -1,22 +1,16 @@
 # Twitter (X) Integration
 
-This directory contains automation scripts to sign in and post tweets using Playwright.
+This directory contains automation scripts to post tweets and read the X feed using Playwright. They use the shared Chrome profile (see [browser/cdp.py](../browser/cdp.py)), so you stay logged in to X there; there is no separate login script.
 
 ## Scripts
 
-### [login.py](../twitter/login.py)
-Launches a non-headless browser session to allow manual login to X.com.
-
-* **Usage**: `uv run python -m shared.launch twitter.login`
-* **Output**: Saves authentication state to `auth.json` (used for subsequent automated actions).
-
 ### [post_tweet.py](../twitter/post_tweet.py)
-Automates tweeting by launching Playwright with saved credentials from `auth.json`. Supports attaching an image from the clipboard and cross-posting to Substack Notes.
+Automates tweeting by attaching Playwright to the shared Chrome profile (see [browser/cdp.py](../browser/cdp.py)). Supports attaching an image from the clipboard (`--image`, read with `wl-paste`/`xclip`) or from a file (`--image-file <path>`) and cross-posting to Substack Notes.
 
-* **Usage**: `phantom publish x [--image] [--substack] "tweet content"`
+* **Usage**: `phantom publish x [--image | --image-file <path>] [--substack] "tweet content"`
 
 ### [feed.py](../twitter/feed.py)
-Reads your X home feed for `phantom ideas from-x`. It attaches to the logged-in Chrome on port 9222 (not `auth.json`), scrolls `x.com/home`, and reads the `HomeTimeline` GraphQL responses for exact like, repost, quote, reply, bookmark and view counts. Ads are skipped and reposts count as the original post. Posts are ranked by `log10(1 + engagement per hour) + 0.5 × log10(1 + 100 × engagement per follower)`, which favours posts taking off fast and posts doing far better than their author usually does.
+Reads your X home feed for `phantom ideas from-x`. It attaches to the logged-in Chrome on port 9222 (the same shared Chrome profile), scrolls `x.com/home`, and reads the `HomeTimeline` GraphQL responses for exact like, repost, quote, reply, bookmark and view counts. Ads are skipped and reposts count as the original post. Posts are ranked by `log10(1 + engagement per hour) + 0.5 × log10(1 + 100 × engagement per follower)`, which favours posts taking off fast and posts doing far better than their author usually does.
 
 ## Video ideas from the feed
 

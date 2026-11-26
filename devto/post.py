@@ -30,8 +30,6 @@ from typing import Dict, List, Optional, Tuple
 
 from playwright.async_api import Page, async_playwright
 
-# Ensure repo root is in python path
-
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 
 # ==============================================================================

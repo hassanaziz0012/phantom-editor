@@ -18,8 +18,6 @@ import requests
 
 from agentic.schema_utils import build_messages, json_schema_response_format, parse_structured_response
 
-# Ensure environment variables are loaded
-
 logger = logging.getLogger("phantom.agentic.openrouter")
 
 T = TypeVar("T", bound=BaseModel)
@@ -52,17 +50,6 @@ def get_openrouter_api_keys() -> List[Tuple[str, str]]:
 
     indexed_keys.sort(key=lambda item: item[0])
     return [(name, val) for _, name, val in indexed_keys]
-
-
-def reset_key_index() -> None:
-    """Resets the active key index back to the first available key."""
-    global _CURRENT_KEY_INDEX
-    _CURRENT_KEY_INDEX = 0
-
-
-def get_active_key_index() -> int:
-    """Returns the current active key index in the discovered pool."""
-    return _CURRENT_KEY_INDEX
 
 
 def ask_openrouter(

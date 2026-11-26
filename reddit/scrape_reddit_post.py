@@ -23,8 +23,6 @@ from urllib.parse import urlsplit
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
-# Ensure repo root is in python path for module imports
-
 from browser.cdp import CDP_PORT, PROFILE_DIR, get_cdp_browser_context, get_clean_page
 from reddit.navigate import goto_with_retries
 from reddit.reddit_json import check_post_data, decode_response, json_url, post_fields
