@@ -11,7 +11,7 @@ Every B-roll scene is a sheet of "paper" over the face footage:
 Unless a scene's board() entry has face=False, the user's face sits in a rounded square at the bottom
 right (PIP, drawn by build.py over the scene), so the scene keeps that corner empty.
 
-Usage inside a scene function (see the API list in SKILL.md):
+Usage inside a scene function (see scenes.md, or `tools.py api`):
     k = Sk(c, 'name', kw['prev_face'], kw['next_face'], tag=(3, 'Topic label'), face=kw.get('face', True))
     k.rect('box', x, y, w, h, t=T('word'), fill=BLUE_BG)
     k.text('lbl', x, y, 'hello', 48, t=T('hello'))
