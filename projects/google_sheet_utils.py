@@ -170,26 +170,24 @@ def parse_header_mapping(headers: List[str]) -> Dict[str, int]:
         elif ("desc" in h_norm or "details" in h_norm) and mapping["description"] == -1:
             mapping["description"] = idx
 
-    # If headers are missing or not mapped, fall back to default header order
-    if mapping["project"] == -1 and len(headers) > 0 and "proj" in headers[0].lower():
+    # If headers are missing or not mapped, fall back to default header order,
+    # using only column indexes no other field has already claimed
+    taken = {i for i in mapping.values() if i >= 0}
+    if mapping["project"] == -1 and len(headers) > 0 and "proj" in headers[0].lower() and 0 not in taken:
         mapping["project"] = 0
-    if mapping["title"] == -1 and len(headers) > 1:
-        mapping["title"] = 1
-    if mapping["status"] == -1 and len(headers) > 2:
-        mapping["status"] = 2
-    if mapping["url"] == -1 and len(headers) > 3:
-        mapping["url"] = 3
-    if mapping["publish_date"] == -1 and len(headers) > 4:
-        mapping["publish_date"] = 4
-    if mapping["platform"] == -1 and len(headers) > 5:
-        mapping["platform"] = 5
+        taken.add(0)
+    for key, idx in (("title", 1), ("status", 2), ("url", 3), ("publish_date", 4), ("platform", 5)):
+        if mapping[key] == -1 and len(headers) > idx and idx not in taken:
+            mapping[key] = idx
+            taken.add(idx)
 
     return mapping
 
 
-def _project_row(project: Any, headers: List[str], col_map: Dict[str, int], platform: str) -> List[str]:
-    """The sheet row for a local project; the local folder is the source of truth."""
-    values = {
+def _owned_values(project: Any, platform: str) -> Dict[str, str]:
+    """The values for the columns the tool owns; the local folder is the source of truth.
+    Every other column is never written."""
+    return {
         "project": project.name,
         "title": project.title or "",
         "status": project.stage_name,
@@ -197,11 +195,6 @@ def _project_row(project: Any, headers: List[str], col_map: Dict[str, int], plat
         "publish_date": getattr(project, "scheduled_date", None) or getattr(project, "uploaded_date", None) or "",
         "platform": platform,
     }
-    row = [""] * len(headers)
-    for key, value in values.items():
-        if col_map[key] >= 0:
-            row[col_map[key]] = value
-    return row
 
 
 # Formats the sheet may display a Publish Date in after USER_ENTERED parses "2026-10-11"
@@ -217,15 +210,39 @@ def _as_iso_date(value: str) -> str:
     return value
 
 
-def _comparable(row: List[Any], col_map: Dict[str, int]) -> List[str]:
-    """A row as the Sheets API returns it (strings, no trailing empty cells), dates as ISO."""
-    cells = [str(c) for c in row]
-    date_col = col_map["publish_date"]
-    if 0 <= date_col < len(cells):
-        cells[date_col] = _as_iso_date(cells[date_col])
-    while cells and not cells[-1].strip():
-        cells.pop()
-    return cells
+def _escape_formula(value: Any) -> Any:
+    """Stop USER_ENTERED from turning text that starts with = + - @ into a formula."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@"):
+        return "'" + value
+    return value
+
+
+def _column_letter(idx: int) -> str:
+    letters = ""
+    idx += 1
+    while idx:
+        idx, rem = divmod(idx - 1, 26)
+        letters = chr(65 + rem) + letters
+    return letters
+
+
+def _cell_text(row: List[Any], idx: int) -> str:
+    return str(row[idx]).strip() if 0 <= idx < len(row) else ""
+
+
+def _changed_cells(row: List[Any], values: Dict[str, str], col_map: Dict[str, int]) -> Dict[int, str]:
+    """The owned cells (column index -> new value) whose current value differs from ``values``."""
+    changes = {}
+    for key, value in values.items():
+        idx = col_map.get(key, -1)
+        if idx < 0:
+            continue
+        current = _cell_text(row, idx)
+        if key == "publish_date":
+            current = _as_iso_date(current)
+        if current != str(value).strip():
+            changes[idx] = value
+    return changes
 
 
 def sync_projects_to_sheet(
@@ -271,17 +288,16 @@ def sync_projects_to_sheet(
     matched_local_names = set()
 
     stats = {"added": 0, "updated": 0, "archived": 0, "total": len(projects)}
-    new_rows = []
+    # sheet row number -> {column index: value}; only owned cells are ever written
+    updates: Dict[int, Dict[int, str]] = {}
 
-    for row in raw_rows:
+    for offset, row in enumerate(raw_rows):
+        row_num = offset + 2
         if not row or not any(str(c).strip() for c in row):
             continue
 
         def get_val(key: str) -> str:
-            col_idx = col_map.get(key, -1)
-            if 0 <= col_idx < len(row):
-                return str(row[col_idx]).strip()
-            return ""
+            return _cell_text(row, col_map.get(key, -1))
 
         row_proj = get_val("project")
         row_title = get_val("title")
@@ -292,19 +308,17 @@ def sync_projects_to_sheet(
         if row_proj:
             if row_proj not in local_projects:
                 # Folder is gone: keep the row, marked Archived
-                padded_row = (list(row) + [""] * len(headers))[:max(len(headers), len(row))]
                 status_col = col_map["status"]
-                if status_col >= 0 and str(padded_row[status_col]).strip() != ARCHIVED_STATUS:
-                    padded_row[status_col] = ARCHIVED_STATUS
+                if status_col >= 0 and _cell_text(row, status_col) != ARCHIVED_STATUS:
+                    updates[row_num] = {status_col: ARCHIVED_STATUS}
                     stats["archived"] += 1
-                new_rows.append(padded_row)
                 continue
             p = local_projects[row_proj]
             matched_local_names.add(p.name)
-            row_data = _project_row(p, headers, col_map, row_plat)
-            if _comparable(row_data, col_map) != _comparable(row, col_map):
+            changes = _changed_cells(row, _owned_values(p, row_plat), col_map)
+            if changes:
                 stats["updated"] += 1
-            new_rows.append(row_data)
+                updates[row_num] = changes
             continue
 
         # Case 2: Row has NO Project folder (manual entry, Twitter post, etc.)
@@ -323,30 +337,36 @@ def sync_projects_to_sheet(
         if matched_proj:
             matched_local_names.add(matched_proj.name)
             stats["updated"] += 1
-            new_rows.append(_project_row(matched_proj, headers, col_map, row_plat))
-        else:
-            # Preserve manual / Twitter / other row as is, padded to the header length
-            padded_row = list(row) + [""] * max(0, len(headers) - len(row))
-            new_rows.append(padded_row[:len(headers)])
+            changes = _changed_cells(row, _owned_values(matched_proj, row_plat), col_map)
+            if changes:
+                updates[row_num] = changes
+        # else: manual / Twitter / other row is left untouched
 
-    # Case 3: Add new local projects not yet in sheet
+    # Case 3: Add new local projects not yet in sheet, below the last existing row
+    next_row = len(raw_rows) + 2
     for p_name, p in local_projects.items():
         if p_name not in matched_local_names:
             stats["added"] += 1
-            new_rows.append(_project_row(p, headers, col_map, "YouTube"))
+            updates[next_row] = {
+                col_map[key]: value for key, value in _owned_values(p, "YouTube").items() if col_map[key] >= 0
+            }
+            next_row += 1
 
-    unchanged = has_headers and [_comparable(r, col_map) for r in new_rows] == [_comparable(r, col_map) for r in raw_rows]
-    if unchanged:
+    if has_headers and not updates:
         return stats
 
-    # One write: the header row if it was missing, the data from row 2, and blank
-    # rows over any leftovers when the table shrank (blank values clear those cells).
-    width = max([len(headers)] + [len(r) for r in raw_rows])
-    leftover = max(0, len(raw_rows) - len(new_rows))
-    data = [{"range": f"{sheet_name}!A2", "values": new_rows + [[""] * width] * leftover}]
+    # One write of just the changed owned cells (and the header row if it was missing).
+    # The date column is left unescaped so USER_ENTERED still parses it as a date.
+    data = []
     if not has_headers:
         data.append({"range": f"{sheet_name}!A1", "values": [DEFAULT_HEADERS]})
-    if new_rows or leftover:
+    date_col = col_map["publish_date"]
+    for row_num, cells in sorted(updates.items()):
+        for col, value in sorted(cells.items()):
+            if col != date_col:
+                value = _escape_formula(value)
+            data.append({"range": f"{sheet_name}!{_column_letter(col)}{row_num}", "values": [[value]]})
+    if data:
         service.spreadsheets().values().batchUpdate(
             spreadsheetId=sheet_id,
             body={"valueInputOption": "USER_ENTERED", "data": data},
