@@ -43,7 +43,9 @@ scenes that are **unique to this video**. Reference build: "7 practical, high RO
 The first build cost about 300k tokens. These rules keep a new one well under that.
 
 - **Don't** load the `hyperframes*` skills, their references, or the plumbing/sketch source. The API and
-  render rules below are all you need (exception: *When something breaks*). Open `kit/scripts/sketch.py` or `doodles.py` only to check one signature with `grep -n`.
+  render rules in `scenes.md` are all you need (exception: `render.md`, *When something breaks*). Don't
+  open or grep the kit source: `tools.py api [names]` prints every scene-API signature, `tools.py api --src
+  NAME` one function's source (a pattern when you add a doodle).
 - **Don't** read `reference/idle-agents-scenes.py` top to bottom. `grep -n "def s_"` it, then read one or
   two scenes if you need an example of the pattern. Look at `reference/look-1.jpg` once to see the look.
 - Read the transcript once with `python3 scripts/tools.py plan` (numbered sentences with start times),
@@ -61,14 +63,17 @@ The first build cost about 300k tokens. These rules keep a new one well under th
 - No test render for a normal video: the render path is proven. Render once, in the background, then do one
   spot-check Read of `research/final-sheet.jpg`. (Changing the kit's render path is different: test it with
   `render.sh <broll> --test FROM TO`, see step 6.)
-- Don't poll a background job. You are notified when it finishes.
+- Don't poll a background job (setup, render, a subagent). You are notified when it finishes, and
+  `tools.py` waits for setup's transcript by itself.
 
 ## Steps
 
 Keep `broll/HANDOFF.md` updated after each step (the user wants this so a run can resume after rate
 limits).
 
-1. **Setup**: run `bash $KIT/setup.sh "<project>"`. This takes about 2 min. It creates `<project>/broll/`
+1. **Setup**: run `bash $KIT/setup.sh "<project>"` with `run_in_background` (about 2 min). It writes the
+   transcript in its first seconds, so go straight on to step 2 in the same turn: `BROLL="<project>/broll"
+   python3 $KIT/scripts/tools.py plan` waits for the transcript by itself. Don't sleep, poll or tail the log. It creates `<project>/broll/`
    (HyperFrames project, kit scripts, symlinked node tools, fonts, SFX + peaks), `voice.m4a`, `words.txt`
    and a looped BGM. It also makes `face.mp4`: a few-second stream copy of `final.mp4`, or a background
    re-encode (about 4 min) if `final.mp4` predates the pipeline's 1 s keyframes, plus `pip.mp4` (the face
@@ -80,13 +85,17 @@ limits).
    id, time window, FACE or concept, what must be visible incl. exact on-screen text and what each
    ring/arrow points at, face square on/off). The reviewer agent works from it, and it helps a resume.
 2b. **Ask about real assets (one message, before writing scenes)**: list every scene where a real asset
-   would beat a drawing, in two groups: the ones you can fetch yourself (say from where) and the ones only
+   would beat a drawing, in two groups: the ones the agent can fetch (say from where) and the ones only
    the user can supply or point to (phone screenshots, private dashboards, a video link, a repo you can't
    find). Also list any name, domain or title you only know from the transcript and ask the user to
    confirm the spelling (speech-to-text gets these wrong: "watch.hustondev.me" was really
-   watch.hassandev.me, "Excalibur" was Excalidraw). While you wait for the answer, run setup and start
-   step 3 for the first group.
-3. **Assets: spawn the `broll-assets` agent (Haiku), don't fetch them yourself.** Write
+   watch.hassandev.me, "Excalibur" was Excalidraw). While you wait for the answer, start step 3 for the
+   first group. An image the user pastes into chat is not saved anywhere you or the agent can use: ask for
+   its file path instead (or let the agent produce it, e.g. a local app's UI, see *Real assets*).
+3. **Assets: spawn the `broll-assets` agent (Haiku), don't fetch them yourself.** This covers every asset
+   for the whole run, including ones that come up later (the user's 2b answer, a reviewer fix that needs a
+   re-shoot or a crop, a screenshot of a local app's UI): SendMessage the same agent, even while it is
+   still busy (the message is queued). Never fetch, render, crop or check one yourself. Write
    `broll/research/assets-request.md`, one entry per asset: name, what it should show and why (the scene),
    the source (URL, local path, YouTube link, logo slug, or "logged-in page: <where>"), the texts to measure
    for rings, and crop/privacy notes (for a recording, the record.py steps). Include every logo slug you
@@ -96,10 +105,14 @@ limits).
    the user's 2b answer brings more assets, append them to the request and SendMessage the same agent.
    It returns a table (also in `research/assets.md`): file, size, what each image shows and where the
    key detail is, missing texts, privacy crops, failures. Work from that table. Don't Read the asset images
-   yourself; the agent has checked them (exception: one Read of `research/montage-assets.jpg` if a
-   composition really depends on how an image looks). Turn failed assets into drawings, or ask the user.
+   yourself, not even to double-check privacy: the agent's privacy check is final (the user reviews the
+   video too). When the user asks for stricter privacy, put it in the request or SendMessage it to the
+   agent. (Exception: one Read of `research/montage-assets.jpg` if a composition really depends on how an
+   image looks.) Turn failed assets into drawings, or ask the user.
 4. **Write `broll/scripts/scenes.py`** from the template that is already there: `board()` plus one function
-   per scene. Then run `python3 scripts/tools.py anchors` (prints every in-scene phrase that isn't found, falls
+   per scene. First Read `/home/hassan/Desktop/programming/phantom-editor/.claude/skills/excalidraw-broll/scenes.md` once (the scene API, using screenshots, render-safe JS, motion,
+   gotchas) and run `python3 scripts/tools.py api doodles` once for the doodle signatures (the `k.*` ones are
+   in scenes.md; `tools.py api NAME` for any other exact signature). Then run `python3 scripts/tools.py anchors` (prints every in-scene phrase that isn't found, falls
    outside its scene, or lands in the last 0.8 s; silent = good; fix all before building), then
    `python3 scripts/build.py && python3 scripts/tools.py share`. share prints the
    B-roll % and flags scenes shorter than 2.3 s. Adjust the board until the split is about 80% (80-85%).
@@ -122,27 +135,12 @@ limits).
    screen long enough to read). After fixes, re-run layout.py on the changed scenes, re-snap only
    those: `bash $KIT/snap.sh <broll> snap2 "t1,t2,..."`, and SendMessage the same reviewer the snap2 folder
    plus the scene ids in frame order.
-6. **Render**: run `bash $KIT/render.sh "<project>/broll"` with `run_in_background`. Chrome only renders
-   the B-roll windows (`render.html`, packed back to back, no face square, no audio); `assemble.py` then
-   rebuilds the film with ffmpeg (face gaps from face.mp4, face square from pip.mp4, voice + BGM + SFX).
-   It waits for the face encode, delivers the result as `<project>/final.mp4` (the face-only original
-   becomes `final-face.mp4`), prints duration and loudness, writes `research/final-sheet.jpg` (24 frames)
-   and prints a timing table per stage (wait-face, build, chrome, assemble, verify, qc, sheet, deliver), also
-   appended to `research/render-timings.log`. Read the sheet once. If something is wrong, fix and re-render.
-   **QC** (`scripts/plumbing/qc.py`, ~1.5 min) checks every frame of the cut before delivery: black frames,
-   the face frozen outside B-roll, and the face a frame off `face.mp4` at each B-roll cut (a stutter). On a
-   failure render.sh does NOT deliver: it prints the film times, keeps `renders/broll.mp4`, writes
-   `research/qc.txt`, and exits 1. Report it to the user and find the cause; `QC_FORCE=1` delivers anyway
-   (only when the user says so). Run it by hand on any cut: `cd <broll> && python3 $KIT/scripts/plumbing/qc.py ../final.mp4`.
-   Measured on the Reddit-jobs video (7 min, 86% B-roll): chrome 522 s (370 s of packed B-roll, ~43 s of
-   video per minute), assemble ~290 s (about 1.5x realtime), total ~14.5 min (the old all-in-Chrome render
-   took 48 min). Time scales with B-roll seconds + film length. `--test FROM TO` renders just that span to `renders/test.mp4` (not delivered) with its own
-   `research/test-sheet.jpg`. After changing the render path, render the full film with `--test 0 <end>` and
-   run `tools.py compare renders/test.mp4 ../final.mp4` against a known-good cut (in sync: mean SSIM ~0.99+).
-   A 20 s test once passed while the full film drifted 30 s.
-   **Progress**: when the user asks how far along it is, run `python3 $KIT/progress.py "<project>/broll"`
-   (one line: stage, % done, speed, minutes left; about 0.2 s, safe to repeat). render.sh also refreshes
-   `research/progress.txt` every 30 s, so the user can `cat` it. Don't count frames or read logs by hand.
+6. **Render**: run `bash $KIT/render.sh "<project>/broll"` with `run_in_background` (15-30 min; you are
+   notified when it ends, don't poll). It renders, checks every frame (QC), delivers the cut as
+   `<project>/final.mp4` (the face-only original becomes `final-face.mp4`), prints duration and loudness and
+   writes `research/final-sheet.jpg`. Read the sheet once. **Only if** QC fails (exit 1), the render breaks, or
+   you change the kit's render path, Read `/home/hassan/Desktop/programming/phantom-editor/.claude/skills/excalidraw-broll/render.md` first. When the user asks how far along it is:
+   `python3 $KIT/progress.py "<project>/broll"`.
 7. **Report**: give the path, the B-roll %, and anything the user should check: illustrative numbers,
    claims you hedged, which real assets you used, screenshots of their private pages and what you
    cropped out, and any scene that is still a drawing because the real asset couldn't be had.
@@ -197,9 +195,6 @@ the scene, so **anything drawn under it is hidden**.
   move its big number).
 - layout.py reports anything in that corner as `under_face` (must fix). Scenes with `face=False` are
   not checked for it.
-- The constants live in `sketch.py` (`PIP`, `PIP_CLEAR`). Previews (index.html: snap.sh, layout.py) show
-  it as `<video>` clips from build.py; the final render draws it with ffmpeg in `plumbing/assemble.py`
-  (same box, rounded border + shadow, same pop in/out). Change both if you change its look.
 
 ## Make it unique (not templated)
 
@@ -218,7 +213,8 @@ paper/pan transitions. **The compositions must come from this video's content.**
   logos. Text is only labels: a few words per label, about 12 words per scene at most, except where the
   text is the subject (a typed prompt, a quote, a hero number, a list card). If a scene is a title plus
   lines of text or labelled boxes, redraw it as a picture. When you draw something reusable (a person, a
-  phone, a robot), add it to `$KIT/scripts/doodles.py` and the `D` list below so later videos get it.
+  phone, a robot), add it to `$KIT/scripts/doodles.py` with a one-line docstring (signature + where its
+  anchor point is), so later videos get it and `tools.py api` lists it.
 - No two consecutive scenes share a layout. Don't fall back to "title + three boxes".
 - Use **the user's real artefacts** where they talk about them: their logged-in pages, their own files
   (`outline.md`, repos), their usage pages, the actual product sites. This is what made the reference
@@ -231,16 +227,19 @@ paper/pan transitions. **The compositions must come from this video's content.**
 
 ## Real assets
 
-Look for these before drawing anything. The user reviews the video before it goes out, so use their own
-material freely, but check every image for secrets and private data (keys, emails, other people's names,
-client names, chat history) and crop or skip it. List what you used and cropped in the final report.
+Look for these before drawing anything, and request them from the `broll-assets` agent. The user reviews
+the video before it goes out, so use their own material freely. The agent checks every image for secrets
+and private data (keys, emails, other people's names, client names, chat history) and crops or flags it;
+its check is final. List what you used and what it cropped (from its table) in the final report.
 
 - **A video they mention** ("I made a video on this"): ask for the link if it isn't given. The agent gets
   the thumbnail and the real title; write the real title, not the half-remembered one from the transcript.
 - **Their own sites and products**: screenshot the live page with shoot.py.
 - **Their skills, scripts and code**: the real file shown as an editor image (first 36 lines), or real
   command output as a terminal (`phantom --help`). Give the agent the path if you know it.
-- **Their apps**: look for screenshots in the app's repo; otherwise ask the user for some.
+- **Their apps**: the agent looks for screenshots in the app's repo, and otherwise renders the app's own
+  frontend from the repo with a stubbed backend (how the Rambler status page was shot). Give it the repo
+  path and the state to show. Ask the user only if both fail.
 - **GitHub**: `gh repo list` / `gh release list` find the repo; shoot the public repo or release page.
   A private repo's page needs Claude in Chrome, and the user's OK to show it.
 - **Logged-in pages** (claude.ai chat, usage, dashboards): Claude in Chrome, cropped.
@@ -250,175 +249,9 @@ client names, chat history) and crop or skip it. List what you used and cropped 
 - Keep drawings for ideas that have no real-world picture: processes, comparisons, metaphors, numbers.
   A good scene often mixes both: the real screenshot with hand-drawn rings, arrows and labels on top.
 
-## Screenshots (using them in scenes)
+## Other files (Read them only when the step says so)
 
-The `broll-assets` agent fetches them (shoot.py, Claude in Chrome, fileshot, record.py; the how-to is in
-`.claude/agents/broll-assets.md`). Public-page shots come with `<name>.json` measured boxes for every
-text you asked it to measure; Chrome shots don't.
-
-- Show a screenshot with `s = k.shot(sid, 'assets/img/x.png', x, y, w=...)` (or `h=`): it draws the
-  sketchy browser frame, sizes the other side from the PNG so nothing is cropped, and returns a Shot.
-  Put rings, rects and marks on measured boxes: `k.ring('r', *s.r('Possible scam'), t=...)`; `s.pt(px, py)`
-  maps any image pixel. Never place them by eye (that cost a fix round in the Reddit-jobs video).
-  `k.img(...)` is the low-level version (you size it; object-fit crops a wrong aspect). For images with no
-  measured json (Chrome shots), `s.r_img(px, py, pw, ph, pad=)` maps an image-pixel box to a canvas box.
-- **Screen recordings** (scroll through a live site, sliders, scroll animations): ask the agent for one with
-  the record.py steps (wait / scroll to selector / scrollby / drag across a selector (fractions 0.01-0.99) /
-  click / hover), timed to the transcript; it reports when each step starts. Play it with
-  `k.video(sid, src, x, y, w, t=, dur=, url=)` inside the browser frame (w=1320 at (110, 90) fills the
-  space left of the face square).
-- Long tweets: the embed cuts them at "Show more"; if the agent flags one, crop the scene to what's shown or
-  ask the user.
-
-## API cheat sheet (`scenes.py`)
-
-Canvas is 1920×1080. Keep content inside x 96-1824 and y 54-1026, and out of the face square's corner
-(x > 1480 and y > 640) unless the scene has `face=False`. The corner tag sits at (96, 58), titles
-at about (160, 130) in 64-72 px, body text in 44-60 px, hero numbers in 150-400 px, and nothing smaller
-than 28 px. Times are **absolute seconds**: `T('phrase')` is the first match in the whole video, and
-`A(c, 'phrase')` is the first match from this scene's start, and `at(c, 'phrase', off=0)` is the same but
-never before 0.5 s into the scene (use `at` for element times inside scenes). `t=None` means the
-element is already there when the scene opens. Every `sid` is unique within its scene.
-
-```python
-k = K(c, kw, 'scene_name', n)          # n = list item for the corner tag, or omit
-# shapes (stroke=, fill=, fs='hachure'|'solid'|'cross-hatch'|'zigzag', sw=, rough_=, dash=[14,12])
-k.rect(sid, x, y, w, h, t=, d=0.5, ...)      k.ellipse(sid, cx, cy, w, h, t=)
-k.line(sid, x1, y1, x2, y2, t=)              k.poly(sid, pts, t=, closed=False)   k.curve(sid, pts, t=)
-k.arrow(sid, [(x,y),(x,y),...], t=, head=24, both=False, stroke=, sw=)   # >2 points = curved
-k.check(sid, x, y, s=1, t=, color=GREEN)     k.cross(sid, x, y, s=1, t=)     # with click/pop SFX
-k.strike(sid, x, y, w, t=)  k.underline(sid, x, y, w, t=, color=)  k.ring(sid, x, y, w, h, t=)   # ring = hand circle
-k.mark(sid, x, y, w, h, t=, color=YEL_BG)    # highlighter wiped in behind text
-# text: anim 'write' (hand-written wipe) | 'pop' | 'rise' | 'fade'; align 'l'|'c'|'r' (x is the anchor)
-k.text(sid, x, y, 'text\nlines', size, t=, color=, w=None, align='l', anim='write', d=None, code=False)
-k.box(sid, x, y, w, h, 'label', size, t=, stroke=, fill=, anim='draw'|'pop', shape='rectangle'|'ellipse', code=)
-s = k.shot(sid, 'assets/img/x.png', x, y, w=None, h=None, t=None, url=None)  # s.r('text') -> (x,y,w,h), s.pt(px,py)
-k.img(sid, 'assets/img/x.png', x, y, w, h, t=None, url='site.com/path', bar=52)
-k.video(sid, 'assets/video/rec.mp4', x, y, w, t=, dur=, url=)   # screen recording in a browser frame
-k.logo(sid, 'simpleicons-slug', x, y, size, t=, color=None)
-k.raw(html)  k.js(code)  k.L(t_abs) -> scene time   k.g(op, args, **style) -> svg group for k.svg(sid, inner, t)
-return k.done()
-```
-
-- `D` (doodles). Signatures are below, so don't open doodles.py. Every one is `D.name(k, sid, ...)`; `t` is absolute (None = already there).
-  ```
-  browser(x, y, w, h, t, url)              # empty window; content starts at y + 52
-  code_file(x, y, w, h, t, title, seed)    # coloured code lines; returns [(x, y, w)] per line to ring/strike
-  file_icon(x, y, w, h, label, t, stroke=GREEN, fill, size=60, code=True)
-  lightbulb(cx, cy, t, color, fill)        target(cx, cy, t, color=RED, r=260)
-  gauge(gx, gy, r, t, to_deg=128, label)   # needle swings on t; gx, gy = dial centre
-  prompt(x, y, w, h, text, t, until=None, size=56, title=None, keys=True)   # typed t..until, key SFX
-  bubble(x, y, w, h, text, t, size=40, stroke=CLAUDE, fill=CLAUDE_BG, code=True)   # pops, with SFX
-  scroller(x, y, w, h, scene_dur, n=16, speed=1500)   # endless feed of cards; pass c.dur
-  counter(x, y, a, b, t, d=0.8, size=200, color=RED, prefix='', suffix='', align='l', w=None)
-  sticky(x, y, w, h, text, t, size=46, fill=YEL_BG, stroke=ORANGE)
-  bars(x, y, rows, t, max_w=1200, h=70, gap=50, label_w=180)   # rows=[(label, frac, stroke, fill, t)]
-  card(x, y, w, h, t, stroke=INK, fill='#fff', fs='solid', seed=0)   # tiny post/job card for piles, feeds
-  person(cx, cy, s=1.0, t, color, sign=None, sign_color, sign_fill, size=30)   # hip centre; ~190*s tall
-  robot(cx, cy, s=1.0, t, color, fill=CLAUDE_BG)   # the agent; hip centre; ~230*s tall, ~165*s wide
-  phone(x, y, w, h, t)     # screen = (x+18, y+60, w-36, h-110)
-  monitor(x, y, w, h, t, color, fill)      # (x, y, w, h) = the screen; stand below to y + 1.18*h
-  flag(x, y, t, color=RED, fill, s=1.0)    # pole foot at (x, y), cloth to the right, ~170*s tall
-  trash(x, y, w=150, h=180, t, color=GREY) # top-left of the lid
-  clock(cx, cy, r, t) + pie(cx, cy, r, frac, t, color=RED, fill, start=0.0)   # shade a share of the hour
-  envelope(x, y, w=150, h=100, t)          folder(x, y, w=160, h=120, t, color=ORANGE, fill=YEL_BG)
-  magnifier(cx, cy, r=70, t)               # lens centre; handle runs to the bottom right (~1.65*r)
-  shield(cx, y, w=240, t, color=GREEN, fill)   # top centre at (cx, y), 1.2*w tall
-  ```
-- `blocks`: `LIST.update(title=, recap_title=, items=[...])`, `s_listcard` (`n=, sub=, item_at=, sub_at=`,
-  `head_at=` on the first card, or `recap=True`; `check_x=860` with the face square), `tag(n)`. A board
-  entry: `(t, blocks.s_listcard, {'n': 3, 'check_x': 860, 'item_at': T('phrase')})`. `item_at` must land at least
-  1 s before the card ends, or the label is still being written when the card exits.
-- Colours: `INK GREY LGREY FAINT`, then `RED/RED_BG GREEN/GREEN_BG BLUE/BLUE_BG ORANGE/YEL_BG VIOLET/VIO_BG
-  CLAUDE/CLAUDE_BG`. Excalidraw's palette; one accent per idea.
-- SFX: `sfx(name, hit_abs, vol)`. Volume 0.15-0.3, and the peak lands on `hit`. Names: whoosh,
-  whoosh-short, whoosh-high, whoosh-low, pop, pop-low, click, click-soft, key-press, typing, chime, sparkle,
-  impact-bass-1, riser. Transitions add their own whooshes. Add effects only for visible hits: a number
-  landing, a stamp, typing. `check()`, `cross()` and `bubble()` already add their own sound.
-- JS helpers in `k.js(...)`: `COUNT(sel,t,a,b,d,fmtInt)`, `POPIN(sel,t)`, `RISE`, `FADE`, `WRITE`,
-  `DRAW(sel+' .o path',t,d)`. Use `tl.fromTo(...)` for anything custom, with ids written as `#@@-sid`.
-
-## Custom JS / HTML (k.js, k.raw): the render rules you must keep
-
-The `k.*` helpers already follow these. They only matter when you write your own markup or tweens.
-
-- Use `tl.fromTo(...)` with explicit start and end states, never `tl.from`. Every scene is re-seeked, and
-  `from` drifts.
-- Nothing may depend on wall-clock time: no `Date.now()`, no unseeded `Math.random()` (use `random.Random(seed)`
-  in Python at build time), no timers, no `repeat: -1`, no `requestAnimationFrame`, no network fetches. Every
-  frame must be a function of timeline time.
-- Don't put a CSS `transform` on an element that GSAP also transforms; put the start state inside `fromTo`.
-  Animate transforms, `opacity` and `clip-path`, never `left/top/width/height`. Never tween
-  `display`/`visibility`.
-- Prefix every id and selector with `@@-` (it becomes the scene id). A bare class selector hits other
-  scenes.
-- Asset paths are root-relative (`assets/img/x.png`), even inside a scene.
-- `%` inside %-formatted Python strings must be written `%%`.
-
-## Motion craft (keep it feeling hand-made, not generated)
-
-- Arrivals use long-tailed eases (`expo.out`, `back.out(1.7)` for pops). Exits are 40-50% shorter.
-  Elements in a group overlap: the next starts when the previous is 30-50% done.
-- Once a title or label has landed, it stays still. No floating, pulsing or breathing loops, and no slow
-  creeping zoom. Keep the motion going elsewhere instead: the next stroke drawing, a counter, a scrolling
-  feed, a needle swinging.
-- Vary how things enter within a video: hand-written wipe, pop, rise, draw-on, a counter, a stamp. Don't
-  use one entrance for everything.
-- One accent colour per idea, plus one highlighter mark per scene at most.
-
-## When something breaks that this page doesn't cover
-
-Only then load `/hyperframes-cli` (CLI and render errors) or `/hyperframes` (the composition contract), and
-read only the section you need. Fix generic bugs in `$KIT` (not just in the project copy) and add a line to
-Gotchas so the next run inherits the fix.
-
-## Gotchas (already solved; don't re-learn)
-
-- HyperFrames needs keyframes at most ~1 s apart or face clips freeze. The pipeline encodes `final.mp4`
-  with `-g 30`, so setup.sh just copies its video stream. It re-encodes only an older `final.mp4` whose
-  keyframes are seconds apart. build.py only puts face
-  clips where the face is visible. One long `<video>` hits PLAN_TOO_LARGE (a 2 GB cap that can't be raised
-  from the CLI).
-- `npx hyperframes render --start/--end` still extracts all video frames and mixes the whole film's audio.
-  Use `render.sh <broll> --test FROM TO` instead: it builds a render.html with only the windows touching
-  that span (RENDER_SPAN), so a test costs what its frames cost.
-- A text element and the span inside it must have different ids, or `COUNT` overwrites the whole line.
-- Rotate SVG pieces with `svgOrigin` on an inner `<g>`, never on the `<svg>`.
-- `est_w(text, size) ≈ len*size*0.5` is only an estimate. Put check columns, rings and underlines at
-  fixed x values. layout.py prints each text's real box (x,y WxH) when it reports it, so use those numbers
-  instead of guessing; rings and underlines on a word still need a look on the snapshots.
-- A long label inside `k.box` wraps; make the box wider or the font smaller. Text placed at the right edge
-  with `align='l'` overflows, so keep x + width ≤ 1824.
-- Phrases repeat across a video, which is why scenes use `A(c, ...)`. `T('anyway')` once matched an earlier
-  "use anyway". In `board()`, pass `T('phrase', after=seconds)` when a phrase is ambiguous.
-- Transcript word times are sometimes slightly out of order. Anchor on the first word of a phrase.
-- The B-roll root is transparent and the paper sheet covers the face. Never put a background on `#root`.
-- The face square is a second set of `<video>` clips (ids `pipNN`, track 3, z-index 3) placed only over
-  B-roll runs, and animated from the main timeline in index.html (`core.CFG['main_js']`). They play
-  `pip.mp4`, a 360x360 crop that setup.sh makes, never `face.mp4`: the renderer extracts video frames at
-  the source size, and 1080p frames under every B-roll scene came to 4 GB, twice the PLAN_TOO_LARGE cap.
-  This now only matters for previews: render.sh renders render.html, which has no face square and only
-  the face footage inside B-roll windows (the paper slide edges).
-- simple-icons dropped some brands (`openai`). Fetch the old icon into `assets/logos/<name>.svg` from
-  `https://cdn.jsdelivr.net/npm/simple-icons@9.21.0/icons/<name>.svg`; `k.logo` picks it up.
-- `s_listcard` scales its circles and labels with the row step, so 10-13 item lists fit (13 tasks video).
-  With the face square, pass `check_x=860` so the done-ticks clear the big number's ellipse.
-- Excalifont digits sit high in their line box: a big number placed at the top of its circle by line-height
-  looks pushed up (user flagged it in the 13-tasks video). `s_listcard` places it at `cy - size*0.5125`
-  (glyph centre on the ellipse centre) and drops two-digit numbers to 330 px. Use the same offset for any
-  big number you centre in a shape yourself.
-- `k.video` draws its frame with `assets/img/blank.png` (setup.sh copies it from `kit/assets/img`). A clip
-  shorter than its scene leaves an empty frame after it ends: put a still of its last frame under it with
-  `k.img(..., x, y + 52, w, video_h, frame=False)` at the same `t`.
-- `k.video` clips sit inside a scene composition with scene-local `data-start`; `tools.py check` warns
-  `nested_media_start_basis_ambiguous`, which is expected (verified in the packed render, Fable 5.2 video).
-- Root-level clip times (face clips, scene hosts, face squares) go through `core.clip_span(t0, t1)` and
-  `core.media_start(t)`, never a hand-written `"%.3f"`. Edges rounded to ms on their own landed just after their
-  frame: back-to-back face clips left one frame no clip covered (a black flash at a window start: Chinese-models
-  10:51 and 7:14, end-of-session 0:37). HyperFrames also floors the media time, so a media start rounded down
-  (621.333 for 621.3333) showed the previous frame: the face inside a window ran a frame behind face.mp4, a
-  stutter at the cut. build.py fails with "covered by no clip" if render.html still has an uncovered frame.
-- `tools.py check` reports `multiple_root_compositions` (index.html + render.html). Expected: build.py writes
-  both on purpose and render.sh passes `-c render.html` (Chinese-models video, Nov 2026).
-- Speech-to-text splits brand names into separate words ("open AI", "deep seek") and keeps symbols on numbers
-  ("90%"). Before the first build, run `tools.py anchors` to catch these, not trial-and-error builds.
+- `scenes.md`: at step 4, once. Scene API cheat sheet, using screenshots, render-safe JS/HTML, motion craft,
+  scene-writing gotchas.
+- `render.md`: only when QC fails, the render breaks, or you change the render path or the kit. Render
+  details, QC, test renders, kit internals and their gotchas.
