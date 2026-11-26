@@ -3,7 +3,8 @@
     python3 <kit>/scripts/plumbing/qc.py renders/broll.mp4      # or ../final.mp4, renders/test.mp4
 Reads research/render-plan.json (windows, face-square runs, span). Checks, on the finished video:
   * black frames: any frame whose mean luma is near black (one frame is enough to fail);
-  * freezes: the picture frozen >= 0.5 s outside the B-roll runs (where only the face is on screen);
+  * freezes: the picture frozen >= 0.5 s outside the B-roll runs (where only the face is on screen); a freeze
+    that face.mp4 itself has at the same film time is in the recording, so it is noted, not failed;
   * cut alignment: at every B-roll window edge the face is matched frame by frame against face.mp4;
     the face inside a window running a frame early/late is a stutter at the cut.
 Writes research/qc.txt; exit 1 when anything fails (render.sh then does not deliver).
@@ -42,6 +43,20 @@ def scan(video):
     return lum, list(zip(starts, ends))
 
 
+def source_frozen(fa, fz):
+    """True when face.mp4 (film timeline) is itself frozen over film fa-fz: a freeze in the recording, not the render."""
+    if not os.path.exists(FACE):
+        return False
+    t0 = max(0.0, fa - 1.0)
+    r = subprocess.run(['ffmpeg', '-v', 'info', '-nostats', '-ss', '%.3f' % t0, '-t', '%.3f' % (fz - fa + 2.0),
+                        '-i', FACE, '-an', '-vf', 'scale=192:108,freezedetect=n=0.003:d=0.3', '-f', 'null', '-'],
+                       capture_output=True, text=True)
+    starts = [float(x) + t0 for x in re.findall(r'freeze_start: ([\d.]+)', r.stderr)]
+    ends = [float(x) + t0 for x in re.findall(r'freeze_end: ([\d.]+)', r.stderr)]
+    ends += [fz + 1.0] * (len(starts) - len(ends))
+    return any(a <= fa + 0.1 and fz - 0.1 <= z for a, z in zip(starts, ends))
+
+
 def frames(video, k0, n, fps):
     """n frames from frame index k0 (seek a quarter frame early: an accurate seek keeps frames >= the time)."""
     r = subprocess.run(['ffmpeg', '-v', 'error', '-ss', '%.4f' % max(0.0, (k0 - 0.25) / fps), '-i', video,
@@ -71,7 +86,7 @@ def edge_shift(video, film_k, out_k, fps, n=12):
 def main(video):
     plan = json.load(open(PLAN))
     fps, (s0, s1) = plan['fps'], plan['span']
-    problems = []
+    problems, notes = [], []
     lum, freezes = scan(video)
     if not lum:
         sys.exit('qc: could not read %s' % video)
@@ -83,7 +98,10 @@ def main(video):
     for a, z in freezes:
         fa, fz = a + s0, z + s0
         if not any(ra - 0.4 <= fa and fz <= rz + 0.4 for ra, rz in runs):
-            problems.append('frozen picture outside B-roll: film %.2f-%.2f' % (fa, fz))
+            if source_frozen(fa, fz):
+                notes.append('source freeze (in face.mp4 too, ignored): film %.2f-%.2f' % (fa, fz))
+            else:
+                problems.append('frozen picture outside B-roll: film %.2f-%.2f' % (fa, fz))
     bad_edges, checked = [], 0
     for a, z, _ in plan['windows']:
         # face from the packed render: from the window start until the paper covers it, and the last frames
@@ -100,6 +118,7 @@ def main(video):
     if bad_edges:
         problems.append('face off by a frame at B-roll cuts (stutter): ' + '; '.join(bad_edges))
     lines = ['qc %s: %d frames, %d freezes, %d cut edges checked' % (video, len(lum), len(freezes), checked)]
+    lines += ['note ' + n for n in notes]
     lines += ['FAIL ' + p for p in problems] or ['PASS']
     os.makedirs('research', exist_ok=True)
     with open('research/qc.txt', 'w') as f:
