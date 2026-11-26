@@ -1,9 +1,13 @@
 import os
 import subprocess
-import uuid
+import re
+import shutil
 import sys
+import tempfile
+import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import groq
 from groq import Groq
 
 from video_editing.utils import format_srt_time, get_video_info
@@ -46,8 +50,46 @@ def init_groq_clients():
 
     return [Groq(api_key=k, timeout=300.0, max_retries=0) for k in api_keys]
 
-def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
-    """Checks audio file size and splits into chunks (guaranteeing <= 20 MB each) if exceeding Groq limit."""
+CHUNK_TARGET_SECONDS = 300.0   # aim for 5-minute chunks
+SILENCE_SEARCH_WINDOW = 30.0   # look for a silence within +/- this many seconds of the target cut
+
+
+def detect_silences(audio_path):
+    """Returns a list of (start, end) silence intervals found by ffmpeg silencedetect."""
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-i", audio_path,
+         "-af", "silencedetect=noise=-35dB:d=0.3", "-f", "null", "-"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+    )
+    starts = [float(m) for m in re.findall(r"silence_start: (-?[\d.]+)", result.stderr)]
+    ends = [float(m) for m in re.findall(r"silence_end: (-?[\d.]+)", result.stderr)]
+    return list(zip(starts, ends))
+
+
+def choose_cut(silences, start_time, total_duration, max_duration):
+    """Returns the end time of the chunk starting at start_time.
+
+    Cuts in the middle of the silence closest to the target, so no word is split;
+    falls back to a hard cut at the target if there is no silence nearby.
+    """
+    target = start_time + max_duration
+    if target >= total_duration - 1.0:
+        return total_duration
+    best = None
+    for s_start, s_end in silences:
+        mid = (s_start + s_end) / 2.0
+        if abs(mid - target) <= SILENCE_SEARCH_WINDOW and mid > start_time + 10.0:
+            if best is None or abs(mid - target) < abs(best - target):
+                best = mid
+    return best if best is not None else target
+
+
+def prepare_audio_chunks(input_path, base_audio, scratch_dir, temp_files=None):
+    """Checks audio file size and splits into chunks (guaranteeing <= 20 MB each) if exceeding Groq limit.
+
+    Chunk files are written to scratch_dir. Cuts are placed at silences near the
+    5-minute mark so words are not lost at the seams.
+    """
     file_size = os.path.getsize(base_audio)
 
     # If base_audio itself is already within safe limit (<= 20 MB), process directly
@@ -59,7 +101,7 @@ def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
         }]
 
     print(f"Audio size ({file_size / (1024*1024):.2f} MB) exceeds the Groq limit of 25 MB.")
-    print("Splitting audio into chunks using FFmpeg...")
+    print("Splitting audio into chunks at silences using FFmpeg...")
 
     # Use original video duration as authoritative source; FLAC duration from ffprobe can be unreliable
     video_info = get_video_info(input_path)
@@ -68,17 +110,20 @@ def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
         audio_info = get_video_info(base_audio)
         total_duration = audio_info.duration
 
+    silences = detect_silences(base_audio)
+
     audio_chunks = []
     chunk_index = 0
     start_time = 0.0
-    default_chunk_duration = 300.0  # 5 minutes default chunk length
+    max_duration = CHUNK_TARGET_SECONDS
 
     while start_time < total_duration:
-        chunk_duration = min(default_chunk_duration, total_duration - start_time)
+        end_time = choose_cut(silences, start_time, total_duration, max_duration)
+        chunk_duration = end_time - start_time
         if chunk_duration <= 0.1:
             break
 
-        chunk_file = f"temp_chunk_{temp_id}_{chunk_index:03d}.flac"
+        chunk_file = os.path.join(scratch_dir, f"chunk_{chunk_index:03d}.flac")
 
         while True:
             split_cmd = [
@@ -106,13 +151,13 @@ def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
             if c_size <= SAFE_CHUNK_BYTES or chunk_duration <= 10.0:
                 break
 
-            # If chunk is larger than safe threshold and can be halved, retry
+            # Chunk is larger than the safe threshold: halve the target and re-pick a silence
             if os.path.exists(chunk_file):
                 os.remove(chunk_file)
-            chunk_duration /= 2.0
+            max_duration = chunk_duration / 2.0
+            chunk_duration = choose_cut(silences, start_time, total_duration, max_duration) - start_time
 
         if os.path.exists(chunk_file) and os.path.getsize(chunk_file) > 0:
-            temp_files.append(chunk_file)
             audio_chunks.append({
                 "index": chunk_index,
                 "path": chunk_file,
@@ -121,11 +166,66 @@ def prepare_audio_chunks(input_path, base_audio, temp_id, temp_files):
             chunk_index += 1
 
         start_time += chunk_duration
+        max_duration = CHUNK_TARGET_SECONDS
 
     return audio_chunks
 
-def transcribe_single_chunk(chunk_info, client, model_name, total_chunks):
-    """Transcribes a single audio chunk via Groq API and adjusts segment/word offsets."""
+def _retry_delay(exc, attempt):
+    """Seconds to wait before the next attempt (honours Retry-After when present)."""
+    delay = min(2.0 * (attempt + 1), 20.0)
+    response = getattr(exc, "response", None)
+    try:
+        retry_after = float(response.headers.get("retry-after")) if response is not None else None
+    except (TypeError, ValueError):
+        retry_after = None
+    if retry_after is not None:
+        delay = max(delay, min(retry_after, 60.0))
+    return delay
+
+
+def _is_transient(exc):
+    """True for rate limits (429), timeouts, 5xx and connection errors."""
+    if isinstance(exc, (groq.APIConnectionError, groq.APITimeoutError)):
+        return True
+    if isinstance(exc, groq.APIStatusError):
+        return exc.status_code in (408, 409, 429) or exc.status_code >= 500
+    return False
+
+
+def transcribe_single_chunk(chunk_info, clients, model_name, total_chunks, start_client=0):
+    """Transcribes a single audio chunk via Groq, retrying transient failures with the next key.
+
+    Rate limits (429) and transient errors (5xx, timeouts, connection errors) are retried
+    by rotating through the configured keys with a short backoff. Gives up with a clear
+    error once the attempt cap is reached.
+    """
+    if not isinstance(clients, (list, tuple)):
+        clients = [clients]
+    max_attempts = min(max(3, len(clients) * 2), 8)
+    last_exc = None
+    for attempt in range(max_attempts):
+        client = clients[(start_client + attempt) % len(clients)]
+        try:
+            return _transcribe_chunk_once(chunk_info, client, model_name, total_chunks)
+        except Exception as exc:
+            if not _is_transient(exc):
+                raise
+            last_exc = exc
+            if attempt + 1 >= max_attempts:
+                break
+            delay = _retry_delay(exc, attempt)
+            print(f"Chunk {chunk_info['index'] + 1}/{total_chunks}: {type(exc).__name__} "
+                  f"({exc}); retrying with next key in {delay:.0f}s "
+                  f"(attempt {attempt + 2}/{max_attempts})...")
+            time.sleep(delay)
+    raise RuntimeError(
+        f"Chunk {chunk_info['index'] + 1}/{total_chunks} failed after {max_attempts} attempts "
+        f"across {len(clients)} Groq key(s); last error: {type(last_exc).__name__}: {last_exc}"
+    ) from last_exc
+
+
+def _transcribe_chunk_once(chunk_info, client, model_name, total_chunks):
+    """Single Groq request for one chunk; adjusts segment/word offsets."""
     chunk_path = chunk_info["path"]
     offset = chunk_info["offset"]
     idx = chunk_info["index"]
@@ -179,9 +279,10 @@ def transcribe_chunks_parallel(audio_chunks, clients, model_name, max_threads=4)
             executor.submit(
                 transcribe_single_chunk,
                 chunk,
-                clients[i % len(clients)],
+                clients,
                 model_name,
-                total_chunks
+                total_chunks,
+                i % len(clients)
             ): chunk["index"]
             for i, chunk in enumerate(audio_chunks)
         }
@@ -269,9 +370,9 @@ def transcribe_video_cloud(input_path=None, model_name="whisper-large-v3", outpu
 
     clients = init_groq_clients()
 
-    temp_files = []
+    # Scratch dir lives inside the input file's folder (not /tmp, not cwd); only it is removed.
+    scratch_dir = tempfile.mkdtemp(prefix=".transcribe-", dir=os.path.dirname(os.path.abspath(input_path)))
     try:
-        temp_id = uuid.uuid4().hex[:8]
 
         # 1. Determine if input is audio or video
         is_audio = is_audio_file(input_path)
@@ -280,15 +381,14 @@ def transcribe_video_cloud(input_path=None, model_name="whisper-large-v3", outpu
             # Audio files do not need raw audio extraction unless preview slice is requested
             base_audio = input_path
         else:
-            extracted_audio = f"temp_extracted_{temp_id}.flac"
-            temp_files.append(extracted_audio)
+            extracted_audio = os.path.join(scratch_dir, "extracted.flac")
             duration = 5 if preview else None
             print(f"Extracting audio to {extracted_audio}...")
             extract_audio(input_path, extracted_audio, sample_rate=16000, codec="flac", duration=duration)
             base_audio = extracted_audio
 
         # 2. Determine and split into audio chunks if needed
-        audio_chunks = prepare_audio_chunks(input_path, base_audio, temp_id, temp_files)
+        audio_chunks = prepare_audio_chunks(input_path, base_audio, scratch_dir)
 
         # 3. Transcribe audio chunks in parallel
         merged_segments, merged_words = transcribe_chunks_parallel(
@@ -301,13 +401,7 @@ def transcribe_video_cloud(input_path=None, model_name="whisper-large-v3", outpu
         )
 
     finally:
-        # Cleanup temporary files
-        for path in temp_files:
-            if os.path.exists(path):
-                try:
-                    os.remove(path)
-                except Exception as e:
-                    print(f"Warning: Failed to delete temporary file {path}: {e}")
+        shutil.rmtree(scratch_dir, ignore_errors=True)
 
 if __name__ == "__main__":
     import argparse

@@ -87,37 +87,12 @@ use_existing_raw_wav() {
     return 1
 }
 
-# Prefer /dev/shm (RAM disk) for intermediate audio work so that raw audio
-# extraction, DeepFilterNet chunk splitting/normalization and the normalized
-# WAV output all get their intermediate I/O off the physical disk. Falls back
-# to a standard mktemp directory when /dev/shm is unavailable, unwritable, or
-# too small for the estimated working set. Caller must set up a cleanup trap.
+# Create a uniquely named hidden scratch dir next to the input file (inside that
+# project's folder; never /tmp, /dev/shm or a shared name like "temp"). Only this
+# dir is ever removed. Caller must set up a cleanup trap.
 make_tmp_dir() {
     local INPUT_FILE="$1"
-    local SHM_DIR=/dev/shm
-    local NEEDED_MB AVAIL_MB DURATION_MB
-
-    # Estimate the RAM-disk working set from the real audio duration:
-    # ~0.5 MiB per audio second covers raw mono 16-bit extraction, the
-    # noise-reduced WAV, and a 24-bit stereo normalized output, worst case.
-    DURATION_MB=$(ffprobe -v error -show_entries format=duration \
-        -of default=noprint_wrappers=1:nokey=1 "$INPUT_FILE" 2>/dev/null \
-        | awk '{printf "%d", ($1 + 1) / 2}')
-    if [[ -n "$DURATION_MB" && "$DURATION_MB" -gt 0 ]]; then
-        NEEDED_MB=$(( DURATION_MB + 128 ))
-    else
-        NEEDED_MB=128
-    fi
-
-    if [[ -d "$SHM_DIR" && -w "$SHM_DIR" ]]; then
-        AVAIL_MB=$(df -Pm "$SHM_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
-        if [[ -n "$AVAIL_MB" && "$AVAIL_MB" -ge "$NEEDED_MB" ]]; then
-            mktemp -d -p "$SHM_DIR" tmp_audio_XXXXXX
-            return 0
-        fi
-        echo "Warning: /dev/shm unavailable or low on space (have ${AVAIL_MB:-unknown}MiB, need ~${NEEDED_MB}MiB); using standard temp dir." >&2
-    fi
-    mktemp -d
+    mktemp -d "$(dirname "$INPUT_FILE")/.process-audio.XXXXXX"
 }
 
 process_video() {
@@ -136,12 +111,12 @@ process_video() {
         local PROCESSED_WAV="$TEMP_DIR/processed-audio.wav"
         
         echo "--- Step 1: Creating temp directory ---"
-        # Created by make_tmp_dir (prefer /dev/shm RAM disk, fallback via mktemp -d)
+        # Created by make_tmp_dir (hidden unique dir next to the input file)
         
         # Guarantee cleanup on success or error: the calling subshell's
         # 'set -e' would otherwise exit before the explicit 'rm -rf' below
         # if any processing step fails.
-        trap 'rm -rf "$TEMP_DIR"' EXIT
+        trap "rm -rf '$TEMP_DIR'" EXIT
         
         echo "--- Step 2: Extracting RAW audio ---"
         use_existing_raw_wav "$RAW_WAV" || "$SCRIPT_DIR/extract_wav_from_mp4.sh" "$INPUT_MP4" --output-file "$RAW_WAV"
@@ -160,9 +135,9 @@ process_video() {
             echo "Pipeline mode: Processed audio saved to $OUTPUT_MP4"
         else
             echo "--- Step 5: Remuxing normalized audio into video ---"
-            ffmpeg -y -i "$INPUT_MP4" -i "$NOISE_REDUCED_WAV" \
+            ffmpeg -y -i "$INPUT_MP4" -i "$PROCESSED_WAV" \
                 -c:v copy -map 0:v:0 -map 1:a:0 \
-                -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a aac -b:a 384k -ac 2 "$OUTPUT_MP4" \
+                -c:a aac -b:a 384k -ac 2 "$OUTPUT_MP4" \
                 -hide_banner -loglevel warning
         fi
         
@@ -174,17 +149,17 @@ process_video() {
         
         echo "Target Directory: $FILE_DIR"
         
-        local TEMP_DIR="$FILE_DIR/temp"
+        local TEMP_DIR
+        TEMP_DIR=$(make_tmp_dir "$INPUT_MP4")
         local RAW_WAV="$TEMP_DIR/raw-audio.wav"
         local NOISE_REDUCED_WAV="$TEMP_DIR/noise-reduced.wav"
         local PROCESSED_WAV="${OUTPUT_MP4:-$FILE_DIR/processed-audio.wav}"
         local FINAL_MP4="$FILE_DIR/after-audio-processing.mp4"
         
         echo "--- Step 1: Creating temp directory ---"
-        mkdir -p "$TEMP_DIR"
         # Guarantee cleanup if any processing step fails later (set -e would
         # otherwise exit before the 'rm -rf' at the end of this branch).
-        trap 'rm -rf "$TEMP_DIR"' EXIT
+        trap "rm -rf '$TEMP_DIR'" EXIT
         
         echo "--- Step 2: Extracting RAW audio ---"
         use_existing_raw_wav "$RAW_WAV" || "$SCRIPT_DIR/extract_wav_from_mp4.sh" "$INPUT_MP4" --output-file "$RAW_WAV"

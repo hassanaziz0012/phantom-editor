@@ -18,7 +18,8 @@ from pathlib import Path
 from projects.current_pipeline import VIDEO_EXTENSIONS
 from shared.paths import YT_PROJECTS_DIR
 
-YT_ARCHIVE_DIR = Path.home() / "Videos" / "YT Archive"
+# Where finished projects are archived. PHANTOM_ARCHIVE_DIR overrides it (e.g. in .env).
+YT_ARCHIVE_DIR = Path(os.environ.get("PHANTOM_ARCHIVE_DIR") or Path.home() / "Videos" / "YT Archive").expanduser()
 
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
 MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
@@ -42,7 +43,8 @@ def find_project_path(project_arg: str | None) -> Path:
     if projects_dir in path.parents:
         return projects_dir / path.relative_to(projects_dir).parts[0]
     if project_arg:
-        return path
+        print(f"Error: {path} is not inside the YT Projects folder ({projects_dir}), so it won't be archived or deleted.")
+        sys.exit(1)
 
     print("Error: Could not determine project folder.")
     print("Either run this script from within a YT project folder,")
@@ -115,10 +117,13 @@ def delete_project_folder(project_path: Path) -> None:
             print(f"  {p.relative_to(project_path)}  ({format_size(p.lstat().st_size)})")
         for skipped in sorted({d for p in leftovers for d in p.relative_to(project_path).parts[:-1] if d in SKIPPED_DIRS}):
             print(f"  ...and every {skipped}/ folder")
-        answer = input(f"\nDelete these and the project folder {project_path.name}? [y/N] ").strip().lower()
-        if answer != "y":
-            print("Kept the project folder. Nothing was deleted.")
-            return
+        prompt = f"\nDelete these and the project folder {project_path.name}? [y/N] "
+    else:
+        prompt = f"\nDelete the (now empty) project folder {project_path.name}? [y/N] "
+    answer = input(prompt).strip().lower()
+    if answer != "y":
+        print("Kept the project folder. Nothing was deleted.")
+        return
     shutil.rmtree(project_path)
     print(f"Deleted the project folder: {project_path}")
 

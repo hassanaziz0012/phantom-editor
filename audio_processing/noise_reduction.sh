@@ -171,17 +171,9 @@ CONCAT_LIST="$TMP_DIR/concat.txt"
 find "$FINAL_CHUNK_DIR" -maxdepth 1 -name "chunk_*.wav" | sort | sed "s/^/file '/; s/$/'/" > "$CONCAT_LIST"
 ffmpeg -hide_banner -loglevel error -f concat -safe 0 -i "$CONCAT_LIST" -c copy "$GENERATED_FILE"
 
-if [[ -f "$GENERATED_FILE" ]]; then
-    mv "$GENERATED_FILE" "$OUTPUT_FILE"
-    echo "Success! Saved filtered audio to '$OUTPUT_FILE'"
-else
-    # Fallback in case deep-filter changes the filename format
-    FOUND_FILE=$(find "$TMP_DIR" -type f -name "*.wav" | head -n 1)
-    if [[ -n "$FOUND_FILE" ]]; then
-        mv "$FOUND_FILE" "$OUTPUT_FILE"
-        echo "Success! Saved filtered audio to '$OUTPUT_FILE'"
-    else
-        echo "Error: deep-filter did not generate an output file."
-        exit 1
-    fi
+if [[ ! -s "$GENERATED_FILE" ]]; then
+    echo "Error: deep-filter did not generate an output file."
+    exit 1
 fi
+mv "$GENERATED_FILE" "$OUTPUT_FILE"
+echo "Success! Saved filtered audio to '$OUTPUT_FILE'"
