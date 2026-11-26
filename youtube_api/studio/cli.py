@@ -369,7 +369,7 @@ def main():
 
     p = add("query", cmd_query, "any analytics query: metrics by dimensions (Studio's Advanced Mode)")
     p.add_argument("--dims", "-d", default="", help="dimensions, comma-separated (none = totals)")
-    p.add_argument("--metrics", "-m", default="", help="metrics, comma-separated; METRIC% = share of total")
+    p.add_argument("--metrics", "-m", default="", help="metrics, comma-separated; METRIC%% = share of total")
     p.add_argument("--order", "-o", help="metric or dimension to sort by (descending)")
     p.add_argument("--asc", action="store_true", help="sort ascending")
     scope(p)
