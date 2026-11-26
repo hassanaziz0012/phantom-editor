@@ -12,8 +12,10 @@ import argparse
 import io
 import mimetypes
 import shlex
+import socket
 import subprocess
 import sys
+import time as time_module
 from datetime import datetime, time, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -26,7 +28,9 @@ from metadata.approve_title import format_candidates, resolve_choice
 from projects.current_pipeline import is_thumbnail_file
 
 
+import httplib2
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -53,6 +57,11 @@ CHUNK_SIZE = 25 * 1024 * 1024  # 25 MB — balances throughput with progress gra
 DEFAULT_PUBLISH_TIME = time(22, 30)
 
 # Thumbnail types the YouTube API takes as they are; other image types Pillow can read are sent as PNG
+THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024  # YouTube rejects thumbnails over 2 MB
+YOUTUBE_MAX_TITLE_CHARS = 100
+YOUTUBE_MAX_DESCRIPTION_BYTES = 5000
+UPLOAD_MAX_TRIES = 5
+RETRYABLE_HTTP_STATUSES = {500, 502, 503, 504}
 THUMBNAIL_MIME_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 # Preferred when a project has several thumbnails (the rest are usually alternatives)
 DEFAULT_THUMBNAIL_NAMES = ("thumbnail.png", "thumbnail.jpg", "thumbnail.jpeg")
@@ -229,6 +238,32 @@ def format_resources_for_description(raw_resources: Any) -> str:
     return "RESOURCES\n" + "\n".join(lines) + "\n\n"
 
 
+def check_youtube_text_limits(title: str, full_description: str) -> None:
+    """Raises ValueError if YouTube would refuse the title or the full description."""
+    problems = []
+    if len(title) > YOUTUBE_MAX_TITLE_CHARS:
+        problems.append(
+            f"The title is {len(title)} characters; YouTube allows at most {YOUTUBE_MAX_TITLE_CHARS}.\n"
+            f"     Title: {title}"
+        )
+    description_bytes = len(full_description.encode("utf-8"))
+    if description_bytes > YOUTUBE_MAX_DESCRIPTION_BYTES:
+        problems.append(
+            f"The full description (with timestamps, recommendations and resources) is {description_bytes} bytes; "
+            f"YouTube allows at most {YOUTUBE_MAX_DESCRIPTION_BYTES}.\n"
+            "     Shorten 'description' (or trim timestamps/recommendations/resources) in metadata.json."
+        )
+    for label, text in (("title", title), ("description", full_description)):
+        found = sorted({c for c in text if c in "<>"})
+        if found:
+            problems.append(
+                f"The {label} contains {' and '.join(repr(c) for c in found)}; YouTube does not allow '<' or '>' "
+                f"in titles or descriptions.\n     Remove or reword them in metadata.json."
+            )
+    if problems:
+        raise ValueError("Metadata breaks YouTube's rules:\n   - " + "\n   - ".join(problems))
+
+
 def validate_metadata_for_upload(
     metadata: Union[VideoMetadata, dict],
     require_description: bool = True,
@@ -280,6 +315,11 @@ def validate_metadata_for_upload(
             "   (or delete the entry if you don't want to link it)."
         )
     formatted_resources = format_resources_for_description(raw_resources)
+
+    check_youtube_text_limits(
+        str(metadata.get("title", "") or "").strip(),
+        build_description(raw_description, formatted_timestamps, formatted_recommendations, formatted_resources),
+    )
 
     return raw_description, formatted_timestamps, formatted_recommendations, formatted_resources
 
@@ -342,6 +382,31 @@ def confirm_title(metadata: VideoMetadata, choice: Optional[str], keep: bool) ->
     print(f"✅ Title: {metadata.get('title')}")
 
 
+def is_transient_upload_error(error: Exception) -> bool:
+    """Whether a failed upload chunk is worth retrying (5xx, dropped connection, socket/httplib2 trouble)."""
+    if isinstance(error, HttpError):
+        return error.resp.status in RETRYABLE_HTTP_STATUSES
+    return isinstance(error, (ConnectionError, socket.error, httplib2.HttpLib2Error))
+
+
+def next_chunk_with_retry(request):
+    """request.next_chunk() that retries transient errors with exponential backoff.
+
+    Calling next_chunk() again on the same request resumes the same resumable upload (the client asks
+    YouTube how much it already has when the previous attempt failed mid-chunk).
+    """
+    for attempt in range(1, UPLOAD_MAX_TRIES + 1):
+        try:
+            return request.next_chunk()
+        except Exception as e:
+            if not is_transient_upload_error(e) or attempt == UPLOAD_MAX_TRIES:
+                raise
+            delay = 2 ** attempt
+            print(f"\n⚠️  Upload hiccup ({type(e).__name__}: {e}); retrying in {delay}s "
+                  f"(attempt {attempt + 1}/{UPLOAD_MAX_TRIES})…")
+            time_module.sleep(delay)
+
+
 def upload_video(
     youtube,
     video_path: Path,
@@ -392,7 +457,7 @@ def upload_video(
     with tqdm(total=file_size, unit="B", unit_scale=True, unit_divisor=1024,
               desc="Progress", ncols=80) as pbar:
         while response is None:
-            status, response = request.next_chunk()
+            status, response = next_chunk_with_retry(request)
             if status:
                 new_uploaded = status.resumable_progress
                 pbar.update(new_uploaded - uploaded)
@@ -446,10 +511,33 @@ def find_thumbnail(video_path: Path) -> Optional[Path]:
     return None
 
 
+def shrunk_thumbnail(thumbnail_file: Path) -> Path:
+    """A JPEG copy of the thumbnail (next to the original) that fits under YouTube's 2 MB limit."""
+    from PIL import Image
+
+    target = thumbnail_file.with_name(thumbnail_file.stem + "-under2mb.jpg")
+    with Image.open(thumbnail_file) as image:
+        rgb = image.convert("RGB")
+    scale = 1.0
+    while True:
+        candidate = rgb if scale == 1.0 else rgb.resize(
+            (max(1, int(rgb.width * scale)), max(1, int(rgb.height * scale))), Image.LANCZOS
+        )
+        for quality in (95, 90, 85, 80, 70):
+            candidate.save(target, format="JPEG", quality=quality, optimize=True)
+            if target.stat().st_size <= THUMBNAIL_MAX_BYTES:
+                print(f"🖼  Thumbnail was over 2 MB; using {target.name} ({target.stat().st_size // 1024} KB).")
+                return target
+        scale *= 0.85
+
+
 def thumbnail_media(thumbnail_file: Path):
-    """The thumbnail as an upload body: PNG/JPEG as they are, other formats converted to PNG."""
+    """The thumbnail as an upload body: PNG/JPEG as they are (shrunk to JPEG if over 2 MB), other formats converted to PNG."""
     mimetype = THUMBNAIL_MIME_TYPES.get(thumbnail_file.suffix.lower())
     if mimetype:
+        if thumbnail_file.stat().st_size > THUMBNAIL_MAX_BYTES:
+            thumbnail_file = shrunk_thumbnail(thumbnail_file)
+            mimetype = "image/jpeg"
         return MediaFileUpload(str(thumbnail_file), mimetype=mimetype)
 
     from PIL import Image
@@ -457,21 +545,31 @@ def thumbnail_media(thumbnail_file: Path):
     buffer = io.BytesIO()
     with Image.open(thumbnail_file) as image:
         image.convert("RGB").save(buffer, format="PNG")
+    if buffer.getbuffer().nbytes > THUMBNAIL_MAX_BYTES:
+        return MediaFileUpload(str(shrunk_thumbnail(thumbnail_file)), mimetype="image/jpeg")
     buffer.seek(0)
     return MediaIoBaseUpload(buffer, mimetype="image/png")
 
 
-def set_thumbnail(youtube, video_id: str, thumbnail_file: Optional[Path]):
+def set_thumbnail(youtube, video_id: str, thumbnail_file: Optional[Path]) -> bool:
+    """Set the thumbnail. Never raises: the video is already up, so a failure only warns. Returns success."""
     if thumbnail_file is None:
         print("⏭  Skipping thumbnail — YouTube will pick one automatically.")
-        return
+        return True
 
     print(f"🖼  Setting thumbnail ({thumbnail_file.name})…")
-    youtube.thumbnails().set(
-        videoId=video_id,
-        media_body=thumbnail_media(thumbnail_file),
-    ).execute()
+    try:
+        youtube.thumbnails().set(
+            videoId=video_id,
+            media_body=thumbnail_media(thumbnail_file),
+        ).execute()
+    except Exception as e:
+        print(f"⚠️  Failed to set the thumbnail: {e}")
+        print(f"   Retry with: phantom publish yt {shlex.quote(str(thumbnail_file.parent))}/<video>.mp4 "
+              f"--set-thumbnail-for {video_id}")
+        return False
     print("✅ Thumbnail set.")
+    return True
 
 
 def get_share_url(video_id: str) -> str:
@@ -499,6 +597,11 @@ def main():
         "--playlist",
         help="Add the video to this playlist (ID, URL, or title; a new title creates a public playlist).",
     )
+    parser.add_argument(
+        "--set-thumbnail-for",
+        metavar="VIDEO_ID",
+        help="Only set the project's thumbnail on this already-uploaded video (retry after a failed thumbnail), then exit.",
+    )
     title_group = parser.add_mutually_exclusive_group()
     title_group.add_argument(
         "--title",
@@ -521,6 +624,11 @@ def main():
     except FileNotFoundError as e:
         print(f"❌ Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if args.set_thumbnail_for:
+        thumbnail_file = find_thumbnail(video_path)
+        youtube = get_authenticated_service()
+        sys.exit(0 if set_thumbnail(youtube, args.set_thumbnail_for, thumbnail_file) else 1)
 
     # Pre-check metadata requirements (description, timestamps & recommendations) before authentication or uploading
     print("🔍 Validating metadata...")
@@ -577,7 +685,18 @@ def main():
     )
     video_id = upload_video(youtube, video_path, metadata, full_description, publish_at)
 
-    # Set thumbnail
+    # Save URL and uploadedDate right away: the video is live, so this must not wait on later steps
+    share_url = get_share_url(video_id)
+    print(f"\n🔗 Share URL: {share_url}")
+    metadata.url = share_url
+    metadata.uploaded_date = datetime.now().strftime("%Y-%m-%d")
+    try:
+        metadata.save()
+        print("✅ Saved YouTube URL and uploadedDate to metadata.json")
+    except Exception as e:
+        print(f"⚠️  Failed to save metadata to metadata.json: {e}")
+
+    # Set thumbnail (a failure only warns)
     set_thumbnail(youtube, video_id, thumbnail_file)
 
     # Add to playlist. The video is already up, so a failure here only warns.
@@ -592,19 +711,6 @@ def main():
         except Exception as e:
             print(f"⚠️  Failed to add the video to the playlist: {e}")
             print(f"   Retry with: phantom yt add-to-playlist {video_id} \"{args.playlist}\"")
-
-    # Get share URL
-    share_url = get_share_url(video_id)
-    print(f"\n🔗 Share URL: {share_url}")
-
-    # Save URL and uploadedDate to metadata.json
-    metadata.url = share_url
-    metadata.uploaded_date = datetime.now().strftime("%Y-%m-%d")
-    try:
-        metadata.save()
-        print("✅ Saved YouTube URL and uploadedDate to metadata.json")
-    except Exception as e:
-        print(f"⚠️  Failed to save metadata to metadata.json: {e}")
 
     title = metadata.get("title", video_path.stem)
     post_content = render_tweet(metadata.get("tweetTemplate", DEFAULT_TWEET_TEMPLATE), share_url, title)
