@@ -118,11 +118,11 @@ def fetch_embeddings_batch(
     payload = {"requests": requests_list}
     req_data = json.dumps(payload).encode("utf-8")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents?key={resolved_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents"
     req = urllib.request.Request(
         url,
         data=req_data,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "x-goog-api-key": resolved_key},
         method="POST",
     )
 
@@ -180,6 +180,11 @@ def fetch_embeddings_batch(
             time.sleep(retry_delay)
 
     raise RuntimeError("Failed to retrieve embeddings after maximum retries.")
+
+
+def video_ids_path_for(embeddings_path: Path) -> Path:
+    """Sidecar JSON listing the video IDs behind each embeddings row."""
+    return embeddings_path.with_name(embeddings_path.stem + "_video_ids.json")
 
 
 def generate_video_embeddings(
@@ -254,6 +259,10 @@ def generate_video_embeddings(
     # Ensure output directory exists and save
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(output_path, embeddings_matrix)
+    # Remember which videos each row belongs to, so callers can detect a changed video list
+    video_ids_path_for(output_path).write_text(
+        json.dumps([v.get("video_id") for v in videos]), encoding="utf-8"
+    )
 
     file_size_kb = output_path.stat().st_size / 1024
     logger.info(
