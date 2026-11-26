@@ -13,6 +13,7 @@ import sys
 from datetime import datetime, timedelta
 
 
+from shared import colors
 from youtube_api.fetch_videos import fetch_channel_videos
 from youtube_api.utils import (
     get_youtube_client,
@@ -21,15 +22,6 @@ from youtube_api.utils import (
     resolve_channel_id,
     supports_color,
 )
-
-# Colors for terminal output
-COLOR_HEADER = "\033[95m"  # Magenta
-COLOR_BLUE = "\033[94m"    # Blue
-COLOR_GREEN = "\033[92m"   # Green
-COLOR_CYAN = "\033[96m"    # Cyan
-COLOR_YELLOW = "\033[93m"  # Yellow
-COLOR_BOLD = "\033[1m"
-COLOR_RESET = "\033[0m"
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,25 +48,25 @@ def main() -> None:
     args = parse_args()
     
     use_color = supports_color()
-    c_header = COLOR_HEADER if use_color else ""
-    c_blue = COLOR_BLUE if use_color else ""
-    c_green = COLOR_GREEN if use_color else ""
-    c_cyan = COLOR_CYAN if use_color else ""
-    c_yellow = COLOR_YELLOW if use_color else ""
-    c_bold = COLOR_BOLD if use_color else ""
-    c_reset = COLOR_RESET if use_color else ""
+    c_header = colors.MAGENTA if use_color else ""
+    c_blue = colors.BLUE if use_color else ""
+    c_green = colors.GREEN if use_color else ""
+    c_cyan = colors.CYAN if use_color else ""
+    c_yellow = colors.YELLOW if use_color else ""
+    c_bold = colors.BOLD if use_color else ""
+    c_reset = colors.RESET if use_color else ""
 
     api_key = os.getenv("YOUTUBE_API_KEY")
     channel_env = os.getenv("YOUTUBE_CHANNEL_ID")
     
     if not api_key:
-        print(f"{c_bold}{COLOR_HEADER}Error:{c_reset} YOUTUBE_API_KEY must be set in your .env file or environment.", file=sys.stderr)
+        print(f"{c_bold}{colors.MAGENTA}Error:{c_reset} YOUTUBE_API_KEY must be set in your .env file or environment.", file=sys.stderr)
         sys.exit(1)
 
     target_channel = args.channel or channel_env
     if not target_channel:
         print(
-            f"{c_bold}{COLOR_HEADER}Error:{c_reset} A YouTube channel must be specified (either as a command-line argument or in YOUTUBE_CHANNEL_ID in your .env file).",
+            f"{c_bold}{colors.MAGENTA}Error:{c_reset} A YouTube channel must be specified (either as a command-line argument or in YOUTUBE_CHANNEL_ID in your .env file).",
             file=sys.stderr
         )
         sys.exit(1)
@@ -84,7 +76,7 @@ def main() -> None:
         youtube = get_youtube_client(api_key)
         resolved_channel_id = resolve_channel_id(youtube, target_channel)
     except Exception as e:
-        print(f"{c_bold}{COLOR_HEADER}Error resolving channel ID:{c_reset} {e}", file=sys.stderr)
+        print(f"{c_bold}{colors.MAGENTA}Error resolving channel ID:{c_reset} {e}", file=sys.stderr)
         sys.exit(1)
 
     # 3. Fetch channel videos using the cached fetcher
@@ -92,7 +84,7 @@ def main() -> None:
     try:
         videos = fetch_channel_videos(api_key, resolved_channel_id, fresh=args.fresh, youtube=youtube)
     except Exception as e:
-        print(f"{c_bold}{COLOR_HEADER}Error fetching videos:{c_reset} {e}", file=sys.stderr)
+        print(f"{c_bold}{colors.MAGENTA}Error fetching videos:{c_reset} {e}", file=sys.stderr)
         sys.exit(1)
 
     channel_title = videos[0].channel_title if videos else target_channel

@@ -26,33 +26,53 @@ BLANK_PAGE_URLS = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/")
 
 STEALTH_INIT_SCRIPT = """
 (() => {
-    // 1. Mask navigator.webdriver
+    // 1. Mask navigator.webdriver (undefined, as in a Chrome that isn't automated)
     try {
-        if (Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver')) {
-            Object.defineProperty(Navigator.prototype, 'webdriver', {
-                get: () => false,
-                enumerable: true,
-                configurable: true,
-            });
-        }
-    } catch (_) {}
-    try {
-        if (Object.prototype.hasOwnProperty.call(navigator, 'webdriver')) {
-            delete navigator.webdriver;
-        }
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined,
+            configurable: true,
+        });
     } catch (_) {}
 
-    // 2. Ensure window.chrome structure is authentic
-    if (!window.chrome) {
-        window.chrome = {
-            runtime: { id: undefined, connect: function() {}, sendMessage: function() {} },
-            loadTimes: function() {},
-            csi: function() {},
-            app: { isInstalled: false, InstallState: {}, RunningState: {} },
-        };
+    // 2. Clean up any CDC/CDP artifact signatures
+    for (const key of Object.getOwnPropertyNames(window)) {
+        if (key.startsWith('cdc_') || key.startsWith('$cdc_')) {
+            delete window[key];
+        }
     }
 
-    // 3. Fix permissions query for notifications
+    // 3. Ensure the window.chrome object exists with standard properties
+    if (!window.chrome) {
+        window.chrome = {};
+    }
+    if (!window.chrome.app) {
+        window.chrome.app = {
+            isInstalled: false,
+            InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" },
+            RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" }
+        };
+    }
+    if (!window.chrome.runtime) {
+        window.chrome.runtime = {
+            id: undefined,
+            connect: function() {},
+            sendMessage: function() {},
+            OnInstalledReason: { CHROME_UPDATE: "chrome_update", INSTALL: "install", SHARED_MODULE_UPDATE: "shared_module_update", UPDATE: "update" },
+            OnRestartRequiredReason: { APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic" },
+            PlatformArch: { ARM: "arm", ARM64: "arm64", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
+            PlatformNaclArch: { ARM: "arm", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
+            PlatformOs: { ANDROID: "android", CROS: "cros", LINUX: "linux", MAC: "mac", OPENBSD: "openbsd", WIN: "win" },
+            RequestUpdateCheckStatus: { NO_UPDATE: "no_update", THROTTLED: "throttled", UPDATE_AVAILABLE: "update_available" }
+        };
+    }
+    if (!window.chrome.loadTimes) {
+        window.chrome.loadTimes = function() {};
+    }
+    if (!window.chrome.csi) {
+        window.chrome.csi = function() {};
+    }
+
+    // 4. Fix permissions query for notifications
     if (navigator.permissions && navigator.permissions.query) {
         const originalQuery = navigator.permissions.query.bind(navigator.permissions);
         navigator.permissions.query = (parameters) => {
@@ -70,42 +90,6 @@ STEALTH_INIT_SCRIPT = """
         };
     }
 })();
-"""
-
-EXTRA_STEALTH_JS = """
-// 1. Mask navigator.webdriver
-Object.defineProperty(navigator, 'webdriver', {
-    get: () => undefined,
-});
-
-// 2. Clean up any CDC/CDP artifact signatures
-for (const key of Object.getOwnPropertyNames(window)) {
-    if (key.startsWith('cdc_') || key.startsWith('$cdc_')) {
-        delete window[key];
-    }
-}
-
-// 3. Ensure window.chrome object exists with standard properties
-if (!window.chrome) {
-    window.chrome = {};
-}
-if (!window.chrome.app) {
-    window.chrome.app = {
-        isInstalled: false,
-        InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" },
-        RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" }
-    };
-}
-if (!window.chrome.runtime) {
-    window.chrome.runtime = {
-        OnInstalledReason: { CHROME_UPDATE: "chrome_update", INSTALL: "install", SHARED_MODULE_UPDATE: "shared_module_update", UPDATE: "update" },
-        OnRestartRequiredReason: { APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic" },
-        PlatformArch: { ARM: "arm", ARM64: "arm64", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
-        PlatformNaclArch: { ARM: "arm", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
-        PlatformOs: { ANDROID: "android", CROS: "cros", LINUX: "linux", MAC: "mac", OPENBSD: "openbsd", WIN: "win" },
-        RequestUpdateCheckStatus: { NO_UPDATE: "no_update", THROTTLED: "throttled", UPDATE_AVAILABLE: "update_available" }
-    };
-}
 """
 
 
@@ -205,7 +189,6 @@ async def get_cdp_browser_context(
     context = browser.contexts[0] if browser.contexts else await browser.new_context()
     # Context init scripts also cover its existing pages and every page opened later
     await context.add_init_script(STEALTH_INIT_SCRIPT)
-    await context.add_init_script(EXTRA_STEALTH_JS)
     return context
 
 

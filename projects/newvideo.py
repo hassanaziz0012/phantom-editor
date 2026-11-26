@@ -10,20 +10,24 @@ import argparse
 from pathlib import Path
 
 from shared.paths import YT_PROJECTS_DIR as DEFAULT_YT_PROJECTS_DIR
-from video_editing.utils import (
-    COLOR_YELLOW, COLOR_RESET, COLOR_BOLD,
-    print_success, print_error
-)
+from shared.colors import BOLD, RESET, YELLOW
+from video_editing.utils import print_success, print_error
 
 
 def sanitize_project_name(name: str) -> str:
-    """Trim whitespace from project name."""
-    return name.strip()
+    """Trim whitespace from the project name and reject names that could leave the projects folder."""
+    name = name.strip()
+    if not name:
+        raise ValueError("Project name cannot be empty.")
+    if "/" in name or "\\" in name or ".." in name:
+        raise ValueError("Project name cannot contain '/', '\\' or '..'.")
+    return name
 
 
 def create_video_project(project_name: str, base_dir: Path = DEFAULT_YT_PROJECTS_DIR) -> Path:
     """Creates a new project directory under base_dir/project_name."""
     base_dir = base_dir.expanduser().resolve()
+    project_name = sanitize_project_name(project_name)
     base_dir.mkdir(parents=True, exist_ok=True)
 
     project_dir = base_dir / project_name
@@ -35,8 +39,8 @@ def create_video_project(project_name: str, base_dir: Path = DEFAULT_YT_PROJECTS
     try:
         project_dir.mkdir(parents=True, exist_ok=False)
         print_success(f"✓ Created new YouTube project folder:")
-        print(f"  {COLOR_BOLD}{project_dir}{COLOR_RESET}\n")
-        print(f"{COLOR_YELLOW}Next steps:{COLOR_RESET}")
+        print(f"  {BOLD}{project_dir}{RESET}\n")
+        print(f"{YELLOW}Next steps:{RESET}")
         print(f"  1. Script the video (outline.md with # Hook & # Outline sections and a [LIKE / SUBSCRIBE] marker) in: {project_dir}")
         print(f"  2. Record raw footage into: {project_dir}")
         print(f"  3. Run pipeline processing: `phantom projects process`")
@@ -63,9 +67,10 @@ def main():
 
     base_dir = Path(args.dir) if args.dir else DEFAULT_YT_PROJECTS_DIR
 
-    project_name = sanitize_project_name(args.name)
-    if not project_name:
-        print_error("Error: Project name cannot be empty.")
+    try:
+        project_name = sanitize_project_name(args.name)
+    except ValueError as e:
+        print_error(f"Error: {e}")
         sys.exit(1)
 
     create_video_project(project_name, base_dir=base_dir)

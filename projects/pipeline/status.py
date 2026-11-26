@@ -2,7 +2,8 @@
 
 import sys
 
-from video_editing.utils import COLOR_BLUE, COLOR_GREEN, COLOR_RESET, COLOR_YELLOW, print_error, print_info, print_warning
+from shared.colors import BLUE, GREEN, RESET, YELLOW
+from video_editing.utils import print_error, print_info, print_warning
 
 from projects.pipeline.context import PipelineContext
 from projects.pipeline.cuts import format_cut
@@ -14,10 +15,10 @@ RULE = "=" * 60
 def _status_label(reason: str | None, forced: bool) -> str:
     if reason is None:
         text = "WILL EXECUTE (FORCED)" if forced else "WILL EXECUTE"
-        return f"{COLOR_YELLOW}[{text}]{COLOR_RESET}"
+        return f"{YELLOW}[{text}]{RESET}"
     if reason.startswith("already complete"):
-        return f"{COLOR_GREEN}[ALREADY COMPLETE - SKIPPING]{COLOR_RESET}"
-    return f"{COLOR_BLUE}[SKIPPING: {reason}]{COLOR_RESET}"
+        return f"{GREEN}[ALREADY COMPLETE - SKIPPING]{RESET}"
+    return f"{BLUE}[SKIPPING: {reason}]{RESET}"
 
 
 def print_overview(ctx: PipelineContext, steps: list[Step], plan: dict[int, str | None]) -> None:

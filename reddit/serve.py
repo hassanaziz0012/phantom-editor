@@ -34,10 +34,11 @@ from typing import Any, Dict, Optional, Set, Tuple
 
 from playwright.async_api import Error as PlaywrightError, Page, async_playwright
 
-# Ensure repo root is in python path for module imports
-
 from reddit.reddit_json import (
     MAX_INFO_IDS,
+    MAX_RETRIES,
+    RETRY_DELAY,
+    RETRY_STATUSES,
     check_post_data,
     collect_feed_items,
     decode_response,
@@ -59,11 +60,8 @@ from reddit.scrape_subreddit import ScrapedSubredditData, SubredditPostItem, par
 # cookies without Chrome running any of Reddit's web app
 HOME_URL = "https://www.reddit.com/robots.txt"
 
-# Same retry policy as the CLI scrapers, except that a rate limit pauses every request, not just one.
+# Retry policy: the one the CLI scrapers use (reddit_json.py), except that a rate limit pauses every request, not just one.
 # A rate limit waits until Reddit's window resets, if its headers say when; everything else waits RETRY_DELAY
-RETRY_STATUSES = {429, 502, 503, 504}
-MAX_RETRIES = 3
-RETRY_DELAY = 240
 FETCH_TIMEOUT_MS = 30000
 
 RATE_LIMIT_HEADERS = ["x-ratelimit-remaining", "x-ratelimit-reset", "retry-after"]

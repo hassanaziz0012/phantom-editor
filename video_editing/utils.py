@@ -1,4 +1,3 @@
-import re
 import sys
 import shutil
 import subprocess
@@ -12,36 +11,23 @@ from typing import Callable
 
 
 # Re-exported: the video_editing and broll scripts import these from utils
+from shared import colors
 from shared.srt import parse_srt, parse_srt_to_text, parse_srt_to_timestamped_transcript  # noqa: F401
-from shared.timecodes import parse_timestamp  # noqa: F401
+from shared.ffmpeg_qc import Glitch, QCLogParser
+from shared.timecodes import format_srt_timestamp, parse_timestamp  # noqa: F401
 
-# Terminal ANSI Color Constants
-COLOR_GREEN = "\033[92m"
-COLOR_RED = "\033[91m"
-COLOR_YELLOW = "\033[93m"
-COLOR_BLUE = "\033[94m"
-COLOR_RESET = "\033[0m"
-COLOR_BOLD = "\033[1m"
 
 def print_info(text: str):
-    print(f"{COLOR_BLUE}{text}{COLOR_RESET}")
+    print(f"{colors.BLUE}{text}{colors.RESET}")
 
 def print_success(text: str):
-    print(f"{COLOR_GREEN}{text}{COLOR_RESET}")
+    print(f"{colors.GREEN}{text}{colors.RESET}")
 
 def print_warning(text: str):
-    print(f"{COLOR_YELLOW}{text}{COLOR_RESET}")
+    print(f"{colors.YELLOW}{text}{colors.RESET}")
 
 def print_error(text: str):
-    print(f"{COLOR_RED}{text}{COLOR_RESET}", file=sys.stderr)
-
-
-def check_dependencies(tools=("ffmpeg", "ffprobe")):
-    """Verify that required external tools are available in system PATH."""
-    for cmd in tools:
-        if not shutil.which(cmd):
-            print_error(f"Error: Required tool '{cmd}' is not installed or not in system PATH.")
-            sys.exit(1)
+    print(f"{colors.RED}{text}{colors.RESET}", file=sys.stderr)
 
 
 @dataclass
@@ -152,157 +138,14 @@ def create_preview_clip(video_path: str | Path, duration: float = 5.0) -> Path:
         raise
 
 
-SCOPES = ["https://www.googleapis.com/auth/documents.readonly"]
-
 def format_srt_time(seconds: float) -> str:
     """Converts seconds to SRT time format: HH:MM:SS,mmm"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    milliseconds = int(round((seconds % 1) * 1000))
-    if milliseconds == 1000:
-        milliseconds = 0
-        secs += 1
-        if secs == 60:
-            secs = 0
-            minutes += 1
-            if minutes == 60:
-                minutes = 0
-                hours += 1
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
-
-
-def slugify(text: str) -> str:
-    """Safely converts text to a lowercase hyphenated slug filename (alphanumeric and hyphens only)."""
-    text = text.lower().strip()
-    text = re.sub(r'[^a-z0-9\s-]', '', text)
-    text = re.sub(r'[\s-]+', '-', text)
-    return text.strip('-')
-
-
-GDOCS_TOKEN_FILE = Path(__file__).resolve().parent / "tokens/gdocs_token.json"
-
-
-def find_client_secrets():
-    """Locate client_secret.json across common directories."""
-    # 1. video-editing/tokens/client_secret.json
-    p1 = Path(__file__).resolve().parent / "tokens/client_secret.json"
-    if p1.exists():
-        return p1
-    # 2. youtube_api/tokens/client_secret.json
-    p2 = Path(__file__).resolve().parent.parent / "youtube_api/tokens/client_secret.json"
-    if p2.exists():
-        return p2
-    # 3. root tokens/client_secret.json
-    p3 = Path(__file__).resolve().parent.parent / "tokens/client_secret.json"
-    if p3.exists():
-        return p3
-    return p1  # Default fallback path
-
-
-def get_google_doc_shorts(doc_id: str, credentials_file: Path, token_file: Path):
-    """Fetches the Google Doc content and parses it into {title, body} shorts."""
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from googleapiclient.discovery import build
-
-    if not doc_id:
-        raise ValueError("Google Doc ID is missing. Set SHORTS_GOOGLE_DOC_ID in your environment or .env file.")
-
-    creds = None
-    if token_file.exists():
-        try:
-            creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
-        except Exception as e:
-            print(f"⚠️  Error reading token file {token_file}: {e}. Re-authenticating...")
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-            except Exception as e:
-                print(f"⚠️  Failed to refresh credentials: {e}. Re-running auth flow...")
-                creds = None
-        
-        if not creds:
-            if not credentials_file.exists():
-                raise FileNotFoundError(
-                    f"Google client_secret.json credentials file not found.\n"
-                    f"Searched paths:\n"
-                    f" - {Path(__file__).resolve().parent / 'tokens/client_secret.json'}\n"
-                    f" - {Path(__file__).resolve().parent.parent / 'youtube_api/tokens/client_secret.json'}\n"
-                    f"Please verify client_secret.json exists."
-                )
-            
-            # Ensure tokens parent folder exists
-            token_file.parent.mkdir(parents=True, exist_ok=True)
-            flow = InstalledAppFlow.from_client_secrets_file(str(credentials_file), SCOPES)
-            creds = flow.run_local_server(port=0)
-            
-        with open(token_file, "w") as f:
-            f.write(creds.to_json())
-
-    service = build("docs", "v1", credentials=creds)
-    print(f"📖 Fetching Google Doc ID: {doc_id}...")
-    doc = service.documents().get(documentId=doc_id).execute()
-    
-    shorts = []
-    current_short = None
-    
-    body_elements = doc.get("body", {}).get("content", [])
-    for elem in body_elements:
-        if "paragraph" in elem:
-            para = elem["paragraph"]
-            style = para.get("paragraphStyle", {}).get("namedStyleType", "")
-            
-            # Extract plain text content
-            text = ""
-            for part in para.get("elements", []):
-                if "textRun" in part:
-                    text += part["textRun"].get("content", "")
-            
-            text_str = text.strip()
-            if not text_str:
-                continue
-                
-            if style == "HEADING_2":
-                if current_short:
-                    shorts.append(current_short)
-                current_short = {
-                    "title": text_str,
-                    "body": ""
-                }
-            elif style == "NORMAL_TEXT":
-                if current_short:
-                    if current_short["body"]:
-                        current_short["body"] += "\n" + text_str
-                    else:
-                        current_short["body"] = text_str
-                        
-    if current_short:
-        shorts.append(current_short)
-        
-    return shorts
+    return format_srt_timestamp(seconds)
 
 
 # --- Inline video quality-control (blackdetect / freezedetect) parsing ---
 # FFmpeg emits these filter logs at AV_LOG_INFO on stderr while the encode runs,
 # so an encode that captures QC inline must run with -loglevel info.
-BLACK_DETECT_RE = re.compile(
-    r'black_start:([0-9.]+)\s+black_end:([0-9.]+)\s+black_duration:([0-9.]+)'
-)
-FREEZE_START_RE = re.compile(r'freeze_start:\s*([0-9.]+)')
-FREEZE_END_RE = re.compile(
-    r'freeze_end:\s*([0-9.]+)\s+freeze_duration:\s*([0-9.]+)'
-)
-# Newer FFmpeg releases (7+) log freeze_duration and freeze_end on separate
-# lines and prefix them with the filter metadata name (e.g.
-# "lavfi.freezedetect.freeze_end: 3"). Capture those individually as a fallback.
-FREEZE_END_ONLY_RE = re.compile(r'freeze_end:\s*([0-9.]+)')
-FREEZE_DURATION_ONLY_RE = re.compile(r'freeze_duration:\s*([0-9.]+)')
-
-
 class VideoQCCollector:
     """Accumulates black-screen and freeze-frame glitches reported by FFmpeg's
     ``blackdetect`` / ``freezedetect`` filters while a video encode is running.
@@ -318,73 +161,19 @@ class VideoQCCollector:
     def __init__(self, tail_freeze_duration: float = 2.0):
         self.glitches: list[dict] = []
         self.tail_freeze_duration = tail_freeze_duration
-        self._active_freeze_start: float | None = None
-        self._pending_freeze_duration: float | None = None
+        self._parser = QCLogParser()
 
-    def _append_black(self, start: float, end: float, duration: float) -> None:
-        self.glitches.append(
-            {"type": "black", "start": start, "end": end, "duration": duration}
-        )
-        print_warning(f"⚠️  BLACK DETECTED: {start:.2f}s -> {end:.2f}s ({duration:.2f}s)")
-
-    def _append_freeze(self, start: float, end: float, duration: float) -> None:
-        self.glitches.append(
-            {"type": "freeze", "start": start, "end": end, "duration": duration}
-        )
-        print_warning(f"⚠️  FREEZE DETECTED: {start:.2f}s -> {end:.2f}s ({duration:.2f}s)")
+    def _record(self, found: list[Glitch]) -> None:
+        for glitch in found:
+            self.glitches.append(
+                {"type": glitch.kind, "start": glitch.start, "end": glitch.end, "duration": glitch.duration}
+            )
+            label = "BLACK" if glitch.kind == "black" else "FREEZE"
+            print_warning(f"⚠️  {label} DETECTED: {glitch.start:.2f}s -> {glitch.end:.2f}s ({glitch.duration:.2f}s)")
 
     def handle_line(self, line: str) -> None:
         """Parse a single FFmpeg stderr line, appending any glitch it reports."""
-        if not line:
-            return
-
-        black_match = BLACK_DETECT_RE.search(line)
-        if black_match:
-            self._append_black(
-                float(black_match.group(1)),
-                float(black_match.group(2)),
-                float(black_match.group(3)),
-            )
-
-        freeze_start_match = FREEZE_START_RE.search(line)
-        if freeze_start_match:
-            self._active_freeze_start = float(freeze_start_match.group(1))
-
-        # Older FFmpeg logs freeze_end and freeze_duration on one line.
-        combined_end_match = FREEZE_END_RE.search(line)
-        if combined_end_match:
-            end = float(combined_end_match.group(1))
-            duration = float(combined_end_match.group(2))
-            start = (
-                self._active_freeze_start
-                if self._active_freeze_start is not None
-                else max(0.0, end - duration)
-            )
-            self._append_freeze(start, end, duration)
-            self._active_freeze_start = None
-            self._pending_freeze_duration = None
-            return
-
-        # Newer FFmpeg logs freeze_duration and freeze_end separately.
-        duration_only_match = FREEZE_DURATION_ONLY_RE.search(line)
-        if duration_only_match:
-            self._pending_freeze_duration = float(duration_only_match.group(1))
-
-        end_only_match = FREEZE_END_ONLY_RE.search(line)
-        if end_only_match:
-            end = float(end_only_match.group(1))
-            if self._active_freeze_start is not None:
-                start = self._active_freeze_start
-                duration = max(0.0, end - start)
-            elif self._pending_freeze_duration is not None:
-                duration = self._pending_freeze_duration
-                start = max(0.0, end - duration)
-            else:
-                start = end
-                duration = 0.0
-            self._append_freeze(start, end, duration)
-            self._active_freeze_start = None
-            self._pending_freeze_duration = None
+        self._record(self._parser.handle_line(line))
 
     def finalize(self, total_duration: float = 0.0) -> None:
         """Flush a freeze that was still active when the video ended.
@@ -392,15 +181,7 @@ class VideoQCCollector:
         Mirrors the standalone inspector's tail-freeze behaviour: only report
         trailing freezes at least ``tail_freeze_duration`` seconds long.
         """
-        if (
-            self._active_freeze_start is not None
-            and total_duration > self._active_freeze_start
-        ):
-            duration = total_duration - self._active_freeze_start
-            if duration >= self.tail_freeze_duration:
-                self._append_freeze(self._active_freeze_start, total_duration, duration)
-        self._active_freeze_start = None
-        self._pending_freeze_duration = None
+        self._record(self._parser.finish(total_duration, self.tail_freeze_duration))
 
 
 def run_ffmpeg_with_progress(

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from shared import colors
 from shared.paths import REPO_ROOT
 
 from google.auth.transport.requests import Request
@@ -37,23 +38,6 @@ logger = logging.getLogger("phantom.ideas.comments")
 
 DEFAULT_TOKEN_FILE = REPO_ROOT / "youtube_api" / "tokens" / "token.json"
 
-
-# ── Terminal Styling / Colors ──────────────────────────────────────────────────
-
-class Colors:
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    CYAN = "\033[36m"
-    BRIGHT_CYAN = "\033[96m"
-    GREEN = "\033[32m"
-    BRIGHT_GREEN = "\033[92m"
-    YELLOW = "\033[33m"
-    BRIGHT_YELLOW = "\033[93m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    RED = "\033[31m"
-    GRAY = "\033[90m"
 
 
 def format_relative_time(iso_str: str) -> str:
@@ -238,19 +222,18 @@ def print_clean_terminal(
     order: str = "relevance",
 ):
     """Prints scraped comments in a clean, human-readable terminal layout."""
-    c = Colors
 
     print()
-    print(f"{c.BOLD}{c.BRIGHT_CYAN}╔══════════════════════════════════════════════════════════════════════════════╗{c.RESET}")
-    print(f"{c.BOLD}{c.BRIGHT_CYAN}║ YouTube Comments Scraper                                                     ║{c.RESET}")
-    print(f"{c.BOLD}{c.BRIGHT_CYAN}╚══════════════════════════════════════════════════════════════════════════════╝{c.RESET}")
-    print(f"  {c.BOLD}Video ID:{c.RESET}  {c.BRIGHT_YELLOW}{video_id}{c.RESET} (https://youtu.be/{video_id})")
-    print(f"  {c.BOLD}Sorting:{c.RESET}   {c.GREEN}{order.title()}{c.RESET} ({'YouTube Top Comments' if order == 'relevance' else 'Newest First'})")
-    print(f"  {c.BOLD}Count:{c.RESET}     {c.BRIGHT_GREEN}{len(comments)}{c.RESET} comments retrieved")
-    print(f"{c.GRAY}{'─' * 78}{c.RESET}\n")
+    print(f"{colors.BOLD}{colors.CYAN}╔══════════════════════════════════════════════════════════════════════════════╗{colors.RESET}")
+    print(f"{colors.BOLD}{colors.CYAN}║ YouTube Comments Scraper                                                     ║{colors.RESET}")
+    print(f"{colors.BOLD}{colors.CYAN}╚══════════════════════════════════════════════════════════════════════════════╝{colors.RESET}")
+    print(f"  {colors.BOLD}Video ID:{colors.RESET}  {colors.YELLOW}{video_id}{colors.RESET} (https://youtu.be/{video_id})")
+    print(f"  {colors.BOLD}Sorting:{colors.RESET}   {colors.DARK_GREEN}{order.title()}{colors.RESET} ({'YouTube Top Comments' if order == 'relevance' else 'Newest First'})")
+    print(f"  {colors.BOLD}Count:{colors.RESET}     {colors.GREEN}{len(comments)}{colors.RESET} comments retrieved")
+    print(f"{colors.GRAY}{'─' * 78}{colors.RESET}\n")
 
     if not comments:
-        print(f"  {c.YELLOW}No comments found for this video or comments are disabled.{c.RESET}\n")
+        print(f"  {colors.DARK_YELLOW}No comments found for this video or comments are disabled.{colors.RESET}\n")
         return
 
     for idx, comment in enumerate(comments, 1):
@@ -261,12 +244,12 @@ def print_clean_terminal(
         text = comment["text"].strip()
 
         # Formatting like/reply badges
-        like_badge = f"{c.BRIGHT_GREEN}👍 {likes:,}{c.RESET}" if likes > 0 else f"{c.GRAY}👍 0{c.RESET}"
-        reply_badge = f"{c.CYAN}💬 {replies:,} {'reply' if replies == 1 else 'replies'}{c.RESET}" if replies > 0 else ""
+        like_badge = f"{colors.GREEN}👍 {likes:,}{colors.RESET}" if likes > 0 else f"{colors.GRAY}👍 0{colors.RESET}"
+        reply_badge = f"{colors.DARK_CYAN}💬 {replies:,} {'reply' if replies == 1 else 'replies'}{colors.RESET}" if replies > 0 else ""
 
         badges = f"{like_badge}  {reply_badge}".strip()
 
-        print(f"{c.BOLD}{c.BRIGHT_YELLOW}#{idx:<3}{c.RESET} {c.BOLD}{c.BRIGHT_CYAN}{author}{c.RESET} {c.GRAY}• {time_rel}{c.RESET}   {badges}")
+        print(f"{colors.BOLD}{colors.YELLOW}#{idx:<3}{colors.RESET} {colors.BOLD}{colors.CYAN}{author}{colors.RESET} {colors.GRAY}• {time_rel}{colors.RESET}   {badges}")
 
         # Indent comment text cleanly
         for line in text.split("\n"):
@@ -274,16 +257,16 @@ def print_clean_terminal(
 
         # Print inline replies if present
         if "replies" in comment and comment["replies"]:
-            print(f"     {c.GRAY}── Replies ({len(comment['replies'])}) ──{c.RESET}")
+            print(f"     {colors.GRAY}── Replies ({len(comment['replies'])}) ──{colors.RESET}")
             for reply in comment["replies"]:
                 r_author = reply["author"]
                 r_likes = f"👍 {reply['like_count']}" if reply["like_count"] > 0 else ""
                 r_time = format_relative_time(reply["published_at"])
-                print(f"       {c.MAGENTA}↳ {r_author}{c.RESET} {c.GRAY}({r_time}){c.RESET} {c.DIM}{r_likes}{c.RESET}")
+                print(f"       {colors.PURPLE}↳ {r_author}{colors.RESET} {colors.GRAY}({r_time}){colors.RESET} {colors.DIM}{r_likes}{colors.RESET}")
                 for r_line in reply["text"].strip().split("\n"):
                     print(f"         {r_line}")
 
-        print(f"{c.GRAY}{'┄' * 78}{c.RESET}")
+        print(f"{colors.GRAY}{'┄' * 78}{colors.RESET}")
 
     print()
 
@@ -337,7 +320,7 @@ def main():
         if args.json:
             print(json.dumps({"error": str(e)}, indent=2))
         else:
-            print(f"{Colors.RED}Error:{Colors.RESET} {e}", file=sys.stderr)
+            print(f"{colors.DARK_RED}Error:{colors.RESET} {e}", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -346,7 +329,7 @@ def main():
         if args.json:
             print(json.dumps({"error": str(e)}, indent=2))
         else:
-            print(f"{Colors.RED}Authentication Error:{Colors.RESET} {e}", file=sys.stderr)
+            print(f"{colors.DARK_RED}Authentication Error:{colors.RESET} {e}", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -361,7 +344,7 @@ def main():
         if args.json:
             print(json.dumps({"error": str(e)}, indent=2))
         else:
-            print(f"{Colors.RED}API Error:{Colors.RESET} {e}", file=sys.stderr)
+            print(f"{colors.DARK_RED}API Error:{colors.RESET} {e}", file=sys.stderr)
         sys.exit(1)
 
     if args.json:

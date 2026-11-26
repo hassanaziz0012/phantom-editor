@@ -45,20 +45,13 @@ from typing import Any, List, Optional
 from metadata.check_resource_links import blank_resources
 from metadata.read_metadata import DEFAULT_TWEET_TEMPLATE, parse_metadata_dict, read_metadata
 from projects.google_sheet_utils import sync_projects_to_sheet
+from shared import colors
 from shared.paths import YT_PROJECTS_DIR
-from video_editing.utils import COLOR_BLUE, COLOR_BOLD, COLOR_GREEN, COLOR_RED, COLOR_RESET, COLOR_YELLOW
 from youtube_api.video_id import extract_video_id, is_valid_yt_url
 
 PERFORMANCE_CHECK_KEY = "performanceCheck"
 # Set under performanceCheck by `phantom meta skip-repackage` (metadata/skip_repackage.py)
 REPACKAGING_SKIPPED_KEY = "repackagingSkipped"
-
-COLOR_CYAN = "\033[96m"
-COLOR_MAGENTA = "\033[95m"
-COLOR_PURPLE = "\033[35m"
-COLOR_GRAY = "\033[90m"
-COLOR_WHITE = "\033[97m"
-COLOR_ORANGE = "\033[38;5;208m"
 
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
@@ -102,7 +95,7 @@ class VideoProject:
     stage_num: int = 1
     stage_name: str = "New"
     next_step: str = ""
-    status_color: str = COLOR_RESET
+    status_color: str = colors.RESET
 
     @property
     def has_outline(self) -> bool:
@@ -295,12 +288,12 @@ def run_performance_checks(projects: List[VideoProject], quiet: bool = False) ->
         return projects
 
     if not quiet:
-        print(f"{COLOR_CYAN}📈 Running the 48h performance check for {len(by_video_id)} uploaded video(s)...{COLOR_RESET}")
+        print(f"{colors.CYAN}📈 Running the 48h performance check for {len(by_video_id)} uploaded video(s)...{colors.RESET}")
     try:
         results = check_videos(list(by_video_id))
     except Exception as e:
         if not quiet:
-            print(f"{COLOR_YELLOW}⚠️ Note: Could not run the performance check: {e}{COLOR_RESET}\n")
+            print(f"{colors.YELLOW}⚠️ Note: Could not run the performance check: {e}{colors.RESET}\n")
         return projects
 
     checked = set()
@@ -314,17 +307,17 @@ def run_performance_checks(projects: List[VideoProject], quiet: bool = False) ->
                 checked.add(project.path)
                 if not quiet:
                     verdict = "needs repackaging" if outcome["result"]["needs_repackaging"] else "passed"
-                    print(f"{COLOR_GREEN}✓ {project.name}: {verdict}{COLOR_RESET}")
+                    print(f"{colors.GREEN}✓ {project.name}: {verdict}{colors.RESET}")
             except Exception as e:
                 if not quiet:
-                    print(f"{COLOR_YELLOW}⚠️ {project.name}: could not save the performance check: {e}{COLOR_RESET}")
+                    print(f"{colors.YELLOW}⚠️ {project.name}: could not save the performance check: {e}{colors.RESET}")
         elif quiet:
             continue
         elif outcome["status"] == "waiting":
             ready_at = datetime.fromisoformat(outcome["ready_at"]).astimezone()
-            print(f"{COLOR_GRAY}⏳ {project.name}: not 48h old yet, check runs after {ready_at:%b %d %H:%M}{COLOR_RESET}")
+            print(f"{colors.GRAY}⏳ {project.name}: not 48h old yet, check runs after {ready_at:%b %d %H:%M}{colors.RESET}")
         else:
-            print(f"{COLOR_YELLOW}⚠️ {project.name}: {outcome['reason']}{COLOR_RESET}")
+            print(f"{colors.YELLOW}⚠️ {project.name}: {outcome['reason']}{colors.RESET}")
     if not quiet:
         print()
 
@@ -357,7 +350,7 @@ def run_repackaging_checks(projects: List[VideoProject], quiet: bool = False) ->
         })
     except Exception as e:
         if not quiet:
-            print(f"{COLOR_YELLOW}⚠️ Note: Could not check for repackaged videos: {e}{COLOR_RESET}\n")
+            print(f"{colors.YELLOW}⚠️ Note: Could not check for repackaged videos: {e}{colors.RESET}\n")
         return projects
 
     repackaged = set()
@@ -365,7 +358,7 @@ def run_repackaging_checks(projects: List[VideoProject], quiet: bool = False) ->
         project = by_video_id[video_id]
         if outcome["status"] != "ok":
             if not quiet:
-                print(f"{COLOR_YELLOW}⚠️ {project.name}: {outcome['reason']}{COLOR_RESET}")
+                print(f"{colors.YELLOW}⚠️ {project.name}: {outcome['reason']}{colors.RESET}")
             continue
         if not outcome["repackaged"]:
             continue
@@ -380,10 +373,10 @@ def run_repackaging_checks(projects: List[VideoProject], quiet: bool = False) ->
             meta.save()
             repackaged.add(project.path)
             if not quiet:
-                print(f"{COLOR_GREEN}✓ {project.name}: repackaged ({describe_repackaging(meta.raw_data[PERFORMANCE_CHECK_KEY]['repackaged'])}){COLOR_RESET}")
+                print(f"{colors.GREEN}✓ {project.name}: repackaged ({describe_repackaging(meta.raw_data[PERFORMANCE_CHECK_KEY]['repackaged'])}){colors.RESET}")
         except Exception as e:
             if not quiet:
-                print(f"{COLOR_YELLOW}⚠️ {project.name}: could not save the repackaging: {e}{COLOR_RESET}")
+                print(f"{colors.YELLOW}⚠️ {project.name}: could not save the repackaging: {e}{colors.RESET}")
     if repackaged and not quiet:
         print()
 
@@ -492,7 +485,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
             f"Rework the title & thumbnail (or `phantom meta skip-repackage`): "
             f"{describe_performance_check(project.performance_check)}"
         )
-        project.status_color = COLOR_RED
+        project.status_color = colors.RED
 
     # Stage 9: Uploaded (metadata.json contains a valid YouTube URL)
     elif project.yt_url:
@@ -517,7 +510,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
         else:
             check_info = " Performance check runs 48h after publish."
         project.next_step = f"Video uploaded to YouTube{date_info}! All pipeline stages complete! 🚀{check_info}"
-        project.status_color = COLOR_GREEN
+        project.status_color = colors.GREEN
 
     # Stage 8: Scheduled (ready to upload, with a publish date in metadata.json). An unfinished
     # project with a publish date stays at its real stage, with the date added to its next step.
@@ -527,7 +520,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.next_step = with_title_todo(
             project, f"Upload video to YouTube (`phantom publish yt`); it goes public on {project.scheduled_date} 🚀"
         )
-        project.status_color = COLOR_YELLOW
+        project.status_color = colors.YELLOW
 
     # Stage 7: Ready to Schedule (final.mp4 + metadata.json + thumbnail(s))
     elif is_ready:
@@ -536,7 +529,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.next_step = with_title_todo(
             project, "Upload video to YouTube (`phantom publish yt`) or set publishDate in metadata.json"
         )
-        project.status_color = COLOR_CYAN
+        project.status_color = colors.CYAN
 
     # Stage 6: Reviewed (final.mp4 exists, missing a complete metadata.json or a thumbnail)
     elif project.final_file:
@@ -546,14 +539,14 @@ def analyze_project(project_dir: Path) -> VideoProject:
             project.next_step = with_title_todo(project, "Design and add thumbnail (e.g. thumbnail.png)")
         else:
             project.next_step = with_thumbnail_todo(project, metadata_todo(project))
-        project.status_color = COLOR_PURPLE
+        project.status_color = colors.PURPLE
 
     # Stage 5: Processed (to-review.mp4 exists, final.mp4 does not)
     elif project.to_review_file:
         project.stage_num = 5
         project.stage_name = "Processed"
         project.next_step = with_thumbnail_todo(project, "Manually review to-review.mp4 and create final.mp4")
-        project.status_color = COLOR_YELLOW
+        project.status_color = colors.YELLOW
 
     # Stage 4: Recorded (raw video files present, no to-review.mp4)
     elif len(project.raw_files) > 0:
@@ -562,21 +555,21 @@ def analyze_project(project_dir: Path) -> VideoProject:
         project.next_step = with_thumbnail_todo(
             project, "Process video using Phantom (`phantom process` or `process_video.py`)"
         )
-        project.status_color = COLOR_MAGENTA
+        project.status_color = colors.MAGENTA
 
     # Stage 3: Added Thumbnail (scripted + thumbnail(s), no raw video files)
     elif project.is_scripted and project.thumbnail_files:
         project.stage_num = 3
         project.stage_name = "Added Thumbnail"
         project.next_step = "Record raw footage (webcam & screencast files) that delivers on the thumbnail"
-        project.status_color = COLOR_ORANGE
+        project.status_color = colors.ORANGE
 
     # Stage 2: Scripted (filled-in outline.md with the CTA marker present, no thumbnail or raw video files)
     elif project.is_scripted:
         project.stage_num = 2
         project.stage_name = "Scripted"
         project.next_step = "Design the thumbnail (e.g. thumbnail.png) before recording"
-        project.status_color = COLOR_BLUE
+        project.status_color = colors.BLUE
 
     # Stage 1: New (No raw video files, and a filled-in outline.md is missing)
     else:
@@ -595,7 +588,7 @@ def analyze_project(project_dir: Path) -> VideoProject:
             if not project.outline_has_cta:
                 todo.append(f"add a {OUTLINE_CTA_MARKER} marker to {OUTLINE_FILENAME} where the viewer should be asked to engage")
         project.next_step = f"Script the video ({'; '.join(todo)})"
-        project.status_color = COLOR_GRAY
+        project.status_color = colors.GRAY
 
     if has_scheduled_date and project.stage_num <= 6:
         project.next_step += f" (scheduled to go public on {project.scheduled_date})"
@@ -632,7 +625,7 @@ def render_stage_bar(proj: VideoProject) -> str:
     parts = []
     for idx, name in enumerate(steps, 1):
         if idx == proj.stage_num:
-            parts.append(f"{COLOR_BOLD}{COLOR_GREEN}[{idx}:{name}]{COLOR_RESET}")
+            parts.append(f"{colors.BOLD}{colors.GREEN}[{idx}:{name}]{colors.RESET}")
         else:
             is_complete = False
             if idx == 1:
@@ -672,24 +665,24 @@ def render_stage_bar(proj: VideoProject) -> str:
                 is_complete = proj.stage_num == 9 or bool(proj.yt_url)
 
             if is_complete:
-                parts.append(f"{COLOR_GREEN}✓{idx}{COLOR_RESET}")
+                parts.append(f"{colors.GREEN}✓{idx}{colors.RESET}")
             else:
-                parts.append(f"{COLOR_GRAY}{idx}:{name}{COLOR_RESET}")
+                parts.append(f"{colors.GRAY}{idx}:{name}{colors.RESET}")
     if proj.stage_num == 10:
-        parts.append(f"{COLOR_BOLD}{COLOR_RED}[10:Repack]{COLOR_RESET}")
+        parts.append(f"{colors.BOLD}{colors.RED}[10:Repack]{colors.RESET}")
     return " ➔ ".join(parts)
 
 
 def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, verbose: bool = False) -> None:
     """Print a clean, visually rich terminal summary of all video projects."""
     width = 78
-    print(f"\n{COLOR_BOLD}{COLOR_CYAN}{'=' * width}{COLOR_RESET}")
-    print(f"{COLOR_BOLD}{COLOR_WHITE} 🎬  YOUTUBE CONTENT PIPELINE SUMMARY{COLOR_RESET}")
-    print(f"{COLOR_GRAY} Directory: {projects_dir}{COLOR_RESET}")
-    print(f"{COLOR_BOLD}{COLOR_CYAN}{'=' * width}{COLOR_RESET}\n")
+    print(f"\n{colors.BOLD}{colors.CYAN}{'=' * width}{colors.RESET}")
+    print(f"{colors.BOLD}{colors.WHITE} 🎬  YOUTUBE CONTENT PIPELINE SUMMARY{colors.RESET}")
+    print(f"{colors.GRAY} Directory: {projects_dir}{colors.RESET}")
+    print(f"{colors.BOLD}{colors.CYAN}{'=' * width}{colors.RESET}\n")
 
     if not projects:
-        print(f"{COLOR_YELLOW}No project folders found in {projects_dir}{COLOR_RESET}\n")
+        print(f"{colors.YELLOW}No project folders found in {projects_dir}{colors.RESET}\n")
         return
 
     stage_counts = {i: 0 for i in range(1, 11)}
@@ -698,56 +691,56 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         stage_counts[proj.stage_num] += 1
         color = proj.status_color
         
-        print(f"{COLOR_BOLD}{idx}. {proj.name}{COLOR_RESET}")
-        print(f"   {stage_label(proj.stage_num)}: {color}{COLOR_BOLD}[{proj.stage_name}]{COLOR_RESET}")
+        print(f"{colors.BOLD}{idx}. {proj.name}{colors.RESET}")
+        print(f"   {stage_label(proj.stage_num)}: {color}{colors.BOLD}[{proj.stage_name}]{colors.RESET}")
         print(f"   Pipeline: {render_stage_bar(proj)}")
-        print(f"   {COLOR_BOLD}➜ Next Step:{COLOR_RESET} {proj.next_step}")
+        print(f"   {colors.BOLD}➜ Next Step:{colors.RESET} {proj.next_step}")
 
         # Checklists for files (the .excalidraw script is optional, so it's only listed when present)
         file_statuses = []
         if proj.script_files:
             script_names = ", ".join([f.name for f in proj.script_files])
-            file_statuses.append(f"{COLOR_GREEN}✓ script ({script_names}){COLOR_RESET}")
+            file_statuses.append(f"{colors.GREEN}✓ script ({script_names}){colors.RESET}")
 
         if proj.has_outline:
-            outline_status = f"{COLOR_GREEN}✓ {proj.outline_file.name}{COLOR_RESET}"
+            outline_status = f"{colors.GREEN}✓ {proj.outline_file.name}{colors.RESET}"
         elif proj.outline_file:
             missing = ", ".join([f"# {s}" for s in proj.outline_missing_sections]
                                 + ([] if proj.outline_has_cta else [OUTLINE_CTA_MARKER]))
-            outline_status = f"{COLOR_YELLOW}✗ {proj.outline_file.name} (missing/empty: {missing}){COLOR_RESET}"
+            outline_status = f"{colors.YELLOW}✗ {proj.outline_file.name} (missing/empty: {missing}){colors.RESET}"
         else:
-            outline_status = f"{COLOR_GRAY}✗ {OUTLINE_FILENAME}{COLOR_RESET}"
+            outline_status = f"{colors.GRAY}✗ {OUTLINE_FILENAME}{colors.RESET}"
 
         raw_info = f"{len(proj.raw_files)} raw file(s)" if proj.raw_files else "No raw files"
-        to_rev_status = f"{COLOR_GREEN}✓ {proj.to_review_file.name}{COLOR_RESET}" if proj.to_review_file else f"{COLOR_GRAY}✗ to-review.mp4{COLOR_RESET}"
-        final_status = f"{COLOR_GREEN}✓ {proj.final_file.name}{COLOR_RESET}" if proj.final_file else f"{COLOR_GRAY}✗ final.mp4{COLOR_RESET}"
+        to_rev_status = f"{colors.GREEN}✓ {proj.to_review_file.name}{colors.RESET}" if proj.to_review_file else f"{colors.GRAY}✗ to-review.mp4{colors.RESET}"
+        final_status = f"{colors.GREEN}✓ {proj.final_file.name}{colors.RESET}" if proj.final_file else f"{colors.GRAY}✗ final.mp4{colors.RESET}"
         
         if proj.metadata_error:
-            meta_status = f"{COLOR_RED}✗ metadata.json ({proj.metadata_error}){COLOR_RESET}"
+            meta_status = f"{colors.RED}✗ metadata.json ({proj.metadata_error}){colors.RESET}"
         elif proj.metadata_file and (proj.metadata_missing_keys or proj.metadata_blank_resources):
             problems = []
             if proj.metadata_missing_keys:
                 problems.append(f"missing: {', '.join(proj.metadata_missing_keys)}")
             if proj.metadata_blank_resources:
                 problems.append(f"resource URLs needed: {', '.join(proj.metadata_blank_resources)}")
-            meta_status = f"{COLOR_YELLOW}✗ metadata.json ({'; '.join(problems)}){COLOR_RESET}"
+            meta_status = f"{colors.YELLOW}✗ metadata.json ({'; '.join(problems)}){colors.RESET}"
         elif proj.metadata_file:
             if proj.yt_url:
                 date_str = proj.uploaded_date or proj.scheduled_date
                 date_label = f" (Uploaded: {date_str})" if date_str else " (URL set)"
-                meta_status = f"{COLOR_GREEN}✓ metadata.json{date_label}{COLOR_RESET}"
+                meta_status = f"{colors.GREEN}✓ metadata.json{date_label}{colors.RESET}"
             elif proj.scheduled_date:
-                meta_status = f"{COLOR_GREEN}✓ metadata.json (Scheduled: {proj.scheduled_date}){COLOR_RESET}"
+                meta_status = f"{colors.GREEN}✓ metadata.json (Scheduled: {proj.scheduled_date}){colors.RESET}"
             else:
-                meta_status = f"{COLOR_GREEN}✓ metadata.json{COLOR_RESET}"
+                meta_status = f"{colors.GREEN}✓ metadata.json{colors.RESET}"
         else:
-            meta_status = f"{COLOR_GRAY}✗ metadata.json{COLOR_RESET}"
+            meta_status = f"{colors.GRAY}✗ metadata.json{colors.RESET}"
         
         if proj.thumbnail_files:
             thumb_names = ", ".join([f.name for f in proj.thumbnail_files])
-            thumb_status = f"{COLOR_GREEN}✓ thumbnail ({thumb_names}){COLOR_RESET}"
+            thumb_status = f"{colors.GREEN}✓ thumbnail ({thumb_names}){colors.RESET}"
         else:
-            thumb_status = f"{COLOR_GRAY}✗ thumbnail{COLOR_RESET}"
+            thumb_status = f"{colors.GRAY}✗ thumbnail{colors.RESET}"
 
         file_statuses += [outline_status, raw_info, to_rev_status, final_status, meta_status, thumb_status]
         print(f"   Files: {' | '.join(f'[{s}]' for s in file_statuses)}")
@@ -755,31 +748,31 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
         if verbose and (proj.script_files or proj.raw_files or proj.thumbnail_files or proj.title):
             if proj.title:
                 pending = "" if proj.title_reviewed else " (auto-picked, awaiting approval)"
-                print(f"   {COLOR_GRAY}└── Video title: {proj.title}{pending}{COLOR_RESET}")
+                print(f"   {colors.GRAY}└── Video title: {proj.title}{pending}{colors.RESET}")
             if proj.script_files:
                 script_names = ", ".join([f.name for f in proj.script_files])
-                print(f"   {COLOR_GRAY}└── Script / Presentation: {script_names}{COLOR_RESET}")
+                print(f"   {colors.GRAY}└── Script / Presentation: {script_names}{colors.RESET}")
             if proj.raw_files:
                 raw_names = ", ".join([f.name for f in proj.raw_files])
-                print(f"   {COLOR_GRAY}└── Raw footage: {raw_names}{COLOR_RESET}")
+                print(f"   {colors.GRAY}└── Raw footage: {raw_names}{colors.RESET}")
 
-        print(f"{COLOR_GRAY}{'-' * width}{COLOR_RESET}")
+        print(f"{colors.GRAY}{'-' * width}{colors.RESET}")
 
     # Summary Statistics
-    print(f"\n{COLOR_BOLD}{COLOR_WHITE}📊 PIPELINE OVERVIEW & STATS{COLOR_RESET}")
-    print(f" Total Projects: {COLOR_BOLD}{len(projects)}{COLOR_RESET}")
+    print(f"\n{colors.BOLD}{colors.WHITE}📊 PIPELINE OVERVIEW & STATS{colors.RESET}")
+    print(f" Total Projects: {colors.BOLD}{len(projects)}{colors.RESET}")
     
     stat_line = (
-        f" {COLOR_GRAY}New: {stage_counts[1]}{COLOR_RESET} | "
-        f"{COLOR_BLUE}Scripted: {stage_counts[2]}{COLOR_RESET} | "
-        f"{COLOR_ORANGE}Thumbnail: {stage_counts[3]}{COLOR_RESET} | "
-        f"{COLOR_MAGENTA}Recorded: {stage_counts[4]}{COLOR_RESET} | "
-        f"{COLOR_YELLOW}Processed: {stage_counts[5]}{COLOR_RESET} | "
-        f"{COLOR_PURPLE}Reviewed: {stage_counts[6]}{COLOR_RESET} | "
-        f"{COLOR_CYAN}Ready: {stage_counts[7]}{COLOR_RESET} | "
-        f"{COLOR_YELLOW}Scheduled: {stage_counts[8]}{COLOR_RESET} | "
-        f"{COLOR_GREEN}Uploaded: {stage_counts[9]}{COLOR_RESET} | "
-        f"{COLOR_RED}Repackage: {stage_counts[10]}{COLOR_RESET}"
+        f" {colors.GRAY}New: {stage_counts[1]}{colors.RESET} | "
+        f"{colors.BLUE}Scripted: {stage_counts[2]}{colors.RESET} | "
+        f"{colors.ORANGE}Thumbnail: {stage_counts[3]}{colors.RESET} | "
+        f"{colors.MAGENTA}Recorded: {stage_counts[4]}{colors.RESET} | "
+        f"{colors.YELLOW}Processed: {stage_counts[5]}{colors.RESET} | "
+        f"{colors.PURPLE}Reviewed: {stage_counts[6]}{colors.RESET} | "
+        f"{colors.CYAN}Ready: {stage_counts[7]}{colors.RESET} | "
+        f"{colors.YELLOW}Scheduled: {stage_counts[8]}{colors.RESET} | "
+        f"{colors.GREEN}Uploaded: {stage_counts[9]}{colors.RESET} | "
+        f"{colors.RED}Repackage: {stage_counts[10]}{colors.RESET}"
     )
     print(stat_line)
 
@@ -791,27 +784,27 @@ def print_terminal_summary(projects: List[VideoProject], projects_dir: Path, ver
     repackage_cnt = stage_counts[10]
     
     if action_needed > 0:
-        print(f"\n {COLOR_YELLOW}⚡ Action Required: {action_needed} video(s) in progress / awaiting next steps{COLOR_RESET}")
+        print(f"\n {colors.YELLOW}⚡ Action Required: {action_needed} video(s) in progress / awaiting next steps{colors.RESET}")
     if ready_to_sched > 0:
-        print(f" {COLOR_CYAN}📋 Ready to Schedule: {ready_to_sched} video(s) fully reviewed with metadata & thumbnail!{COLOR_RESET}")
+        print(f" {colors.CYAN}📋 Ready to Schedule: {ready_to_sched} video(s) fully reviewed with metadata & thumbnail!{colors.RESET}")
     if scheduled_cnt > 0:
-        print(f" {COLOR_YELLOW}📅 Scheduled (Needs Upload): {scheduled_cnt} video(s) scheduled awaiting YouTube upload{COLOR_RESET}")
+        print(f" {colors.YELLOW}📅 Scheduled (Needs Upload): {scheduled_cnt} video(s) scheduled awaiting YouTube upload{colors.RESET}")
     if uploaded_cnt > 0:
-        print(f" {COLOR_GREEN}🎉 Uploaded: {uploaded_cnt} video(s) published on YouTube!{COLOR_RESET}")
+        print(f" {colors.GREEN}🎉 Uploaded: {uploaded_cnt} video(s) published on YouTube!{colors.RESET}")
     if repackage_cnt > 0:
-        print(f" {COLOR_RED}🔁 Needs Repackaging: {repackage_cnt} video(s) with CTR below the channel's 28-day CTR{COLOR_RESET}")
+        print(f" {colors.RED}🔁 Needs Repackaging: {repackage_cnt} video(s) with CTR below the channel's 28-day CTR{colors.RESET}")
 
-    print(f"\n{COLOR_BOLD}{COLOR_CYAN}{'=' * width}{COLOR_RESET}\n")
+    print(f"\n{colors.BOLD}{colors.CYAN}{'=' * width}{colors.RESET}\n")
 
 
 def print_concise_summary(projects: List[VideoProject]) -> None:
     """Print a concise one-line-per-project summary."""
     if not projects:
-        print(f"{COLOR_YELLOW}No matching project folders found.{COLOR_RESET}")
+        print(f"{colors.YELLOW}No matching project folders found.{colors.RESET}")
         return
     for idx, proj in enumerate(projects, 1):
         color = proj.status_color
-        print(f"{idx}. {proj.name} ({color}{stage_label(proj.stage_num)}: {proj.stage_name}{COLOR_RESET})")
+        print(f"{idx}. {proj.name} ({color}{stage_label(proj.stage_num)}: {proj.stage_name}{colors.RESET})")
 
 
 def main():
@@ -925,7 +918,7 @@ def main():
                 print(f"Could not sync with Google Sheets: {e}", file=sys.stderr)
         else:
             try:
-                print(f"{COLOR_CYAN}🔄 Syncing video projects with Google Sheets...{COLOR_RESET}", end="", flush=True)
+                print(f"{colors.CYAN}🔄 Syncing video projects with Google Sheets...{colors.RESET}", end="", flush=True)
                 stats = sync_projects_to_sheet(all_projects)
                 details = []
                 if stats.get("added"):
@@ -935,9 +928,9 @@ def main():
                 if stats.get("archived"):
                     details.append(f"{stats['archived']} archived")
                 detail_str = f" ({', '.join(details)})" if details else " (all up to date)"
-                print(f"\r{COLOR_GREEN}✓ Synced {stats['total']} project(s) with Google Sheets{detail_str}.{COLOR_RESET}\n")
+                print(f"\r{colors.GREEN}✓ Synced {stats['total']} project(s) with Google Sheets{detail_str}.{colors.RESET}\n")
             except Exception as e:
-                print(f"\r{COLOR_YELLOW}⚠️ Note: Could not sync with Google Sheets: {e}{COLOR_RESET}\n")
+                print(f"\r{colors.YELLOW}⚠️ Note: Could not sync with Google Sheets: {e}{colors.RESET}\n")
 
 
 if __name__ == "__main__":

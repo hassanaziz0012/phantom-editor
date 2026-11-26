@@ -34,3 +34,21 @@ def format_timestamp(seconds: float, decimals: int = 0) -> str:
     if hours:
         return f"{hours:02d}:{minutes:02d}:{secs_str}"
     return f"{minutes:02d}:{secs_str}"
+
+
+def format_srt_timestamp(seconds: float, separator: str = ",") -> str:
+    """``HH:MM:SS,mmm`` as in SRT files (``HH:MM:SS.mmm`` with ``separator="."``), rounded to the millisecond."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    milliseconds = int(round((seconds % 1) * 1000))
+    if milliseconds == 1000:
+        milliseconds = 0
+        secs += 1
+        if secs == 60:
+            secs = 0
+            minutes += 1
+            if minutes == 60:
+                minutes = 0
+                hours += 1
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}{separator}{milliseconds:03d}"

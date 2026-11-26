@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 import argparse
-import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 
+from metadata.utils import ask_browserllm
 from shared.paths import REPO_ROOT
+from shared.terminal import edit_text
 
 from content.written_content_sheet_utils import append_written_post
 
@@ -29,26 +28,7 @@ PLATFORM_CONFIG = {
 
 
 def get_yapping_from_editor() -> str:
-    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "nano"
-    cmd = shlex.split(editor)
-
-    with tempfile.NamedTemporaryFile(suffix=".txt", prefix="yap_", delete=False) as tf:
-        temp_path = tf.name
-
-    try:
-        if Path(cmd[0]).name == "gnome-text-editor" and "--standalone" not in cmd:
-            cmd.append("--standalone")
-        elif Path(cmd[0]).name == "code" and "-w" not in cmd and "--wait" not in cmd:
-            cmd.append("--wait")
-
-        print(f"Opening {editor}... write your thoughts, then save and close.")
-        subprocess.call(cmd + [temp_path])
-
-        with open(temp_path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+    return edit_text(prefix="yap_").strip()
 
 
 def parse_response(text: str) -> Tuple[str, str]:
@@ -82,20 +62,7 @@ def generate_post(raw_yap: str, platform: str) -> Tuple[str, str]:
     filled_prompt = prompt_template.replace("{textwall}", raw_yap)
 
     print("Generating post with Claude via BrowserLLM...")
-    with tempfile.NamedTemporaryFile("w+", suffix=".txt", delete=False) as pf, \
-         tempfile.NamedTemporaryFile("r+", suffix=".txt", delete=False) as of:
-        prompt_file, output_file = pf.name, of.name
-        pf.write(filled_prompt)
-        pf.flush()
-
-    try:
-        browserllm = shutil.which("browserllm") or str(Path.home() / ".local" / "bin" / "browserllm")
-        subprocess.run([browserllm, "-p", prompt_file, "--provider", "claude", "-o", output_file], check=True)
-        response = Path(output_file).read_text(encoding="utf-8").strip()
-    finally:
-        for p in (prompt_file, output_file):
-            if os.path.exists(p):
-                os.remove(p)
+    response = ask_browserllm(filled_prompt, provider="claude").strip()
 
     return parse_response(response)
 
@@ -152,7 +119,11 @@ def main():
             sys.exit(1)
         raw_yap = args.file.read_text(encoding="utf-8").strip()
     else:
-        raw_yap = get_yapping_from_editor()
+        try:
+            raw_yap = get_yapping_from_editor()
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
     if not raw_yap:
         print("No text entered. Aborting.")

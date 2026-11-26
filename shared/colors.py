@@ -1,0 +1,25 @@
+"""ANSI escape codes for coloured terminal output. The plain colour names are the bright variants."""
+
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+ITALIC = "\033[3m"
+UNDERLINE = "\033[4m"
+
+RED = "\033[91m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+MAGENTA = "\033[95m"
+CYAN = "\033[96m"
+WHITE = "\033[97m"
+GRAY = "\033[90m"
+ORANGE = "\033[38;5;208m"
+
+# The normal-intensity variants
+DARK_RED = "\033[31m"
+DARK_GREEN = "\033[32m"
+DARK_YELLOW = "\033[33m"
+DARK_BLUE = "\033[34m"
+PURPLE = "\033[35m"
+DARK_CYAN = "\033[36m"

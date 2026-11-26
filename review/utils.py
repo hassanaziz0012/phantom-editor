@@ -1,16 +1,21 @@
 import sys
 
+from shared import colors
+from shared.timecodes import format_srt_timestamp
+
+
 class Colors:
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-    DIM = '\033[2m'
+    """The names the review scripts use, mapped onto shared.colors."""
+    HEADER = colors.MAGENTA
+    BLUE = colors.BLUE
+    CYAN = colors.CYAN
+    GREEN = colors.GREEN
+    WARNING = colors.YELLOW
+    FAIL = colors.RED
+    ENDC = colors.RESET
+    BOLD = colors.BOLD
+    UNDERLINE = colors.UNDERLINE
+    DIM = colors.DIM
 
 def colorize(text: str, color_code: str) -> str:
     """Colors text if output is a TTY."""
@@ -43,27 +48,4 @@ def parse_time_to_seconds(time_str: str, default: float = 0.0) -> float:
 
 def format_time(seconds: float, separator: str = ".") -> str:
     """Converts seconds to HH:MM:SS.mmm (or HH:MM:SS,mmm if separator is ',') format."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    milliseconds = int(round((seconds % 1) * 1000))
-    if milliseconds == 1000:
-        milliseconds = 0
-        secs += 1
-        if secs == 60:
-            secs = 0
-            minutes += 1
-            if minutes == 60:
-                minutes = 0
-                hours += 1
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}{separator}{milliseconds:03d}"
-
-def format_seconds_to_hhmmss(seconds: float) -> str:
-    """Formats float seconds into HH:MM:SS or MM:SS format."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    if hours > 0:
-        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-    else:
-        return f"{minutes:02d}:{secs:02d}"
+    return format_srt_timestamp(seconds, separator)

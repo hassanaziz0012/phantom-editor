@@ -6,50 +6,19 @@ Script to send a YouTube video promotion broadcast to a segment using Resend.
 import os
 import sys
 import argparse
-import re
+import html
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
 import resend
 
+from emails.resend_response import resend_field
+from shared import colors
+from youtube_api.video_id import video_id_or_none
 
-# ANSI escape codes for output styling
-GREEN = "\033[92m"
-RED = "\033[91m"
-RESET = "\033[0m"
 
 # Determine paths
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = SCRIPT_DIR / "templates"
 DEFAULT_TEMPLATE_PATH = TEMPLATES_DIR / "youtube_promotion.html"
-
-
-def extract_youtube_id(url: str) -> str:
-    """Extract YouTube 11-character video ID from a URL or raw ID string."""
-    if not url:
-        return ""
-    url = url.strip()
-
-    parsed = urlparse(url)
-    if parsed.hostname in ("www.youtube.com", "youtube.com", "m.youtube.com"):
-        qs = parse_qs(parsed.query)
-        if "v" in qs and qs["v"]:
-            return qs["v"][0]
-        parts = [p for p in parsed.path.split("/") if p]
-        if parts and parts[0] in ("embed", "v", "shorts") and len(parts) > 1:
-            return parts[1]
-    elif parsed.hostname == "youtu.be":
-        parts = [p for p in parsed.path.split("/") if p]
-        if parts:
-            return parts[0]
-
-    match = re.search(r"(?:v=|\/|embed\/|shorts\/|youtu\.be\/)([a-zA-Z0-9_-]{11})", url)
-    if match:
-        return match.group(1)
-
-    if len(url) == 11 and re.match(r"^[a-zA-Z0-9_-]{11}$", url):
-        return url
-
-    return ""
 
 
 def load_and_render_template(
@@ -65,8 +34,16 @@ def load_and_render_template(
     with open(template_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    video_id = extract_youtube_id(video_url)
+    video_id = video_id_or_none(video_url) or ""
     thumbnail_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg" if video_id else ""
+
+    # Escape every substituted value (text and attribute contexts) so characters
+    # like & < > " in a title cannot break the HTML.
+    video_title = html.escape(video_title, quote=True)
+    video_description = html.escape(video_description, quote=True)
+    video_url = html.escape(video_url, quote=True)
+    video_id = html.escape(video_id, quote=True)
+    thumbnail_url = html.escape(thumbnail_url, quote=True)
 
     # Perform string replacements for placeholders
     replacements = {
@@ -90,27 +67,6 @@ def load_and_render_template(
     return content
 
 
-def get_default_segment_id(api_key: str) -> str:
-    """Fetch the default or first segment ID from Resend using the official SDK."""
-    resend.api_key = api_key
-    try:
-        segments = resend.Segments.list()
-        data = segments.get("data", []) if isinstance(segments, dict) else getattr(segments, "data", [])
-        if data:
-            first = data[0]
-            seg_id = first.get("id") if isinstance(first, dict) else getattr(first, "id", None)
-            if seg_id:
-                return seg_id
-    except Exception as e:
-        raise ValueError(
-            f"Could not automatically retrieve Segment ID from Resend API: {e}"
-        ) from e
-
-    raise ValueError(
-        "No Segments found in your Resend account. Please create a Segment at https://resend.com/segments"
-    )
-
-
 def send_broadcast(
     subject: str,
     html_content: str,
@@ -127,9 +83,10 @@ def send_broadcast(
     if not api_key:
         raise ValueError("Missing RESEND_API_KEY environment variable.")
     if not segment_id:
-        print("RESEND_GENERAL_AUDIENCE_ID not specified in .env. Automatically fetching default segment from Resend...")
-        segment_id = get_default_segment_id(api_key)
-        print(f"Using Segment ID: {segment_id}")
+        raise ValueError(
+            "No Resend segment specified. Set RESEND_GENERAL_AUDIENCE_ID or pass --segment-id; "
+            "refusing to guess an audience."
+        )
     if not from_email:
         raise ValueError(
             "Missing RESEND_FROM_EMAIL environment variable (e.g., 'Hassan <newsletter@yourdomain.com>')."
@@ -149,7 +106,7 @@ def send_broadcast(
     }
 
     broadcast = resend.Broadcasts.create(params)
-    broadcast_id = broadcast.get("id") if isinstance(broadcast, dict) else getattr(broadcast, "id", None)
+    broadcast_id = resend_field(broadcast, "id")
 
     if broadcast_id:
         send_params: resend.Broadcasts.SendParams = {
@@ -202,7 +159,7 @@ def main():
         dest="segment_id",
         type=str,
         default=None,
-        help="Optional Resend segment ID (defaults to RESEND_GENERAL_AUDIENCE_ID env var or default segment)",
+        help="Optional Resend segment ID (defaults to RESEND_GENERAL_AUDIENCE_ID env var; sending is refused if neither is set)",
     )
     parser.add_argument(
         "--test",
@@ -226,7 +183,7 @@ def main():
             video_url=args.url,
         )
     except Exception as err:
-        print(f"{RED}Error loading template: {err}{RESET}", file=sys.stderr)
+        print(f"{colors.RED}Error loading template: {err}{colors.RESET}", file=sys.stderr)
         sys.exit(1)
 
     print("=" * 50)
@@ -240,7 +197,7 @@ def main():
         target_segment_id = os.getenv("RESEND_TESTER_SEGMENT_ID") or os.getenv("RESEND_TESTER_AUDIENCE_ID")
         if not target_segment_id:
             print(
-                f"{RED}Error: Missing RESEND_TESTER_SEGMENT_ID (or RESEND_TESTER_AUDIENCE_ID) environment variable.{RESET}",
+                f"{colors.RED}Error: Missing RESEND_TESTER_SEGMENT_ID (or RESEND_TESTER_AUDIENCE_ID) environment variable.{colors.RESET}",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -267,15 +224,15 @@ def main():
             segment_id=target_segment_id,
         )
         if args.test:
-            print(f"{GREEN}Test broadcast sent successfully!{RESET}")
+            print(f"{colors.GREEN}Test broadcast sent successfully!{colors.RESET}")
         else:
-            print(f"{GREEN}Broadcast sent successfully!{RESET}")
+            print(f"{colors.GREEN}Broadcast sent successfully!{colors.RESET}")
         print(f"Response: {result}")
     except Exception as err:
         if args.test:
-            print(f"{RED}Error sending test broadcast: {err}{RESET}", file=sys.stderr)
+            print(f"{colors.RED}Error sending test broadcast: {err}{colors.RESET}", file=sys.stderr)
         else:
-            print(f"{RED}Error sending broadcast: {err}{RESET}", file=sys.stderr)
+            print(f"{colors.RED}Error sending broadcast: {err}{colors.RESET}", file=sys.stderr)
         sys.exit(1)
 
 

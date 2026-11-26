@@ -12,27 +12,29 @@ import re
 import subprocess
 from typing import Any, Dict, List, Optional, Union
 
+from shared import colors
+
 logger = logging.getLogger("phantom.ideas")
 
 
 class Colors:
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    ITALIC = "\033[3m"
-    CYAN = "\033[36m"
-    BRIGHT_CYAN = "\033[96m"
-    GREEN = "\033[32m"
-    BRIGHT_GREEN = "\033[92m"
-    YELLOW = "\033[33m"
-    BRIGHT_YELLOW = "\033[93m"
-    BLUE = "\033[34m"
-    BRIGHT_BLUE = "\033[94m"
-    MAGENTA = "\033[35m"
-    BRIGHT_MAGENTA = "\033[95m"
-    RED = "\033[31m"
-    GRAY = "\033[90m"
-    WHITE = "\033[97m"
+    RESET = colors.RESET
+    BOLD = colors.BOLD
+    DIM = colors.DIM
+    ITALIC = colors.ITALIC
+    CYAN = colors.DARK_CYAN
+    BRIGHT_CYAN = colors.CYAN
+    GREEN = colors.DARK_GREEN
+    BRIGHT_GREEN = colors.GREEN
+    YELLOW = colors.DARK_YELLOW
+    BRIGHT_YELLOW = colors.YELLOW
+    BLUE = colors.DARK_BLUE
+    BRIGHT_BLUE = colors.BLUE
+    MAGENTA = colors.PURPLE
+    BRIGHT_MAGENTA = colors.MAGENTA
+    RED = colors.DARK_RED
+    GRAY = colors.GRAY
+    WHITE = colors.WHITE
 
 
 # ── Fetch Video Metadata ──────────────────────────────────────────────────────
@@ -55,7 +57,7 @@ def fetch_ytdlp_metadata(video_url: str) -> Dict[str, Any]:
 def fetch_video_metadata(video_id: str, api_key: Optional[str] = None) -> Dict[str, Any]:
     """
     Fetches title, channel_title, channel_id, description and view_count for a video,
-    from the YouTube Data API, falling back to yt-dlp, then to placeholders.
+    from the YouTube Data API, falling back to yt-dlp. Raises RuntimeError if both fail.
     """
     api_key = api_key or os.getenv("YOUTUBE_API_KEY")
     if api_key:
@@ -84,13 +86,10 @@ def fetch_video_metadata(video_id: str, api_key: Optional[str] = None) -> Dict[s
     except Exception as e:
         logger.debug("yt-dlp metadata fetch failed: %s", e)
 
-    return {
-        "title": f"YouTube Video ({video_id})",
-        "channel_title": "Unknown Channel",
-        "channel_id": "unknown_channel",
-        "description": "No description available.",
-        "view_count": 0,
-    }
+    raise RuntimeError(
+        f"Could not fetch metadata for video {video_id} from the YouTube API or yt-dlp. "
+        "Check YOUTUBE_API_KEY, the video ID, and your network, then try again."
+    )
 
 
 # ── Fetch Recent Channel Video Titles ──────────────────────────────────────────

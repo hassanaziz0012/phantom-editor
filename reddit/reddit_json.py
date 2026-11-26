@@ -23,6 +23,11 @@ from html.parser import HTMLParser
 from typing import Any, Awaitable, Callable, Dict, Iterator, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
+# Retry policy the Reddit scrapers share (navigate.py for the CLI scrapers, serve.py for the server)
+RETRY_STATUSES = {429, 502, 503, 504}
+MAX_RETRIES = 3
+RETRY_DELAY = 240
+
 # Tags that start a new block of text, like a paragraph does on the page
 BLOCK_TAGS = {"p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote", "ul", "ol", "table", "tr", "div", "hr"}
 

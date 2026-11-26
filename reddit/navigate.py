@@ -10,11 +10,8 @@ import sys
 
 from playwright.async_api import Page, Response
 
-from reddit.reddit_json import seconds_until_reset
+from reddit.reddit_json import MAX_RETRIES, RETRY_DELAY, RETRY_STATUSES, seconds_until_reset
 
-RETRY_STATUSES = {429, 502, 503, 504}
-MAX_RETRIES = 3
-RETRY_DELAY = 240
 NAV_TIMEOUT_MS = 30000
 
 
