@@ -28,9 +28,10 @@ is unclear, read only its docstring: `sed -n 1,30p scripts/plumbing/<tool>.py`.
   `{"home": {"url": "https://x.com/", "view": "1600x1400", "wait": 3, "texts": ["Pricing"]},
     "faq": {"url": "https://x.com/about", "element": "css=#faq", "texts": ["Claude Code"]}}`
   Crop at capture with `element` or `clip`, never with ffmpeg, or the measured boxes go wrong.
-- **X/Twitter posts**: target `https://platform.twitter.com/embed/Tweet.html?id=<ID>&theme=light&dnt=true`
-  with `"view": "560x1200", "element": "css=article"`. If the shot is cut at "Show more", report it; don't
-  try other ways.
+- **X/Twitter posts**: put the plain post URL (`https://x.com/<user>/status/<id>`) in the same `targets.json`
+  as everything else. shoot.py turns it into the public embed and crops it to the post by itself (no login).
+  Don't open X posts in Chrome. Use Chrome on x.com only to *find* a post's URL when the request has none
+  (X search), then shoot it in the batch. If the shot is cut at "Show more", report it; don't try other ways.
 - **Reddit**: a public subreddit works with shoot.py (`https://www.reddit.com/r/<sub>/new/`). Anything
   logged-in on reddit.com uses browsermcp (Claude in Chrome is blocked there).
 - **Logged-in or Cloudflare-blocked pages** (dashboards, claude.ai, Upwork): Claude in Chrome. Load its
@@ -43,6 +44,17 @@ is unclear, read only its docstring: `sed -n 1,30p scripts/plumbing/<tool>.py`.
   `~/Desktop/programming`, then
   `python3 scripts/plumbing/fileshot.py assets/img name=/path/to/file` (first 36 lines; `LINES=24` for
   fewer). Command output as a terminal: `--cmd name="phantom --help"`.
+- **A local app's UI** (a desktop or web app in one of the user's repos with no live URL, e.g. a
+  Wails/Electron/Tauri tray app): first look for real screenshots in the repo (`fd -e png -e jpg` under it,
+  README images). If none fit, render the app's own frontend: copy its frontend folder to
+  `$B/research/ui-<name>/`, stub the backend bridge the frontend imports (Wails: `wails/runtime.js` exporting
+  `Call.ByName` and `Events.On`; Tauri: `@tauri-apps/api`; Electron: `window.<preload api>`) so it returns the
+  state the request describes (read the frontend's calls with `rg -n "Call\.|invoke\(|ByName"` first), serve
+  it with `python3 -m http.server <free port>` in the background, shoot it with shoot.py (`"view"` = the app
+  window size, e.g. "960x652", `SCALE=2`, `"wait": 2`, plus the texts to measure), then kill the server.
+  Example: the Rambler status page was a `frontend/` folder plus a 10-line `wails/runtime.js` stub returning
+  `{status: {state: "idle", label: "Ready", ...}}`. A frontend that needs a build step (React/Vite) is built
+  with its own `npm run build` only if `node_modules` exists; otherwise report it as failed.
 - **YouTube video**: `curl -s "https://www.youtube.com/oembed?url=<watch url>&format=json"` gives the real
   title; download `https://i.ytimg.com/vi/<id>/maxresdefault.jpg` to `assets/img/<name>.jpg`.
 - **Screen recording of a live site**: `python3 scripts/plumbing/record.py assets/video/<name>.mp4 <url>
@@ -64,6 +76,10 @@ Look at the images in as few reads as possible:
 - privacy: API keys, tokens, emails, phone numbers, other people's names, client names, chat history,
   account names. Crop or re-shoot to remove them. If you can't remove them, keep the file and flag it;
 - every requested `texts` entry was measured (`null` in `<name>.json` means not found).
+
+Your privacy check is final: the main agent does not re-check your images, and the user reviews the
+video. When the request (or a later message) asks for stricter privacy (e.g. "hide every endpoint, path and
+ID"), apply it to every image it covers and say in the privacy column what you hid.
 
 Fix what you can (a different selector, `wait`, `scroll`, a tighter `element`): at most 2 retries per
 asset, then report it as failed with the reason. Montage again only the images you changed.
