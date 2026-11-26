@@ -80,7 +80,7 @@ def prompt(k, sid, x, y, w, h, text, t, until=None, size=56, title=None, keys=Tr
     if title:
         k.text(sid + 'h', x + 30, y + 20, title, 34, color=CLAUDE)
     dur = (until - t) if until else min(4.0, 0.06 * len(text))
-    k.text(sid + 'p', x + 40, y + (80 if title else 40), text, size, t=t, d=dur, code=True)
+    k.text(sid + 'p', x + 40, y + (80 if title else 40), text, size, t=t, d=dur, code=True, w=w - 80)
     if keys:
         for i in range(max(1, int(dur / 0.3))):
             sfx('key-press', t + 0.1 + i * 0.3, 0.12)
@@ -94,7 +94,7 @@ def bubble(k, sid, x, y, w, h, text, t=None, size=40, stroke=CLAUDE, fill=CLAUDE
 
 
 def scroller(k, sid, x, y, w, h, scene_dur, n=16, speed=1500):
-    """A window of placeholder cards that scrolls up for the whole scene (feels like an endless feed)."""
+    """A window of placeholder cards that scrolls up for the whole scene (feels like an endless feed). Pass c.dur as scene_dur."""
     cards = []
     for i in range(n):
         cy = i * 150
@@ -261,3 +261,81 @@ def shield(k, sid, cx, y, w=240, t=None, color=GREEN, fill='#b2f2bb', d=0.5):
     pts = [[cx - w / 2, y + h * 0.1], [cx, y], [cx + w / 2, y + h * 0.1], [cx + w / 2, y + h * 0.5],
            [cx, y + h], [cx - w / 2, y + h * 0.5]]
     k.svg(sid, k.g('polygon', [pts], stroke=color, sw=3.5, fill=fill, fs='hachure'), t, d)
+
+
+def padlock(k, sid, cx, y, w=160, t=None, color=INK, fill=YEL_BG, open_=False, d=0.5):
+    """Padlock; top of the shackle at (cx, y), body w wide, ~1.25*w tall overall. open_=True lifts the shackle."""
+    sh, bw, bh = w * 0.62, w, w * 0.78
+    by = y + w * 0.47
+    lift = w * 0.22 if open_ else 0
+    pts = [[cx - sh / 2, by], [cx - sh / 2, y + w * 0.2 - lift]]
+    pts += [[cx - sh / 2 + sh * (1 - math.cos(a * math.pi / 8)) / 2, y + w * 0.2 - lift - sh * 0.45 * math.sin(a * math.pi / 8)]
+            for a in range(1, 8)]
+    pts += [[cx + sh / 2, y + w * 0.2 - lift], [cx + sh / 2, by - (lift and w * 0.1)]]
+    g = k.g('curve', [pts], stroke=color, sw=w / 18)
+    g += k.g('rectangle', [cx - bw / 2, by, bw, bh], stroke=color, sw=3.2, fill=fill, fs='solid')
+    g += k.g('ellipse', [cx, by + bh * 0.42, w * 0.16, w * 0.16], stroke=color, sw=2.4, fill=color, fs='solid')
+    g += k.g('line', [cx, by + bh * 0.48, cx, by + bh * 0.72], stroke=color, sw=4)
+    k.svg(sid, g, t, d)
+
+
+def cloud(k, sid, x, y, w=360, t=None, color=INK, fill='#e7f5ff', d=0.5):
+    """Cloud (a server / 'the cloud'); top-left of its bounding box at (x, y), ~0.55*w tall."""
+    h = w * 0.55
+    g = ''
+    for ex, ey, ew in ((0.3, 0.62, 0.42), (0.52, 0.42, 0.5), (0.74, 0.6, 0.42), (0.5, 0.72, 0.6)):
+        g += k.g('ellipse', [x + w * ex, y + h * ey, w * ew, w * ew * 0.78], stroke=color, sw=3, fill=fill, fs='solid')
+    k.svg(sid, g, t, d)
+
+
+def server(k, sid, x, y, w=200, h=260, t=None, color=INK, fill='#e9ecef', d=0.5):
+    """Server rack with 3 units and status lights; top-left at (x, y)."""
+    g = k.g('rectangle', [x, y, w, h], stroke=color, sw=3, fill=fill, fs='hachure')
+    for i in range(3):
+        uy = y + 18 + i * (h - 24) / 3
+        g += k.g('rectangle', [x + 14, uy, w - 28, (h - 24) / 3 - 14], stroke=color, sw=2.2, fill='#fff', fs='solid')
+        g += k.g('ellipse', [x + w - 40, uy + ((h - 24) / 3 - 14) / 2, 14, 14], stroke=GREEN, sw=2, fill=GREEN, fs='solid')
+        g += k.g('line', [x + 30, uy + 20, x + w * 0.55, uy + 20], stroke=GREY, sw=2.4)
+    k.svg(sid, g, t, d)
+
+
+def gpu(k, sid, x, y, w=420, h=200, t=None, color=INK, fill='#b2f2bb', d=0.5):
+    """Graphics card: board with two fans and a pin edge; top-left at (x, y)."""
+    g = k.g('rectangle', [x, y, w, h], stroke=color, sw=3.2, fill=fill, fs='hachure')
+    for i in (0.27, 0.68):
+        cx, cy, r = x + w * i, y + h * 0.48, h * 0.68
+        g += k.g('ellipse', [cx, cy, r, r], stroke=color, sw=2.6, fill='#fff', fs='solid')
+        for a in range(5):
+            an = a * 2 * math.pi / 5
+            g += k.g('line', [cx, cy, cx + r * 0.42 * math.cos(an), cy + r * 0.42 * math.sin(an)], stroke=color, sw=2)
+    g += k.g('rectangle', [x + w * 0.12, y + h, w * 0.6, h * 0.12], stroke=ORANGE, sw=2.4, fill=YEL_BG, fs='solid')
+    k.svg(sid, g, t, d)
+
+
+def megaphone(k, sid, x, y, s=1.0, t=None, color=INK, fill='#ffc9c9', d=0.5):
+    """Megaphone pointing right; mouthpiece (left end) centred at (x, y), ~300*s long, ~200*s tall."""
+    g = k.g('rectangle', [x - 30 * s, y - 28 * s, 40 * s, 56 * s], stroke=color, sw=3, fill='#fff', fs='solid')
+    g += k.g('polygon', [[[x + 10 * s, y - 34 * s], [x + 260 * s, y - 100 * s], [x + 260 * s, y + 100 * s],
+                          [x + 10 * s, y + 34 * s]]], stroke=color, sw=3.2, fill=fill, fs='hachure')
+    g += k.g('line', [x + 30 * s, y + 34 * s, x + 60 * s, y + 120 * s], stroke=color, sw=4)
+    k.svg(sid, g, t, d)
+
+
+def balance(k, sid, cx, y, w=700, tilt=0.0, t=None, color=INK, d=0.5):
+    """Balance scale; pivot at (cx, y), base ~360 below. tilt>0 lowers the LEFT pan (heavier left), in px.
+    Returns ((lx, ly), (rx, ry)): the top centres of the two pans, to stack things on."""
+    lx, rx = cx - w / 2, cx + w / 2
+    ly, ry = y + tilt, y - tilt
+    g = k.g('line', [cx, y, cx, y + 360], stroke=color, sw=5)
+    g += k.g('polygon', [[[cx - 110, y + 380], [cx + 110, y + 380], [cx + 60, y + 350], [cx - 60, y + 350]]],
+             stroke=color, sw=3, fill='#e9ecef', fs='solid')
+    g += k.g('line', [lx, ly, rx, ry], stroke=color, sw=5)
+    g += k.g('ellipse', [cx, y, 26, 26], stroke=color, sw=3, fill=color, fs='solid')
+    pans = []
+    for px, py in ((lx, ly), (rx, ry)):
+        g += k.g('line', [px, py, px - 110, py + 150], stroke=color, sw=2)
+        g += k.g('line', [px, py, px + 110, py + 150], stroke=color, sw=2)
+        g += k.g('curve', [[[px - 130, py + 150], [px, py + 185], [px + 130, py + 150]]], stroke=color, sw=3.4)
+        pans.append((px, py + 150))
+    k.svg(sid, g, t, d)
+    return tuple(pans)
