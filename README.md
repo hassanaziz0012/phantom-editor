@@ -3,3 +3,7 @@ Phantom Editor is a big collection of automation scripts (both deterministic and
 Read the @docs folder to understand each individual script.
 
 This project is (and probably always will be) a work-in-progress. As my content creation workflow evolves, I continue to update and expand the capabilities of this tool.
+
+## Author
+
+Built by [Hassan Aziz](https://hassandev.me).
